@@ -52,10 +52,6 @@ class MainWindow(QMainWindow):
         status = self.statusBar()
         status.setObjectName("applicationStatusBar")
 
-        self.connection_state = QLabel("Disconnected")
-        self.connection_state.setObjectName("statusConnectionState")
-        status.addWidget(self.connection_state)
-
         counters = QWidget()
         counters.setObjectName("statusCounters")
         counter_layout = QHBoxLayout(counters)

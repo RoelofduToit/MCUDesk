@@ -25,7 +25,7 @@ class SidePanel(QFrame):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
-        heading = QLabel("WORKSPACE")
+        heading = QLabel("DEVICE")
         heading.setObjectName("panelTitle")
         layout.addWidget(heading)
 

@@ -5,7 +5,7 @@ APPLICATION_STYLE = """
 QWidget {
     color: #d9e2ec;
     background-color: #111820;
-    font-size: 10pt;
+    font-size: 10.5pt;
 }
 QMainWindow, QSplitter {
     background-color: #0c1219;
@@ -42,8 +42,8 @@ QLabel#connectionStatusLabel {
     font-weight: 600;
 }
 QComboBox, QLineEdit {
-    min-height: 30px;
-    padding: 0 9px;
+    min-height: 32px;
+    padding: 1px 9px;
     background-color: #0e151d;
     border: 1px solid #314354;
     border-radius: 4px;
@@ -61,8 +61,8 @@ QComboBox QAbstractItemView {
     selection-background-color: #2479a9;
 }
 QPushButton {
-    min-height: 30px;
-    padding: 0 14px;
+    min-height: 32px;
+    padding: 1px 14px;
     background-color: #223140;
     border: 1px solid #344a5e;
     border-radius: 4px;
