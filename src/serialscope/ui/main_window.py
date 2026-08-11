@@ -1,5 +1,7 @@
 """The SerialScope main window and top-level UI composition."""
 
+from collections.abc import Callable
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -10,6 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from serialscope.serial import SerialPortInfo, discover_recommended_serial_ports
 from serialscope.ui.connection_bar import ConnectionBar
 from serialscope.ui.side_panel import SidePanel
 from serialscope.ui.terminal_widget import TerminalWidget
@@ -18,8 +21,12 @@ from serialscope.ui.terminal_widget import TerminalWidget
 class MainWindow(QMainWindow):
     """Top-level application window."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        port_scanner: Callable[[], list[SerialPortInfo]] | None = None,
+    ) -> None:
         super().__init__()
+        self._port_scanner = port_scanner or discover_recommended_serial_ports
         self.setObjectName("mainWindow")
         self.setWindowTitle("SerialScope")
         self.setMinimumSize(800, 520)
@@ -32,6 +39,7 @@ class MainWindow(QMainWindow):
         root_layout.setSpacing(12)
 
         self.connection_bar = ConnectionBar()
+        self.connection_bar.refresh_button.clicked.connect(self.refresh_ports)
         root_layout.addWidget(self.connection_bar)
 
         self.workspace_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -47,6 +55,11 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central_widget)
         self._build_status_bar()
+        self.refresh_ports()
+
+    def refresh_ports(self) -> None:
+        """Refresh the connection bar with currently available ports."""
+        self.connection_bar.set_ports(self._port_scanner())
 
     def _build_status_bar(self) -> None:
         status = self.statusBar()

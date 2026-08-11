@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from serialscope.serial import SerialPortInfo
+
 
 class ConnectionBar(QFrame):
     """Present the connection controls without implementing their behavior."""
@@ -28,7 +30,6 @@ class ConnectionBar(QFrame):
 
         self.port_combo = QComboBox()
         self.port_combo.setObjectName("portCombo")
-        self.port_combo.addItem("Select port…")
         self.port_combo.setMinimumContentsLength(14)
         layout.addWidget(self.port_combo)
 
@@ -63,3 +64,34 @@ class ConnectionBar(QFrame):
         self.status_label = QLabel("Disconnected")
         self.status_label.setObjectName("connectionStatusLabel")
         layout.addWidget(self.status_label)
+
+    def set_ports(self, ports: list[SerialPortInfo]) -> None:
+        """Replace displayed ports while retaining the selected device."""
+        selected_device = self.selected_device
+        self.port_combo.clear()
+
+        if not ports:
+            self.port_combo.addItem("No serial ports found", None)
+            return
+
+        for port in ports:
+            self.port_combo.addItem(port.display_name, port)
+
+        if selected_device is not None:
+            for index in range(self.port_combo.count()):
+                port = self.port_combo.itemData(index)
+                if port.device == selected_device:
+                    self.port_combo.setCurrentIndex(index)
+                    break
+
+    @property
+    def selected_port(self) -> SerialPortInfo | None:
+        """Return the selected structured port value, if one exists."""
+        port = self.port_combo.currentData()
+        return port if isinstance(port, SerialPortInfo) else None
+
+    @property
+    def selected_device(self) -> str | None:
+        """Return the selected OS device identifier."""
+        port = self.selected_port
+        return port.device if port is not None else None

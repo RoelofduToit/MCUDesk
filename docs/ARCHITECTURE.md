@@ -4,12 +4,13 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 established the project foundation. Version 0.1.1 adds only the initial desktop UI shell; it does not implement serial or data-processing features.
+Phase 0 established the project foundation. Version 0.1.1 added the initial desktop UI shell. Version 0.1.2 adds serial-port discovery only; it does not open ports or implement data processing.
 
 ## Current structure
 
 - `main.py` is a minimal source-checkout launcher.
 - `src/serialscope/app.py` owns the Qt application lifecycle.
+- `src/serialscope/serial/port_scanner.py` discovers ports through PySerial and returns Qt-independent structured metadata.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
@@ -31,16 +32,18 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.1.1 boundaries
+## Version 0.1.2 boundaries
 
-The current application creates a `QApplication` and displays a resizable `QMainWindow` titled **SerialScope**. The window contains connection controls, a terminal placeholder, command entry, side-panel sections, and status counters. These widgets have no feature behavior. Version 0.1.1 intentionally includes no serial communication, graphs, database, logging pipeline, parsing, profiles, background workers, or reconnect behavior.
+The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
+
+Version 0.1.2 intentionally does not open, configure, read, or write serial ports. Connect and Send remain inert. It also includes no graphs, database, logging pipeline, parsing, profiles, background workers, or reconnect behavior.
 
 ## Planned technology direction
 
 - Python
 - PySide6 / Qt 6 for the desktop GUI
-- PySerial for future serial communication
+- PySerial for serial-port discovery and future serial communication
 - PyQtGraph for future live plotting
 - pytest for automated tests
 
-PySerial and PyQtGraph are not dependencies until their corresponding features are implemented.
+PyQtGraph is not a dependency until plotting is implemented.
