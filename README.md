@@ -2,7 +2,7 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-The project is currently at **Phase 0**. It provides only a blank PySide6 window and the initial project structure; serial communication, plotting, parsing, profiles, and persistence are intentionally not implemented yet.
+Version 0.1.1 provides the initial PySide6 desktop UI shell: connection controls, a terminal workspace, command entry, configuration placeholders, and status counters. The controls are intentionally non-functional; serial communication, plotting, parsing, profiles, logging, and persistence are not implemented yet.
 
 ## Requirements
 
