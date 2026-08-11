@@ -1,0 +1,2 @@
+[console_scripts]
+serialscope = serialscope.app:main

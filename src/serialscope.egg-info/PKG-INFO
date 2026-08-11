@@ -1,3 +1,13 @@
+Metadata-Version: 2.4
+Name: serialscope
+Version: 0.0.0
+Summary: A modern cross-platform serial terminal and engineering data tool.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: PySide6<7,>=6.7
+Provides-Extra: dev
+Requires-Dist: pytest<9,>=8; extra == "dev"
+
 # SerialScope
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
