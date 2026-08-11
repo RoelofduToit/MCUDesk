@@ -37,9 +37,15 @@ QLabel#connectionStatusDot {
     color: #7f8c99;
     font-size: 11pt;
 }
+QLabel#connectionStatusDot[connectionState="connected"] {
+    color: #3dcc87;
+}
 QLabel#connectionStatusLabel {
     color: #aebdca;
     font-weight: 600;
+}
+QLabel#connectionStatusLabel[connectionState="connected"] {
+    color: #8de1b5;
 }
 QComboBox, QLineEdit {
     min-height: 32px;

@@ -1,10 +1,13 @@
 import os
+from unittest.mock import Mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QComboBox, QGroupBox, QLineEdit, QPlainTextEdit
 
-from serialscope.serial import SerialPortInfo
+from serial import SerialException
+
+from serialscope.serial import SerialConnection, SerialPortInfo
 from serialscope.ui.main_window import MainWindow
 
 
@@ -68,3 +71,80 @@ def test_port_dropdown_refreshes_and_preserves_selection() -> None:
 
     window.close()
     application.processEvents()
+
+
+def test_ui_controls_follow_connection_lifecycle() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+    )
+
+    window.connection_bar.connect_button.click()
+
+    assert window.connection_bar.status_label.text() == "Connected"
+    assert window.connection_bar.connect_button.text() == "Disconnect"
+    assert not window.connection_bar.port_combo.isEnabled()
+    assert not window.connection_bar.baud_combo.isEnabled()
+    assert not window.connection_bar.refresh_button.isEnabled()
+
+    window.connection_bar.connect_button.click()
+
+    assert window.connection_bar.status_label.text() == "Disconnected"
+    assert window.connection_bar.connect_button.text() == "Connect"
+    assert window.connection_bar.port_combo.isEnabled()
+    assert window.connection_bar.baud_combo.isEnabled()
+    assert window.connection_bar.refresh_button.isEnabled()
+    serial_port.close.assert_called_once_with()
+
+    window.close()
+    application.processEvents()
+
+
+def test_connection_failure_restores_safe_ui_state(monkeypatch) -> None:
+    application = QApplication.instance() or QApplication([])
+    connection = SerialConnection(
+        serial_factory=Mock(side_effect=SerialException("Permission denied"))
+    )
+    errors: list[str] = []
+    monkeypatch.setattr(
+        MainWindow,
+        "_show_connection_error",
+        lambda _window, message: errors.append(message),
+    )
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("/dev/ttyACM0")],
+        serial_connection=connection,
+    )
+
+    window.connection_bar.connect_button.click()
+
+    assert not connection.is_connected
+    assert window.connection_bar.status_label.text() == "Disconnected"
+    assert window.connection_bar.connect_button.text() == "Connect"
+    assert window.connection_bar.port_combo.isEnabled()
+    assert window.connection_bar.baud_combo.isEnabled()
+    assert window.connection_bar.refresh_button.isEnabled()
+    assert errors == ["Could not open /dev/ttyACM0: Permission denied"]
+
+    window.close()
+    application.processEvents()
+
+
+def test_closing_window_closes_serial_connection() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+    )
+    window.connection_bar.connect_button.click()
+
+    window.close()
+    application.processEvents()
+
+    serial_port.close.assert_called_once_with()
+    assert not connection.is_connected

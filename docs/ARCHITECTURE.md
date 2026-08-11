@@ -4,13 +4,14 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 established the project foundation. Version 0.1.1 added the initial desktop UI shell. Version 0.1.2 adds serial-port discovery only; it does not open ports or implement data processing.
+Phase 0 established the project foundation. Version 0.1.1 added the initial desktop UI shell, version 0.1.2 added serial-port discovery, and version 0.1.3 adds connection lifecycle management. It does not read or write serial data.
 
 ## Current structure
 
 - `main.py` is a minimal source-checkout launcher.
 - `src/serialscope/app.py` owns the Qt application lifecycle.
 - `src/serialscope/serial/port_scanner.py` discovers ports through PySerial and returns Qt-independent structured metadata.
+- `src/serialscope/serial/connection.py` owns the live PySerial object and its open/close lifecycle.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
@@ -32,11 +33,13 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.1.2 boundaries
+## Version 0.1.3 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
-Version 0.1.2 intentionally does not open, configure, read, or write serial ports. Connect and Send remain inert. It also includes no graphs, database, logging pipeline, parsing, profiles, background workers, or reconnect behavior.
+`SerialConnection` is the sole owner of the live `serial.Serial` instance. The UI requests synchronous connect and disconnect operations and presents their state; PySerial exceptions are translated at the serial-layer boundary before reaching the UI. Opening and closing remain on the GUI thread because they are short lifecycle operations.
+
+Version 0.1.3 intentionally does not read or write serial data. Send remains inert, and there is no reader thread. It also includes no graphs, database, logging pipeline, parsing, profiles, background workers, or reconnect behavior.
 
 ## Planned technology direction
 

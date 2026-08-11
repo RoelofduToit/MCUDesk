@@ -45,7 +45,16 @@ class ConnectionBar(QFrame):
         self.baud_combo = QComboBox()
         self.baud_combo.setObjectName("baudCombo")
         self.baud_combo.addItems(
-            ["9600", "19200", "38400", "57600", "115200", "230400", "460800"]
+            [
+                "9600",
+                "19200",
+                "38400",
+                "57600",
+                "115200",
+                "230400",
+                "460800",
+                "921600",
+            ]
         )
         self.baud_combo.setCurrentText("115200")
         layout.addWidget(self.baud_combo)
@@ -64,6 +73,24 @@ class ConnectionBar(QFrame):
         self.status_label = QLabel("Disconnected")
         self.status_label.setObjectName("connectionStatusLabel")
         layout.addWidget(self.status_label)
+
+        self.set_connected(False)
+
+    def set_connected(self, connected: bool) -> None:
+        """Present the current connection state without owning its logic."""
+        self.connect_button.setText("Disconnect" if connected else "Connect")
+        self.status_label.setText("Connected" if connected else "Disconnected")
+        self.port_combo.setEnabled(not connected)
+        self.baud_combo.setEnabled(not connected)
+        self.refresh_button.setEnabled(not connected)
+
+        state = "connected" if connected else "disconnected"
+        self.status_dot.setProperty("connectionState", state)
+        self.status_label.setProperty("connectionState", state)
+        self.status_dot.style().unpolish(self.status_dot)
+        self.status_dot.style().polish(self.status_dot)
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
 
     def set_ports(self, ports: list[SerialPortInfo]) -> None:
         """Replace displayed ports while retaining the selected device."""

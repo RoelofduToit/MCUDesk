@@ -3,16 +3,23 @@
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
-from serialscope.serial import SerialPortInfo, discover_recommended_serial_ports
+from serialscope.serial import (
+    SerialConnection,
+    SerialConnectionError,
+    SerialPortInfo,
+    discover_recommended_serial_ports,
+)
 from serialscope.ui.connection_bar import ConnectionBar
 from serialscope.ui.side_panel import SidePanel
 from serialscope.ui.terminal_widget import TerminalWidget
@@ -24,9 +31,11 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         port_scanner: Callable[[], list[SerialPortInfo]] | None = None,
+        serial_connection: SerialConnection | None = None,
     ) -> None:
         super().__init__()
         self._port_scanner = port_scanner or discover_recommended_serial_ports
+        self._serial_connection = serial_connection or SerialConnection()
         self.setObjectName("mainWindow")
         self.setWindowTitle("SerialScope")
         self.setMinimumSize(800, 520)
@@ -40,6 +49,9 @@ class MainWindow(QMainWindow):
 
         self.connection_bar = ConnectionBar()
         self.connection_bar.refresh_button.clicked.connect(self.refresh_ports)
+        self.connection_bar.connect_button.clicked.connect(
+            self.toggle_serial_connection
+        )
         root_layout.addWidget(self.connection_bar)
 
         self.workspace_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -60,6 +72,49 @@ class MainWindow(QMainWindow):
     def refresh_ports(self) -> None:
         """Refresh the connection bar with currently available ports."""
         self.connection_bar.set_ports(self._port_scanner())
+
+    def toggle_serial_connection(self) -> None:
+        """Connect or disconnect according to the current service state."""
+        if self._serial_connection.is_connected:
+            self._disconnect_serial_port()
+        else:
+            self._connect_serial_port()
+
+    def _connect_serial_port(self) -> None:
+        port = self.connection_bar.selected_port
+        if port is None:
+            self._show_connection_error("Select a serial port before connecting.")
+            self.connection_bar.set_connected(False)
+            return
+
+        baud_rate = int(self.connection_bar.baud_combo.currentText())
+        try:
+            self._serial_connection.connect(port.device, baud_rate)
+        except SerialConnectionError as error:
+            self.connection_bar.set_connected(False)
+            self._show_connection_error(str(error))
+            return
+
+        self.connection_bar.set_connected(True)
+
+    def _disconnect_serial_port(self) -> None:
+        try:
+            self._serial_connection.disconnect()
+        except SerialConnectionError as error:
+            self._show_connection_error(str(error))
+        finally:
+            self.connection_bar.set_connected(False)
+
+    def _show_connection_error(self, message: str) -> None:
+        QMessageBox.critical(self, "Serial connection error", message)
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        """Release an open serial port before the window is destroyed."""
+        try:
+            self._serial_connection.disconnect()
+        except SerialConnectionError:
+            pass
+        event.accept()
 
     def _build_status_bar(self) -> None:
         status = self.statusBar()
