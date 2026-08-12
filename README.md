@@ -2,7 +2,7 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.4.2 adds selectable PyQtGraph live traces with bounded 60-second history to the tabbed Terminal, Data, and Graphs workspace. Advanced plotting controls, structured export, profiles, and databases are intentionally not implemented.
+Version 0.4.3 adds pause/resume, clear, and selectable time-window controls to live PyQtGraph traces backed by bounded one-hour history. Advanced plotting tools, structured export, profiles, and databases are intentionally not implemented.
 
 ## Requirements
 

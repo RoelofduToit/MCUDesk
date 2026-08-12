@@ -168,6 +168,63 @@ def test_graph_history_survives_tab_changes_and_disconnect_then_resets_on_reconn
     application.processEvents()
 
 
+def test_graph_clear_preserves_data_values_and_serial_state() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    reader.bytes_received.emit(b"A,B\n1,2\n")
+    window.graphs_widget.set_channel_selected("A", True)
+
+    window.graphs_widget.clear_button.click()
+
+    assert window.graphs_widget.history.points("A") == ((), ())
+    assert window.graphs_widget.selected_channels == ("A",)
+    assert window.data_widget.value_text("A") == "1"
+    assert window.side_panel.channels_widget.value_text("A") == "1"
+    assert connection.is_connected
+    assert window.rx_counter.text() == "RX: 8 B"
+
+    window.close()
+    application.processEvents()
+
+
+def test_disconnect_while_graph_paused_is_safe_and_reconnect_resets_pause() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+    )
+    window.connection_bar.connect_button.click()
+    window._handle_received_bytes(b"A,B\n1,2\n")
+    window.graphs_widget.toggle_pause()
+
+    window.connection_bar.connect_button.click()
+
+    assert window.graphs_widget.is_paused
+    assert window.graphs_widget.history.points("A")[1] == (1,)
+    assert not connection.is_connected
+
+    window.connection_bar.connect_button.click()
+    assert not window.graphs_widget.is_paused
+    assert window.graphs_widget.history.points("A") == ((), ())
+    assert window.graphs_widget.plot_widget.viewRange()[0] == pytest.approx(
+        [0.0, 60.0]
+    )
+
+    window.close()
+    application.processEvents()
+
+
 def test_port_dropdown_shows_empty_state() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])

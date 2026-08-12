@@ -23,6 +23,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
 - `src/serialscope/ui/data_widget.py` presents the same channel updates in a larger, stable-order table.
 - `src/serialscope/ui/graphs_widget.py` owns graph-channel selection and PyQtGraph presentation.
+- `src/serialscope/ui/elapsed_time_axis.py` formats seconds-valued graph ticks as human-readable elapsed time without SI prefixes.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
@@ -44,7 +45,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.4.2 boundaries
+## Version 0.4.3 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -74,11 +75,13 @@ JSON lines must decode as complete JSON objects before they can claim the stream
 
 The central horizontal splitter contains a `QTabWidget` and the unchanged compact sidebar. The existing `TerminalWidget` is hosted directly in the default Terminal tab, so switching tabs does not affect RX, TX, parsing, recording, counters, or connection lifecycle. `MainWindow` forwards each parser-produced `ChannelUpdate` to the compact sidebar, larger Data table, and Graphs presentation; none owns parsing logic.
 
-`ChannelHistory` timestamps structured updates with a monotonic clock and prunes samples older than approximately 60 seconds. History collection continues regardless of the visible tab. `GraphsWidget` exposes each detected numeric channel once and leaves it unselected until the user opts in. Selected channels share one elapsed-seconds X axis and Y axis, use deterministic PyQtGraph colors, and appear in a legend. A 100 ms UI timer refreshes selected curves rather than redrawing for every incoming byte or structured update.
+`ChannelHistory` timestamps structured updates with a monotonic clock and prunes samples older than approximately one hour. History collection continues regardless of the visible tab or paused graph presentation. `GraphsWidget` exposes each detected numeric channel once and leaves it unselected until the user opts in. Selected channels share one elapsed-seconds X axis and Y axis, use deterministic PyQtGraph colors, and appear in a legend. A 100 ms UI timer refreshes selected curves rather than redrawing for every incoming byte or structured update.
+
+The visible X range can show the latest 10, 30, 60, 300, 600, 1,800, or 3,600 seconds without changing retained history or channel selections. Stored and plotted X values remain monotonic elapsed seconds, while a dedicated PyQtGraph axis formats ticks as seconds, minutes, or hours/minutes and disables SI prefixes. Pause freezes the displayed curves while structured updates continue entering history; Resume immediately redraws the latest window. Clear resets graph samples and elapsed origin, empties existing curves, and retains channel selectors and selections so subsequent updates begin a fresh graph. None of these controls affects serial transport, parsing, Data/sidebar values, counters, or logging.
 
 Disconnect leaves graph history and visible series intact. A subsequent successful connection resets graph history, selectors, and curves before new data arrives, preventing data from separate devices or sessions from being mixed. Raw bytes, logging, counters, parser input, and session metadata remain independent.
 
-Version 0.4.2 intentionally includes no pause/resume, adjustable graph window, cursors, statistics, export, multiple panes or axes, unit grouping, calculated channels, themes, dashboards, profiles, or protocol features.
+Version 0.4.3 intentionally includes no graph export, cursors, statistics, multiple panes or axes, unit grouping, calculated channels, themes, dashboards, profiles, or protocol features.
 
 ## Planned technology direction
 

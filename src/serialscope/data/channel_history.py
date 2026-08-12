@@ -12,7 +12,7 @@ class ChannelHistory:
 
     def __init__(
         self,
-        window_seconds: float = 60.0,
+        window_seconds: float = 3_600.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if window_seconds <= 0:
@@ -47,6 +47,7 @@ class ChannelHistory:
         )
 
     def reset(self) -> None:
+        """Clear all samples and reset the elapsed-time origin."""
         self._origin = None
         self._samples.clear()
 

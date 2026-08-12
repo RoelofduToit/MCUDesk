@@ -7,9 +7,11 @@ import pyqtgraph as pg
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -17,6 +19,26 @@ from PySide6.QtWidgets import (
 
 from serialscope.data import ChannelHistory
 from serialscope.parsing import ChannelUpdate
+from serialscope.ui.elapsed_time_axis import ElapsedTimeAxis
+
+
+TIME_WINDOWS = {
+    "10 s": 10.0,
+    "30 s": 30.0,
+    "60 s": 60.0,
+    "5 min": 300.0,
+    "10 min": 600.0,
+    "30 min": 1_800.0,
+    "1 hour": 3_600.0,
+}
+
+
+def visible_x_range(latest_time: float, window_seconds: float) -> tuple[float, float]:
+    """Return a non-negative elapsed-time viewport for the live graph."""
+    latest_time = max(0.0, latest_time)
+    if latest_time <= window_seconds:
+        return 0.0, window_seconds
+    return latest_time - window_seconds, latest_time
 
 
 class GraphsWidget(QWidget):
@@ -32,6 +54,7 @@ class GraphsWidget(QWidget):
         self.history = ChannelHistory(clock=clock)
         self._selectors: dict[str, QCheckBox] = {}
         self._series: dict[str, pg.PlotDataItem] = {}
+        self._paused = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -54,14 +77,47 @@ class GraphsWidget(QWidget):
         self.selector_scroll.setWidget(selector_content)
         layout.addWidget(self.selector_scroll)
 
-        self.plot_widget = pg.PlotWidget()
+        controls = QWidget()
+        controls.setObjectName("graphControls")
+        controls_layout = QHBoxLayout(controls)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(8)
+
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.setObjectName("graphPauseButton")
+        self.pause_button.clicked.connect(self.toggle_pause)
+        controls_layout.addWidget(self.pause_button)
+
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.setObjectName("graphClearButton")
+        self.clear_button.clicked.connect(self.clear_history)
+        controls_layout.addWidget(self.clear_button)
+        controls_layout.addStretch()
+
+        window_label = QLabel("Time Window")
+        window_label.setObjectName("graphTimeWindowLabel")
+        controls_layout.addWidget(window_label)
+
+        self.time_window_combo = QComboBox()
+        self.time_window_combo.setObjectName("graphTimeWindowCombo")
+        for label, seconds in TIME_WINDOWS.items():
+            self.time_window_combo.addItem(label, seconds)
+        self.time_window_combo.setCurrentText("60 s")
+        self.time_window_combo.currentIndexChanged.connect(self.refresh_plot)
+        controls_layout.addWidget(self.time_window_combo)
+        layout.addWidget(controls)
+
+        self.elapsed_time_axis = ElapsedTimeAxis()
+        self.plot_widget = pg.PlotWidget(
+            axisItems={"bottom": self.elapsed_time_axis}
+        )
         self.plot_widget.setObjectName("livePlot")
         self.plot_widget.setBackground("#0a1016")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.18)
-        self.plot_widget.setLabel("bottom", "Elapsed time", units="s")
         self.plot_widget.setLabel("left", "Value")
         self.plot_widget.addLegend()
         layout.addWidget(self.plot_widget, 1)
+        self._apply_x_range(0.0)
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setInterval(100)
@@ -75,6 +131,14 @@ class GraphsWidget(QWidget):
     @property
     def selected_channels(self) -> tuple[str, ...]:
         return tuple(name for name, box in self._selectors.items() if box.isChecked())
+
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
+
+    @property
+    def time_window_seconds(self) -> float:
+        return float(self.time_window_combo.currentData())
 
     def update_channels(self, update: ChannelUpdate) -> None:
         """Collect a structured update and expose newly observed channels."""
@@ -99,9 +163,46 @@ class GraphsWidget(QWidget):
         return name in self._series
 
     def refresh_plot(self) -> None:
+        if self._paused:
+            return
+
+        points = {
+            name: self.history.points(name) for name in self._series
+        }
+        latest_time = max(
+            (x_values[-1] for x_values, _y_values in points.values() if x_values),
+            default=None,
+        )
+        cutoff = (
+            latest_time - self.time_window_seconds
+            if latest_time is not None
+            else None
+        )
         for name, series in self._series.items():
-            x_values, y_values = self.history.points(name)
-            series.setData(x_values, y_values)
+            x_values, y_values = points[name]
+            if x_values and cutoff is not None:
+                visible = next(
+                    (index for index, timestamp in enumerate(x_values) if timestamp >= cutoff),
+                    len(x_values),
+                )
+                series.setData(x_values[visible:], y_values[visible:])
+            else:
+                series.setData([], [])
+        self._apply_x_range(latest_time or 0.0)
+
+    def toggle_pause(self) -> None:
+        """Freeze or resume plot presentation without stopping acquisition."""
+        self._paused = not self._paused
+        self.pause_button.setText("Resume" if self._paused else "Pause")
+        if not self._paused:
+            self.refresh_plot()
+
+    def clear_history(self) -> None:
+        """Clear active-connection history while preserving channel choices."""
+        self.history.reset()
+        for series in self._series.values():
+            series.setData([], [])
+        self._apply_x_range(0.0)
 
     def reset(self) -> None:
         """Clear selector, series, and history for a new connection."""
@@ -113,6 +214,13 @@ class GraphsWidget(QWidget):
             self.plot_widget.removeItem(series)
         self._series.clear()
         self.history.reset()
+        self._paused = False
+        self.pause_button.setText("Pause")
+        self._apply_x_range(0.0)
+
+    def _apply_x_range(self, latest_time: float) -> None:
+        lower, upper = visible_x_range(latest_time, self.time_window_seconds)
+        self.plot_widget.setXRange(lower, upper, padding=0)
 
     def _set_channel_selected(self, name: str, selected: bool) -> None:
         if selected:
