@@ -132,6 +132,42 @@ def test_switching_workspace_tabs_preserves_live_channel_state() -> None:
     application.processEvents()
 
 
+def test_graph_history_survives_tab_changes_and_disconnect_then_resets_on_reconnect() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+    readers[0].bytes_received.emit(b"A,B\n1,2\n3,4\n")
+    window.graphs_widget.set_channel_selected("A", True)
+
+    window.workspace_tabs.setCurrentWidget(window.terminal)
+    assert window.graphs_widget.history.points("A")[1] == (1, 3)
+
+    window.connection_bar.connect_button.click()
+    assert window.graphs_widget.history.points("A")[1] == (1, 3)
+    assert window.graphs_widget.has_series("A")
+
+    window.connection_bar.connect_button.click()
+    assert window.graphs_widget.channel_names == ()
+    assert window.graphs_widget.history.points("A") == ((), ())
+    assert not window.graphs_widget.has_series("A")
+
+    window.close()
+    application.processEvents()
+
+
 def test_port_dropdown_shows_empty_state() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])

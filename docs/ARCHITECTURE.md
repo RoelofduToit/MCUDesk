@@ -19,9 +19,10 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/parsing/key_value_parser.py` incrementally parses comma-separated numeric `key=value` lines.
 - `src/serialscope/parsing/json_parser.py` incrementally parses top-level numeric values from one JSON object per line.
 - `src/serialscope/parsing/stream_parser.py` deterministically selects and locks a parser for the current connection.
+- `src/serialscope/data/channel_history.py` retains Qt-independent, monotonic, bounded numeric history for plotting.
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
 - `src/serialscope/ui/data_widget.py` presents the same channel updates in a larger, stable-order table.
-- `src/serialscope/ui/graphs_widget.py` owns the plotting tab's empty foundation without graph dependencies.
+- `src/serialscope/ui/graphs_widget.py` owns graph-channel selection and PyQtGraph presentation.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
@@ -43,7 +44,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.4.1 boundaries
+## Version 0.4.2 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -71,16 +72,18 @@ JSON lines must decode as complete JSON objects before they can claim the stream
 
 `SerialStreamParser` feeds all deterministic parsers only until one produces a structured update, then locks that format until connection reset. JSON is tested first because successful object decoding is conservative and prevents its comma-separated members from being mistaken for a CSV header. Key/value lines cannot qualify as CSV headers because CSV channel names containing `=` are rejected. Explicit or confirmed headerless CSV therefore coexists without delimiter guessing.
 
-The central horizontal splitter now contains a `QTabWidget` and the unchanged compact sidebar. The existing `TerminalWidget` is hosted directly in the default Terminal tab, so switching tabs does not affect RX, TX, parsing, recording, counters, or connection lifecycle. `MainWindow` forwards each parser-produced `ChannelUpdate` to both the compact sidebar and the larger Data table; neither presentation owns parsing logic. Both views reset together only at the existing connection lifecycle boundaries. The Graphs tab is a dependency-free empty state.
+The central horizontal splitter contains a `QTabWidget` and the unchanged compact sidebar. The existing `TerminalWidget` is hosted directly in the default Terminal tab, so switching tabs does not affect RX, TX, parsing, recording, counters, or connection lifecycle. `MainWindow` forwards each parser-produced `ChannelUpdate` to the compact sidebar, larger Data table, and Graphs presentation; none owns parsing logic.
 
-Version 0.4.1 intentionally includes no plotting implementation or history buffers, channel selection, statistics, unit inference, structured export, themes, dashboards, profiles, or protocol features.
+`ChannelHistory` timestamps structured updates with a monotonic clock and prunes samples older than approximately 60 seconds. History collection continues regardless of the visible tab. `GraphsWidget` exposes each detected numeric channel once and leaves it unselected until the user opts in. Selected channels share one elapsed-seconds X axis and Y axis, use deterministic PyQtGraph colors, and appear in a legend. A 100 ms UI timer refreshes selected curves rather than redrawing for every incoming byte or structured update.
+
+Disconnect leaves graph history and visible series intact. A subsequent successful connection resets graph history, selectors, and curves before new data arrives, preventing data from separate devices or sessions from being mixed. Raw bytes, logging, counters, parser input, and session metadata remain independent.
+
+Version 0.4.2 intentionally includes no pause/resume, adjustable graph window, cursors, statistics, export, multiple panes or axes, unit grouping, calculated channels, themes, dashboards, profiles, or protocol features.
 
 ## Planned technology direction
 
 - Python
 - PySide6 / Qt 6 for the desktop GUI
 - PySerial for serial-port discovery and future serial communication
-- PyQtGraph for future live plotting
+- PyQtGraph for live plotting
 - pytest for automated tests
-
-PyQtGraph is not a dependency until plotting is implemented.

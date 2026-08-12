@@ -149,7 +149,7 @@ class MainWindow(QMainWindow):
             return
 
         self._reset_session_counters()
-        self._reset_channels()
+        self._reset_channels(reset_graphs=True)
         self.connection_bar.set_connected(True)
         self.terminal.set_connected(True)
         self.side_panel.set_connected(True)
@@ -184,6 +184,7 @@ class MainWindow(QMainWindow):
         for update in self._stream_parser.feed(data):
             self.side_panel.channels_widget.update_channels(update)
             self.data_widget.update_channels(update)
+            self.graphs_widget.update_channels(update)
         self.terminal.append_bytes(data)
 
     def _handle_reader_failure(self, message: str) -> None:
@@ -215,10 +216,12 @@ class MainWindow(QMainWindow):
         self._tx_bytes = 0
         self._update_counter_labels()
 
-    def _reset_channels(self) -> None:
+    def _reset_channels(self, reset_graphs: bool = False) -> None:
         self._stream_parser.reset()
         self.side_panel.channels_widget.reset()
         self.data_widget.reset()
+        if reset_graphs:
+            self.graphs_widget.reset()
 
     def _update_counter_labels(self) -> None:
         self.rx_counter.setText(f"RX: {format_byte_count(self._rx_bytes)}")
