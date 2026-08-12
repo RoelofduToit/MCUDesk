@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from unittest.mock import Mock, call
 
 import pytest
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QGroupBox, QLineEdit, QPl
 
 from serial import SerialException
 
+from serialscope.logging import RawLogger, RawLoggerError
 from serialscope.serial import SerialConnection, SerialPortInfo
 from serialscope.ui.main_window import MainWindow, format_byte_count
 
@@ -65,6 +67,7 @@ def test_main_window_constructs_ui_shell() -> None:
     assert window.findChild(QGroupBox, "connectionSection") is not None
     assert window.findChild(QGroupBox, "channelsSection") is not None
     assert window.findChild(QGroupBox, "sessionSection") is not None
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert window.rx_counter.text() == "RX: 0 B"
     assert window.tx_counter.text() == "TX: 0 B"
 
@@ -465,6 +468,161 @@ def test_write_failure_preserves_command_and_safely_disconnects(monkeypatch) -> 
     assert window.connection_bar.status_label.text() == "Connection error"
     assert not window.terminal.send_button.isEnabled()
     assert errors == ["Could not write to COM4: device removed"]
+
+    window.close()
+    application.processEvents()
+
+
+def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    path = tmp_path / "session.log"
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getSaveFileName",
+        lambda *_args: (str(path), ""),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.logging_button.click()
+
+    readers[0].bytes_received.emit(b"valid\n")
+    readers[0].bytes_received.emit(b"\xff\x00binary")
+
+    assert window.side_panel.logging_status_label.text() == "Recording"
+    assert window.side_panel.logging_status_dot.property("recordingState") == "active"
+    assert window.side_panel.logging_filename_label.text() == "session.log"
+    assert window.side_panel.logged_bytes_label.text() == "Logged: 14 B"
+    assert window.terminal.output.toPlainText() == "valid\n�\x00binary"
+
+    window.side_panel.logging_button.click()
+
+    assert path.read_bytes() == b"valid\n\xff\x00binary"
+    assert window.side_panel.logging_status_label.text() == "Not recording"
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    assert connection.is_connected
+
+    window.close()
+    application.processEvents()
+
+
+def test_connection_loss_stops_and_preserves_log(monkeypatch, tmp_path: Path) -> None:
+    application = QApplication.instance() or QApplication([])
+    path = tmp_path / "lost-device.log"
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getSaveFileName",
+        lambda *_args: (str(path), ""),
+    )
+    monkeypatch.setattr(MainWindow, "_show_connection_error", lambda *_args: None)
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.logging_button.click()
+    readers[0].bytes_received.emit(b"preserved")
+
+    readers[0].failed.emit("device removed")
+
+    assert path.read_bytes() == b"preserved"
+    assert window.side_panel.logging_status_label.text() == "Not recording"
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    assert not window.side_panel.logging_button.isEnabled()
+    assert not connection.is_connected
+
+    window.close()
+    application.processEvents()
+
+
+def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> None:
+    application = QApplication.instance() or QApplication([])
+    path = tmp_path / "shutdown.log"
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getSaveFileName",
+        lambda *_args: (str(path), ""),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.logging_button.click()
+    reader.bytes_received.emit(b"before close")
+
+    window.close()
+    application.processEvents()
+
+    assert path.read_bytes() == b"before close"
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    assert reader.stopped
+    assert not connection.is_connected
+
+
+def test_logging_write_failure_keeps_serial_and_terminal_usable(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    path = tmp_path / "failure.log"
+    logger = RawLogger()
+    logger.start(path)
+    errors: list[str] = []
+
+    def fail_write(_data: bytes) -> int:
+        logger._close_after_failure()
+        raise RawLoggerError("Could not write log file: disk unavailable")
+
+    monkeypatch.setattr(logger, "write", fail_write)
+    monkeypatch.setattr(
+        MainWindow,
+        "_show_logging_error",
+        lambda _window, message: errors.append(message),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+        raw_logger=logger,
+    )
+    window.connection_bar.connect_button.click()
+
+    window._handle_received_bytes(b"still displayed\n")
+
+    assert window.terminal.output.toPlainText() == "still displayed\n"
+    assert connection.is_connected
+    assert window.side_panel.logging_status_label.text() == "Not recording"
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    assert errors == ["Could not write log file: disk unavailable"]
 
     window.close()
     application.processEvents()

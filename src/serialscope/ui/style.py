@@ -53,6 +53,13 @@ QLabel#connectionStatusLabel[connectionState="connected"] {
 QLabel#connectionStatusLabel[connectionState="error"] {
     color: #ed9a9f;
 }
+QLabel#loggingStatusDot {
+    color: #596775;
+    font-size: 10pt;
+}
+QLabel#loggingStatusDot[recordingState="active"] {
+    color: #ff3b4f;
+}
 QComboBox, QLineEdit {
     min-height: 32px;
     padding: 1px 9px;

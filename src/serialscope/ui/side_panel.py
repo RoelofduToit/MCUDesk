@@ -1,11 +1,10 @@
 """Placeholder controls for the side panel."""
 
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
     QFormLayout,
     QFrame,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
@@ -33,6 +32,7 @@ class SidePanel(QFrame):
         layout.addWidget(self._channels_group())
         layout.addWidget(self._session_group())
         layout.addStretch()
+        self.set_connected(False)
 
     @staticmethod
     def _connection_group() -> QGroupBox:
@@ -59,17 +59,59 @@ class SidePanel(QFrame):
         layout.addWidget(add_button)
         return group
 
-    @staticmethod
-    def _session_group() -> QGroupBox:
+    def _session_group(self) -> QGroupBox:
         group = QGroupBox("Session / logging")
         group.setObjectName("sessionSection")
         layout = QVBoxLayout(group)
         layout.setContentsMargins(12, 16, 12, 12)
-        capture = QCheckBox("Capture session data")
-        capture.setObjectName("captureCheckBox")
-        layout.addWidget(capture)
-        destination = QComboBox()
-        destination.setObjectName("logFormatCombo")
-        destination.addItems(["Text", "CSV"])
-        layout.addWidget(destination)
+
+        status_row = QWidget()
+        status_layout = QHBoxLayout(status_row)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(7)
+
+        self.logging_status_dot = QLabel("●")
+        self.logging_status_dot.setObjectName("loggingStatusDot")
+        self.logging_status_dot.setProperty("recordingState", "inactive")
+        status_layout.addWidget(self.logging_status_dot)
+
+        self.logging_status_label = QLabel("Not recording")
+        self.logging_status_label.setObjectName("loggingStatusLabel")
+        status_layout.addWidget(self.logging_status_label)
+        status_layout.addStretch()
+        layout.addWidget(status_row)
+
+        self.logging_filename_label = QLabel("")
+        self.logging_filename_label.setObjectName("loggingFilenameLabel")
+        self.logging_filename_label.setWordWrap(True)
+        layout.addWidget(self.logging_filename_label)
+
+        self.logged_bytes_label = QLabel("Logged: 0 B")
+        self.logged_bytes_label.setObjectName("loggedBytesLabel")
+        layout.addWidget(self.logged_bytes_label)
+
+        self.logging_button = QPushButton("Start Logging")
+        self.logging_button.setObjectName("loggingButton")
+        layout.addWidget(self.logging_button)
         return group
+
+    def set_connected(self, connected: bool) -> None:
+        """Allow starting a recording only while serial is connected."""
+        if self.logging_button.text() == "Start Logging":
+            self.logging_button.setEnabled(connected)
+
+    def set_logging_state(
+        self,
+        recording: bool,
+        filename: str = "",
+        byte_count: str = "0 B",
+    ) -> None:
+        """Present raw logging state without performing file operations."""
+        self.logging_status_label.setText("Recording" if recording else "Not recording")
+        state = "active" if recording else "inactive"
+        self.logging_status_dot.setProperty("recordingState", state)
+        self.logging_status_dot.style().unpolish(self.logging_status_dot)
+        self.logging_status_dot.style().polish(self.logging_status_dot)
+        self.logging_filename_label.setText(filename)
+        self.logged_bytes_label.setText(f"Logged: {byte_count}")
+        self.logging_button.setText("Stop Logging" if recording else "Start Logging")
