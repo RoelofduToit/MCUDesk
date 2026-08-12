@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 and v0.1 established the terminal foundation, discovery, connection, RX/TX, and presentation behavior. Version 0.2.1 added raw RX logging, and version 0.2.2 wraps it in a small recording-session lifecycle. It does not interpret serial data.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3.1 adds deterministic header-based CSV channel detection as an optional RX branch.
 
 ## Current structure
 
@@ -15,6 +15,8 @@ Phase 0 and v0.1 established the terminal foundation, discovery, connection, RX/
 - `src/serialscope/serial/reader.py` runs bounded serial reads in a dedicated `QThread` and emits raw byte chunks.
 - `src/serialscope/logging/raw_logger.py` owns a buffered binary log file and writes exact RX byte chunks.
 - `src/serialscope/logging/session.py` owns session directories, timing, metadata, and end-reason lifecycle around `RawLogger`.
+- `src/serialscope/parsing/csv_parser.py` incrementally detects simple CSV headers and emits numeric channel updates without Qt dependencies.
+- `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
@@ -36,7 +38,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.2.2 boundaries
+## Version 0.3.1 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -54,7 +56,11 @@ Each `RecordingSession` creates a collision-safe directory containing `raw.log` 
 
 The UI timer updates elapsed-time presentation approximately once per second. It neither writes metadata nor touches the raw stream. Normal stop, serial disconnect/error, logging failure, and application shutdown finalize metadata with distinct end reasons.
 
-Version 0.2.2 intentionally includes no parsed/automatic logging, timestamps in raw files, export, databases, graphs, parsing, profiles, reconnect behavior, or other protocol features.
+Incoming RX bytes fan out independently to terminal display, raw session logging, and `CsvChannelParser`. The parser keeps only an incomplete-line buffer and processes each newly completed LF or CRLF line. A header requires at least two unique, non-empty, non-numeric comma-separated names. Once detected, rows must have the same field count and every value must be a finite integer or floating-point number. Invalid lines produce no update and do not clear existing channels or affect the other RX branches.
+
+`ChannelUpdate` carries immutable name and numeric-value tuples. `MainWindow` forwards updates to `ChannelsWidget`, which reuses value labels while the header is unchanged and provides a bounded-width scrollable view. Parser and channel state reset for a new connection and on disconnect.
+
+Version 0.3.1 intentionally includes no delimiter inference, JSON or key/value parsing, unit inference, calibration, statistics, structured export, databases, graphs, profiles, or protocol features.
 
 ## Planned technology direction
 

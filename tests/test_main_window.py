@@ -678,3 +678,102 @@ def test_recording_elapsed_timer_updates_ui(monkeypatch, tmp_path: Path) -> None
 
     window.close()
     application.processEvents()
+
+
+def test_csv_rx_updates_channels_without_changing_terminal() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+    raw_data = b"Count,Temperature_C\n1,24.72\n2,25.08\n"
+
+    readers[0].bytes_received.emit(raw_data[:13])
+    readers[0].bytes_received.emit(raw_data[13:])
+
+    assert window.terminal.output.toPlainText() == raw_data.decode()
+    assert window.rx_counter.text() == f"RX: {len(raw_data)} B"
+    assert window.side_panel.channels_widget.value_text("Count") == "2"
+    assert window.side_panel.channels_widget.value_text("Temperature_C") == "25.08"
+
+    window.close()
+    application.processEvents()
+
+
+def test_channels_reset_on_disconnect_and_new_connection() -> None:
+    application = QApplication.instance() or QApplication([])
+    first_port = Mock(is_open=True, port="COM4")
+    second_port = Mock(is_open=True, port="COM4")
+    serial_factory = Mock(side_effect=[first_port, second_port])
+    connection = SerialConnection(serial_factory=serial_factory)
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+    readers[0].bytes_received.emit(b"Old,Value\n1,2\n")
+    assert window.side_panel.channels_widget.value_text("Old") == "1"
+
+    window.connection_bar.connect_button.click()
+    assert window.side_panel.channels_widget.value_text("Old") is None
+
+    window.connection_bar.connect_button.click()
+    readers[1].bytes_received.emit(b"New,Value\n3,4\n")
+    assert window.side_panel.channels_widget.value_text("Old") is None
+    assert window.side_panel.channels_widget.value_text("New") == "3"
+
+    window.close()
+    application.processEvents()
+
+
+def test_csv_parsing_does_not_modify_recorded_raw_bytes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.logging_button.click()
+    raw_data = b"A,B\r\n1,2.5\r\n\xffbinary\n"
+
+    reader.bytes_received.emit(raw_data)
+    window.side_panel.logging_button.click()
+
+    session_directory = next(tmp_path.iterdir())
+    assert (session_directory / "raw.log").read_bytes() == raw_data
+    expected_display = raw_data.decode(errors="replace").replace("\r\n", "\n")
+    assert window.terminal.output.toPlainText() == expected_display
+    assert window.side_panel.channels_widget.value_text("B") == "2.5"
+
+    window.close()
+    application.processEvents()

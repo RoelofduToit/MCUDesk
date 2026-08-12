@@ -22,6 +22,7 @@ from serialscope.logging import (
     RecordingSessionError,
     SessionConfig,
 )
+from serialscope.parsing import CsvChannelParser
 from serialscope.serial import (
     SerialConnection,
     SerialConnectionError,
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         reader_factory: Callable[[SerialConnection], SerialReader] | None = None,
         raw_logger: RawLogger | None = None,
         recording_session: RecordingSession | None = None,
+        csv_parser: CsvChannelParser | None = None,
     ) -> None:
         super().__init__()
         self._port_scanner = port_scanner or discover_recommended_serial_ports
@@ -67,6 +69,7 @@ class MainWindow(QMainWindow):
         self._reader_factory = reader_factory or SerialReader
         self._serial_reader: SerialReader | None = None
         self._recording_session = recording_session or RecordingSession(raw_logger)
+        self._csv_parser = csv_parser or CsvChannelParser()
         self._rx_bytes = 0
         self._tx_bytes = 0
         self._recording_timer = QTimer(self)
@@ -135,6 +138,7 @@ class MainWindow(QMainWindow):
             return
 
         self._reset_session_counters()
+        self._reset_channels()
         self.connection_bar.set_connected(True)
         self.terminal.set_connected(True)
         self.side_panel.set_connected(True)
@@ -166,6 +170,8 @@ class MainWindow(QMainWindow):
                 self._show_logging_error(str(error))
             else:
                 self._update_recording_presentation()
+        for update in self._csv_parser.feed(data):
+            self.side_panel.channels_widget.update_channels(update)
         self.terminal.append_bytes(data)
 
     def _handle_reader_failure(self, message: str) -> None:
@@ -196,6 +202,10 @@ class MainWindow(QMainWindow):
         self._rx_bytes = 0
         self._tx_bytes = 0
         self._update_counter_labels()
+
+    def _reset_channels(self) -> None:
+        self._csv_parser.reset()
+        self.side_panel.channels_widget.reset()
 
     def _update_counter_labels(self) -> None:
         self.rx_counter.setText(f"RX: {format_byte_count(self._rx_bytes)}")
@@ -268,6 +278,7 @@ class MainWindow(QMainWindow):
         self.connection_bar.set_connected(False)
         self.terminal.set_connected(False)
         self.side_panel.set_connected(False)
+        self._reset_channels()
 
     def _disconnect_serial_port(self) -> None:
         self._stop_recording("serial_disconnected")
@@ -278,12 +289,14 @@ class MainWindow(QMainWindow):
             self.connection_bar.set_connection_state("error")
             self.terminal.set_connected(False)
             self.side_panel.set_connected(False)
+            self._reset_channels()
             self._show_connection_error(str(error))
             return
 
         self.connection_bar.set_connected(False)
         self.terminal.set_connected(False)
         self.side_panel.set_connected(False)
+        self._reset_channels()
 
     def _show_connection_error(self, message: str) -> None:
         QMessageBox.critical(self, "Serial connection error", message)

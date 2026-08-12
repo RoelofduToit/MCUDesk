@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from serialscope.ui.channels_widget import ChannelsWidget
+
 
 class SidePanel(QFrame):
     """Group future connection, channel, and session controls."""
@@ -48,17 +50,14 @@ class SidePanel(QFrame):
         form.addRow("Flow control", QLabel("None"))
         return group
 
-    @staticmethod
-    def _channels_group() -> QGroupBox:
+    def _channels_group(self) -> QGroupBox:
         group = QGroupBox("Channels")
         group.setObjectName("channelsSection")
         layout = QVBoxLayout(group)
         layout.setContentsMargins(12, 16, 12, 12)
 
-        layout.addWidget(QLabel("No channels configured"))
-        add_button = QPushButton("Add channel")
-        add_button.setObjectName("addChannelButton")
-        layout.addWidget(add_button)
+        self.channels_widget = ChannelsWidget()
+        layout.addWidget(self.channels_widget)
         return group
 
     def _session_group(self) -> QGroupBox:
