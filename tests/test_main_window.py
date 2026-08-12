@@ -1,4 +1,6 @@
 import os
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, call
 
@@ -12,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QGroupBox, QLineEdit, QPl
 
 from serial import SerialException
 
-from serialscope.logging import RawLogger, RawLoggerError
+from serialscope.logging import RecordingSession, RecordingSessionError, SessionConfig
 from serialscope.serial import SerialConnection, SerialPortInfo
 from serialscope.ui.main_window import MainWindow, format_byte_count
 
@@ -478,10 +480,9 @@ def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
     tmp_path: Path,
 ) -> None:
     application = QApplication.instance() or QApplication([])
-    path = tmp_path / "session.log"
     monkeypatch.setattr(
-        "serialscope.ui.main_window.QFileDialog.getSaveFileName",
-        lambda *_args: (str(path), ""),
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
     )
     serial_port = Mock(is_open=True, port="COM4")
     connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
@@ -498,6 +499,7 @@ def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
         reader_factory=reader_factory,
     )
     window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Test run")
     window.side_panel.logging_button.click()
 
     readers[0].bytes_received.emit(b"valid\n")
@@ -505,13 +507,14 @@ def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
 
     assert window.side_panel.logging_status_label.text() == "Recording"
     assert window.side_panel.logging_status_dot.property("recordingState") == "active"
-    assert window.side_panel.logging_filename_label.text() == "session.log"
+    assert window.side_panel.logging_filename_label.text() == "Test run"
     assert window.side_panel.logged_bytes_label.text() == "Logged: 14 B"
     assert window.terminal.output.toPlainText() == "valid\n�\x00binary"
 
     window.side_panel.logging_button.click()
 
-    assert path.read_bytes() == b"valid\n\xff\x00binary"
+    session_directory = next(tmp_path.iterdir())
+    assert (session_directory / "raw.log").read_bytes() == b"valid\n\xff\x00binary"
     assert window.side_panel.logging_status_label.text() == "Not recording"
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert connection.is_connected
@@ -522,10 +525,9 @@ def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
 
 def test_connection_loss_stops_and_preserves_log(monkeypatch, tmp_path: Path) -> None:
     application = QApplication.instance() or QApplication([])
-    path = tmp_path / "lost-device.log"
     monkeypatch.setattr(
-        "serialscope.ui.main_window.QFileDialog.getSaveFileName",
-        lambda *_args: (str(path), ""),
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
     )
     monkeypatch.setattr(MainWindow, "_show_connection_error", lambda *_args: None)
     serial_port = Mock(is_open=True, port="COM4")
@@ -548,7 +550,10 @@ def test_connection_loss_stops_and_preserves_log(monkeypatch, tmp_path: Path) ->
 
     readers[0].failed.emit("device removed")
 
-    assert path.read_bytes() == b"preserved"
+    session_directory = next(tmp_path.iterdir())
+    assert (session_directory / "raw.log").read_bytes() == b"preserved"
+    metadata = json.loads((session_directory / "session.json").read_text("utf-8"))
+    assert metadata["end_reason"] == "serial_disconnected"
     assert window.side_panel.logging_status_label.text() == "Not recording"
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert not window.side_panel.logging_button.isEnabled()
@@ -560,10 +565,9 @@ def test_connection_loss_stops_and_preserves_log(monkeypatch, tmp_path: Path) ->
 
 def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> None:
     application = QApplication.instance() or QApplication([])
-    path = tmp_path / "shutdown.log"
     monkeypatch.setattr(
-        "serialscope.ui.main_window.QFileDialog.getSaveFileName",
-        lambda *_args: (str(path), ""),
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
     )
     serial_port = Mock(is_open=True, port="COM4")
     connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
@@ -580,7 +584,10 @@ def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> 
     window.close()
     application.processEvents()
 
-    assert path.read_bytes() == b"before close"
+    session_directory = next(tmp_path.iterdir())
+    assert (session_directory / "raw.log").read_bytes() == b"before close"
+    metadata = json.loads((session_directory / "session.json").read_text("utf-8"))
+    assert metadata["end_reason"] == "application_closed"
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert reader.stopped
     assert not connection.is_connected
@@ -591,16 +598,17 @@ def test_logging_write_failure_keeps_serial_and_terminal_usable(
     tmp_path: Path,
 ) -> None:
     application = QApplication.instance() or QApplication([])
-    path = tmp_path / "failure.log"
-    logger = RawLogger()
-    logger.start(path)
+    session = RecordingSession()
+    session.start(
+        tmp_path,
+        SessionConfig("Failure", "COM4", 115200, "LF"),
+    )
     errors: list[str] = []
 
     def fail_write(_data: bytes) -> int:
-        logger._close_after_failure()
-        raise RawLoggerError("Could not write log file: disk unavailable")
+        raise RecordingSessionError("Could not write log file: disk unavailable")
 
-    monkeypatch.setattr(logger, "write", fail_write)
+    monkeypatch.setattr(session, "write", fail_write)
     monkeypatch.setattr(
         MainWindow,
         "_show_logging_error",
@@ -612,7 +620,7 @@ def test_logging_write_failure_keeps_serial_and_terminal_usable(
         port_scanner=lambda: [SerialPortInfo("COM4")],
         serial_connection=connection,
         reader_factory=FakeReader,
-        raw_logger=logger,
+        recording_session=session,
     )
     window.connection_bar.connect_button.click()
 
@@ -623,6 +631,50 @@ def test_logging_write_failure_keeps_serial_and_terminal_usable(
     assert window.side_panel.logging_status_label.text() == "Not recording"
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert errors == ["Could not write log file: disk unavailable"]
+    metadata = json.loads(
+        (session.directory / "session.json").read_text("utf-8")
+    )
+    assert metadata["end_reason"] == "logging_error"
+
+    window.close()
+    application.processEvents()
+
+
+def test_recording_elapsed_timer_updates_ui(monkeypatch, tmp_path: Path) -> None:
+    application = QApplication.instance() or QApplication([])
+    current_time = datetime(2026, 8, 12, 18, 15, tzinfo=timezone.utc)
+
+    def clock() -> datetime:
+        return current_time
+
+    session = RecordingSession(clock=clock)
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+        recording_session=session,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Timed test")
+    window.side_panel.logging_button.click()
+
+    assert window._recording_timer.isActive()
+    assert window.side_panel.recording_elapsed_label.text() == "00:00:00"
+    current_time += timedelta(seconds=161)
+    window._recording_timer.timeout.emit()
+
+    assert window.side_panel.recording_elapsed_label.text() == "00:02:41"
+    assert window.side_panel.logging_status_dot.property("recordingState") == "active"
+
+    window.side_panel.logging_button.click()
+    assert not window._recording_timer.isActive()
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
 
     window.close()
     application.processEvents()

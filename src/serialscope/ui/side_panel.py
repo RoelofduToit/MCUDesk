@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -53,6 +54,7 @@ class SidePanel(QFrame):
         group.setObjectName("channelsSection")
         layout = QVBoxLayout(group)
         layout.setContentsMargins(12, 16, 12, 12)
+
         layout.addWidget(QLabel("No channels configured"))
         add_button = QPushButton("Add channel")
         add_button.setObjectName("addChannelButton")
@@ -64,6 +66,14 @@ class SidePanel(QFrame):
         group.setObjectName("sessionSection")
         layout = QVBoxLayout(group)
         layout.setContentsMargins(12, 16, 12, 12)
+
+        session_name_label = QLabel("Session name")
+        layout.addWidget(session_name_label)
+
+        self.session_name_input = QLineEdit()
+        self.session_name_input.setObjectName("sessionNameInput")
+        self.session_name_input.setPlaceholderText("Optional")
+        layout.addWidget(self.session_name_input)
 
         status_row = QWidget()
         status_layout = QHBoxLayout(status_row)
@@ -86,6 +96,10 @@ class SidePanel(QFrame):
         self.logging_filename_label.setWordWrap(True)
         layout.addWidget(self.logging_filename_label)
 
+        self.recording_elapsed_label = QLabel("00:00:00")
+        self.recording_elapsed_label.setObjectName("recordingElapsedLabel")
+        layout.addWidget(self.recording_elapsed_label)
+
         self.logged_bytes_label = QLabel("Logged: 0 B")
         self.logged_bytes_label.setObjectName("loggedBytesLabel")
         layout.addWidget(self.logged_bytes_label)
@@ -105,6 +119,7 @@ class SidePanel(QFrame):
         recording: bool,
         filename: str = "",
         byte_count: str = "0 B",
+        elapsed: str = "00:00:00",
     ) -> None:
         """Present raw logging state without performing file operations."""
         self.logging_status_label.setText("Recording" if recording else "Not recording")
@@ -113,5 +128,7 @@ class SidePanel(QFrame):
         self.logging_status_dot.style().unpolish(self.logging_status_dot)
         self.logging_status_dot.style().polish(self.logging_status_dot)
         self.logging_filename_label.setText(filename)
+        self.recording_elapsed_label.setText(elapsed)
         self.logged_bytes_label.setText(f"Logged: {byte_count}")
         self.logging_button.setText("Stop Logging" if recording else "Start Logging")
+        self.session_name_input.setEnabled(not recording)

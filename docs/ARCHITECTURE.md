@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 and v0.1 established the terminal foundation, discovery, connection, RX/TX, and presentation behavior. Version 0.2.1 adds manual raw RX logging. It does not interpret serial data.
+Phase 0 and v0.1 established the terminal foundation, discovery, connection, RX/TX, and presentation behavior. Version 0.2.1 added raw RX logging, and version 0.2.2 wraps it in a small recording-session lifecycle. It does not interpret serial data.
 
 ## Current structure
 
@@ -14,6 +14,7 @@ Phase 0 and v0.1 established the terminal foundation, discovery, connection, RX/
 - `src/serialscope/serial/connection.py` owns the live PySerial object and its open/close lifecycle.
 - `src/serialscope/serial/reader.py` runs bounded serial reads in a dedicated `QThread` and emits raw byte chunks.
 - `src/serialscope/logging/raw_logger.py` owns a buffered binary log file and writes exact RX byte chunks.
+- `src/serialscope/logging/session.py` owns session directories, timing, metadata, and end-reason lifecycle around `RawLogger`.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
@@ -35,7 +36,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.2.1 boundaries
+## Version 0.2.2 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -49,7 +50,11 @@ For transmit, `TerminalWidget` converts command text and the selected line endin
 
 When raw logging is active, `MainWindow` fans each received `bytes` chunk into two independent consumers: `TerminalWidget` decodes it for display, while `RawLogger` writes it directly to a buffered binary file. The logger never receives decoded text and adds no timestamps, delimiters, or metadata. It owns the file handle and logged-byte count. Manual stop, connection loss, and application shutdown flush and close it before serial teardown.
 
-Version 0.2.1 intentionally includes no parsed/automatic logging, timestamps in raw files, export, databases, graphs, parsing, profiles, reconnect behavior, or other protocol features.
+Each `RecordingSession` creates a collision-safe directory containing `raw.log` and `session.json`. It records the application version, optional session name, local and UTC times, serial configuration, platform, elapsed duration, logged and connection RX totals, and a lifecycle end reason. Metadata is human-readable JSON and is replaced atomically. `RawLogger` remains concerned only with exact raw bytes.
+
+The UI timer updates elapsed-time presentation approximately once per second. It neither writes metadata nor touches the raw stream. Normal stop, serial disconnect/error, logging failure, and application shutdown finalize metadata with distinct end reasons.
+
+Version 0.2.2 intentionally includes no parsed/automatic logging, timestamps in raw files, export, databases, graphs, parsing, profiles, reconnect behavior, or other protocol features.
 
 ## Planned technology direction
 

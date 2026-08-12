@@ -1,10 +1,9 @@
 """The SerialScope main window and top-level UI composition."""
 
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -17,7 +16,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from serialscope.logging import RawLogger, RawLoggerError
+from serialscope.logging import (
+    RawLogger,
+    RecordingSession,
+    RecordingSessionError,
+    SessionConfig,
+)
 from serialscope.serial import (
     SerialConnection,
     SerialConnectionError,
@@ -39,6 +43,13 @@ def format_byte_count(byte_count: int) -> str:
     return f"{byte_count / 1_000_000:.1f} MB"
 
 
+def format_elapsed_time(elapsed_seconds: int) -> str:
+    """Format elapsed seconds as hours, minutes, and seconds."""
+    hours, remainder = divmod(elapsed_seconds, 3_600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 class MainWindow(QMainWindow):
     """Top-level application window."""
 
@@ -48,15 +59,19 @@ class MainWindow(QMainWindow):
         serial_connection: SerialConnection | None = None,
         reader_factory: Callable[[SerialConnection], SerialReader] | None = None,
         raw_logger: RawLogger | None = None,
+        recording_session: RecordingSession | None = None,
     ) -> None:
         super().__init__()
         self._port_scanner = port_scanner or discover_recommended_serial_ports
         self._serial_connection = serial_connection or SerialConnection()
         self._reader_factory = reader_factory or SerialReader
         self._serial_reader: SerialReader | None = None
-        self._raw_logger = raw_logger or RawLogger()
+        self._recording_session = recording_session or RecordingSession(raw_logger)
         self._rx_bytes = 0
         self._tx_bytes = 0
+        self._recording_timer = QTimer(self)
+        self._recording_timer.setInterval(1_000)
+        self._recording_timer.timeout.connect(self._update_recording_presentation)
         self.setObjectName("mainWindow")
         self.setWindowTitle("SerialScope")
         self.setMinimumSize(800, 520)
@@ -142,19 +157,19 @@ class MainWindow(QMainWindow):
     def _handle_received_bytes(self, data: bytes) -> None:
         self._rx_bytes += len(data)
         self._update_counter_labels()
-        if self._raw_logger.is_recording:
+        if self._recording_session.is_recording:
             try:
-                self._raw_logger.write(data)
-            except RawLoggerError as error:
-                self._update_logging_presentation()
+                self._recording_session.write(data)
+            except RecordingSessionError as error:
+                self._stop_recording("logging_error", show_error=False)
                 self.side_panel.set_connected(self._serial_connection.is_connected)
                 self._show_logging_error(str(error))
             else:
-                self._update_logging_presentation()
+                self._update_recording_presentation()
         self.terminal.append_bytes(data)
 
     def _handle_reader_failure(self, message: str) -> None:
-        self._return_to_disconnected_state()
+        self._return_to_disconnected_state("serial_disconnected")
         self.connection_bar.set_connection_state("error")
         self._show_connection_error(message)
 
@@ -167,7 +182,7 @@ class MainWindow(QMainWindow):
         try:
             written = self._serial_connection.write(data)
         except SerialConnectionError as error:
-            self._return_to_disconnected_state()
+            self._return_to_disconnected_state("serial_disconnected")
             self.connection_bar.set_connection_state("error")
             self._show_connection_error(str(error))
             return
@@ -187,56 +202,64 @@ class MainWindow(QMainWindow):
         self.tx_counter.setText(f"TX: {format_byte_count(self._tx_bytes)}")
 
     def toggle_logging(self) -> None:
-        """Start or stop raw RX logging."""
-        if self._raw_logger.is_recording:
-            self._stop_logging()
+        """Start or stop a raw RX recording session."""
+        if self._recording_session.is_recording:
+            self._stop_recording("normal")
         else:
-            self._start_logging()
+            self._start_recording()
 
-    def _start_logging(self) -> None:
+    def _start_recording(self) -> None:
         if not self._serial_connection.is_connected:
             return
 
-        suggested_name = datetime.now().strftime("serial_%Y-%m-%d_%H%M.log")
-        selected_path, _ = QFileDialog.getSaveFileName(
+        selected_directory = QFileDialog.getExistingDirectory(
             self,
-            "Save raw serial log",
-            suggested_name,
-            "Raw serial logs (*.log);;All files (*)",
+            "Choose recording session location",
         )
-        if not selected_path:
+        if not selected_directory:
             return
 
+        port = self.connection_bar.selected_port
+        if port is None:
+            return
+        config = SessionConfig(
+            session_name=self.side_panel.session_name_input.text().strip(),
+            device=port.device,
+            baud_rate=int(self.connection_bar.baud_combo.currentText()),
+            line_ending=self.terminal.line_ending_combo.currentText(),
+        )
         try:
-            self._raw_logger.start(Path(selected_path))
-        except RawLoggerError as error:
-            self._update_logging_presentation()
+            self._recording_session.start(Path(selected_directory), config)
+        except RecordingSessionError as error:
+            self._update_recording_presentation()
             self._show_logging_error(str(error))
             return
 
-        self._update_logging_presentation()
+        self._recording_timer.start()
+        self._update_recording_presentation()
         self.side_panel.set_connected(True)
 
-    def _stop_logging(self, show_error: bool = True) -> None:
+    def _stop_recording(self, end_reason: str, show_error: bool = True) -> None:
         try:
-            self._raw_logger.stop()
-        except RawLoggerError as error:
+            self._recording_session.stop(end_reason, self._rx_bytes)
+        except RecordingSessionError as error:
             if show_error:
                 self._show_logging_error(str(error))
         finally:
-            self._update_logging_presentation()
+            self._recording_timer.stop()
+            self._update_recording_presentation()
             self.side_panel.set_connected(self._serial_connection.is_connected)
 
-    def _update_logging_presentation(self) -> None:
-        path = self._raw_logger.path
+    def _update_recording_presentation(self) -> None:
         self.side_panel.set_logging_state(
-            self._raw_logger.is_recording,
-            path.name if path is not None else "",
-            format_byte_count(self._raw_logger.bytes_written),
+            self._recording_session.is_recording,
+            self._recording_session.display_name,
+            format_byte_count(self._recording_session.bytes_written),
+            format_elapsed_time(self._recording_session.elapsed_seconds),
         )
 
-    def _return_to_disconnected_state(self) -> None:
-        self._stop_logging()
+    def _return_to_disconnected_state(self, end_reason: str) -> None:
+        self._stop_recording(end_reason)
         self._stop_serial_reader()
         try:
             self._serial_connection.disconnect()
@@ -247,7 +270,7 @@ class MainWindow(QMainWindow):
         self.side_panel.set_connected(False)
 
     def _disconnect_serial_port(self) -> None:
-        self._stop_logging()
+        self._stop_recording("serial_disconnected")
         self._stop_serial_reader()
         try:
             self._serial_connection.disconnect()
@@ -270,7 +293,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Release an open serial port before the window is destroyed."""
-        self._stop_logging(show_error=False)
+        self._stop_recording("application_closed", show_error=False)
         self._stop_serial_reader()
         try:
             self._serial_connection.disconnect()
