@@ -1,6 +1,7 @@
 """Placeholder controls for the side panel."""
 
 from PySide6.QtWidgets import (
+    QComboBox,
     QFormLayout,
     QFrame,
     QGroupBox,
@@ -76,6 +77,16 @@ class SidePanel(QFrame):
         self.session_name_input.setPlaceholderText("Required")
         layout.addWidget(self.session_name_input)
 
+        delimiter_label = QLabel("Data delimiter")
+        layout.addWidget(delimiter_label)
+
+        self.data_delimiter_combo = QComboBox()
+        self.data_delimiter_combo.setObjectName("dataDelimiterCombo")
+        self.data_delimiter_combo.addItem("Comma (,)", ",")
+        self.data_delimiter_combo.addItem("Semicolon (;)", ";")
+        self.data_delimiter_combo.addItem("Tab", "\t")
+        layout.addWidget(self.data_delimiter_combo)
+
         status_row = QWidget()
         status_layout = QHBoxLayout(status_row)
         status_layout.setContentsMargins(0, 0, 0, 0)
@@ -134,6 +145,7 @@ class SidePanel(QFrame):
         self.logged_bytes_label.setText(f"Logged: {byte_count}")
         self.logging_button.setText("Stop Logging" if recording else "Start Logging")
         self.session_name_input.setEnabled(not recording)
+        self.data_delimiter_combo.setEnabled(not recording)
         self._update_logging_button_enabled()
 
     def _update_logging_button_enabled(self) -> None:

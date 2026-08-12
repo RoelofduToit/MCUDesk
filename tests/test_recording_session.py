@@ -9,8 +9,10 @@ from serialscope.logging import (
     RecordingSession,
     RecordingSessionError,
     SessionConfig,
+    StructuredCsvLogger,
     sanitize_session_name,
 )
+from serialscope.parsing import ChannelUpdate
 
 
 class MutableClock:
@@ -96,18 +98,28 @@ def test_session_writes_exact_raw_data_and_complete_metadata(tmp_path: Path) -> 
         tzinfo=timezone(timedelta(hours=2)),
     )
     clock = MutableClock(start)
-    session = RecordingSession(clock=clock)
+    monotonic_values = iter((50.0, 50.25))
+    session = RecordingSession(
+        clock=clock,
+        structured_logger=StructuredCsvLogger(
+            clock=lambda: next(monotonic_values)
+        ),
+    )
     config = _config("Reactor Test #3 - Hot Run")
 
     directory = session.start(tmp_path, config)
     start_metadata = json.loads((directory / "session.json").read_text("utf-8"))
     session.write(b"text\n")
     session.write(b"\xff\x00binary")
+    session.write_structured(ChannelUpdate(("TC1", "TC2"), (100.4, 98.7)))
     clock.current += timedelta(seconds=161.5)
     session.stop("normal", 42)
 
     metadata = json.loads((directory / "session.json").read_text("utf-8"))
     assert (directory / "raw.log").read_bytes() == b"text\n\xff\x00binary"
+    assert (directory / "data.csv").read_text(encoding="utf-8") == (
+        "elapsed_s,TC1,TC2\n0.250,100.4,98.7\n"
+    )
     assert start_metadata["serialscope_version"] == __version__
     assert start_metadata["session_name"] == "Reactor Test #3 - Hot Run"
     assert start_metadata["recording_start_local"] == start.isoformat()
@@ -121,11 +133,15 @@ def test_session_writes_exact_raw_data_and_complete_metadata(tmp_path: Path) -> 
         "line_ending": "LF",
     }
     assert start_metadata["status"] == "recording"
+    assert start_metadata["structured_data_file"] == "data.csv"
     assert metadata["status"] == "completed"
     assert metadata["end_reason"] == "normal"
     assert metadata["elapsed_seconds"] == 161.5
     assert metadata["logged_byte_count"] == 13
     assert metadata["total_rx_byte_count"] == 42
+    assert metadata["structured_row_count"] == 1
+    assert metadata["structured_columns"] == ["TC1", "TC2"]
+    assert metadata["structured_ignored_channels"] == []
     assert metadata["recording_end_local"] == clock.current.isoformat()
 
 
@@ -139,3 +155,20 @@ def test_disconnect_end_reason_is_recorded(tmp_path: Path) -> None:
     metadata = json.loads((directory / "session.json").read_text("utf-8"))
     assert metadata["end_reason"] == "serial_disconnected"
     assert metadata["status"] == "completed"
+
+
+def test_selected_structured_delimiter_is_stored_in_metadata(tmp_path: Path) -> None:
+    session = RecordingSession()
+    config = SessionConfig(
+        session_name="Tab data",
+        device="COM4",
+        baud_rate=115200,
+        line_ending="LF",
+        structured_data_delimiter="\t",
+    )
+
+    directory = session.start(tmp_path, config)
+    session.stop("normal", 0)
+
+    metadata = json.loads((directory / "session.json").read_text("utf-8"))
+    assert metadata["structured_data_delimiter"] == "\t"

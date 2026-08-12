@@ -1,5 +1,6 @@
-import os
+import csv
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, call
@@ -78,6 +79,8 @@ def test_main_window_constructs_ui_shell() -> None:
     assert window.findChild(QGroupBox, "channelsSection") is not None
     assert window.findChild(QGroupBox, "sessionSection") is not None
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    assert window.side_panel.data_delimiter_combo.currentText() == "Comma (,)"
+    assert window.side_panel.data_delimiter_combo.currentData() == ","
     assert window.rx_counter.text() == "RX: 0 B"
     assert window.tx_counter.text() == "TX: 0 B"
 
@@ -726,6 +729,7 @@ def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
     window.connection_bar.connect_button.click()
     window.side_panel.session_name_input.setText("Test run")
     window.side_panel.logging_button.click()
+    assert not window.side_panel.data_delimiter_combo.isEnabled()
 
     readers[0].bytes_received.emit(b"valid\n")
     readers[0].bytes_received.emit(b"\xff\x00binary")
@@ -743,7 +747,51 @@ def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
     assert window.side_panel.logging_status_label.text() == "Not recording"
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert window.side_panel.session_name_input.text() == "Test run"
+    assert window.side_panel.data_delimiter_combo.isEnabled()
     assert connection.is_connected
+
+    window.close()
+    application.processEvents()
+
+
+def test_recording_delimiter_is_captured_and_cannot_change_active_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Semicolon test")
+    window.side_panel.data_delimiter_combo.setCurrentText("Semicolon (;)")
+    window.side_panel.logging_button.click()
+
+    assert not window.side_panel.data_delimiter_combo.isEnabled()
+    window.side_panel.data_delimiter_combo.setCurrentText("Tab")
+    reader.bytes_received.emit(b"A,B\n1,2\n")
+    window.side_panel.logging_button.click()
+
+    session_directory = next(tmp_path.iterdir())
+    with (session_directory / "data.csv").open(
+        encoding="utf-8", newline=""
+    ) as file:
+        rows = list(csv.reader(file, delimiter=";"))
+    metadata = json.loads((session_directory / "session.json").read_text("utf-8"))
+    assert rows[0] == ["elapsed_s", "A", "B"]
+    assert rows[1][1:] == ["1", "2"]
+    assert metadata["structured_data_delimiter"] == ";"
+    assert (session_directory / "raw.log").read_bytes() == b"A,B\n1,2\n"
+    assert window.side_panel.data_delimiter_combo.isEnabled()
 
     window.close()
     application.processEvents()
@@ -773,12 +821,17 @@ def test_connection_loss_stops_and_preserves_log(monkeypatch, tmp_path: Path) ->
     window.connection_bar.connect_button.click()
     window.side_panel.session_name_input.setText("Disconnect test")
     window.side_panel.logging_button.click()
-    readers[0].bytes_received.emit(b"preserved")
+    raw_data = b"A,B\n1,2\n"
+    readers[0].bytes_received.emit(raw_data)
 
     readers[0].failed.emit("device removed")
 
     session_directory = next(tmp_path.iterdir())
-    assert (session_directory / "raw.log").read_bytes() == b"preserved"
+    assert (session_directory / "raw.log").read_bytes() == raw_data
+    with (session_directory / "data.csv").open(encoding="utf-8", newline="") as file:
+        rows = list(csv.reader(file))
+    assert rows[0] == ["elapsed_s", "A", "B"]
+    assert rows[1][1:] == ["1", "2"]
     metadata = json.loads((session_directory / "session.json").read_text("utf-8"))
     assert metadata["end_reason"] == "serial_disconnected"
     assert window.side_panel.logging_status_label.text() == "Not recording"
@@ -807,13 +860,18 @@ def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> 
     window.connection_bar.connect_button.click()
     window.side_panel.session_name_input.setText("Shutdown test")
     window.side_panel.logging_button.click()
-    reader.bytes_received.emit(b"before close")
+    raw_data = b'{"A":1,"B":2}\n'
+    reader.bytes_received.emit(raw_data)
 
     window.close()
     application.processEvents()
 
     session_directory = next(tmp_path.iterdir())
-    assert (session_directory / "raw.log").read_bytes() == b"before close"
+    assert (session_directory / "raw.log").read_bytes() == raw_data
+    with (session_directory / "data.csv").open(encoding="utf-8", newline="") as file:
+        rows = list(csv.reader(file))
+    assert rows[0] == ["elapsed_s", "A", "B"]
+    assert rows[1][1:] == ["1", "2"]
     metadata = json.loads((session_directory / "session.json").read_text("utf-8"))
     assert metadata["end_reason"] == "application_closed"
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
@@ -1196,6 +1254,99 @@ def test_terminal_control_filter_does_not_change_raw_log_or_rx_count(
     assert window.terminal.output.toPlainText() == (
         '{"TC2":99.19,"TC3":106.16}\n'
     )
+
+    window.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("raw_data", "expected_header", "expected_values"),
+    [
+        (
+            b"A,B\n1,2.5\n3,4.5\n",
+            ["elapsed_s", "A", "B"],
+            [["1", "2.5"], ["3", "4.5"]],
+        ),
+        (
+            b"TEMP=25.4,PRESSURE=2.51\nTEMP=25.7,PRESSURE=2.48\n",
+            ["elapsed_s", "TEMP", "PRESSURE"],
+            [["25.4", "2.51"], ["25.7", "2.48"]],
+        ),
+        (
+            b'{"TC1":100.4,"TC2":98.7}\n{"TC1":101.2,"TC2":99.1}\n',
+            ["elapsed_s", "TC1", "TC2"],
+            [["100.4", "98.7"], ["101.2", "99.1"]],
+        ),
+    ],
+)
+def test_recording_writes_parser_updates_to_structured_csv(
+    monkeypatch,
+    tmp_path: Path,
+    raw_data: bytes,
+    expected_header: list[str],
+    expected_values: list[list[str]],
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Structured parser test")
+    window.side_panel.logging_button.click()
+
+    reader.bytes_received.emit(raw_data)
+    window.side_panel.logging_button.click()
+
+    session_directory = next(tmp_path.iterdir())
+    with (session_directory / "data.csv").open(encoding="utf-8", newline="") as file:
+        rows = list(csv.reader(file))
+    assert rows[0] == expected_header
+    assert [row[1:] for row in rows[1:]] == expected_values
+    assert len(rows) == 3
+    assert (session_directory / "raw.log").read_bytes() == raw_data
+
+    window.close()
+    application.processEvents()
+
+
+def test_malformed_recorded_input_stays_raw_without_structured_rows(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Malformed input")
+    window.side_panel.logging_button.click()
+    raw_data = b'{"broken":1,\nnot,structured\n\xff\x00\n'
+
+    reader.bytes_received.emit(raw_data)
+    window.side_panel.logging_button.click()
+
+    session_directory = next(tmp_path.iterdir())
+    assert (session_directory / "raw.log").read_bytes() == raw_data
+    with (session_directory / "data.csv").open(encoding="utf-8", newline="") as file:
+        assert list(csv.reader(file)) == [["elapsed_s"]]
 
     window.close()
     application.processEvents()

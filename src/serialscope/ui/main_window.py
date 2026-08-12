@@ -185,6 +185,15 @@ class MainWindow(QMainWindow):
             self.side_panel.channels_widget.update_channels(update)
             self.data_widget.update_channels(update)
             self.graphs_widget.update_channels(update)
+            if self._recording_session.is_recording:
+                try:
+                    self._recording_session.write_structured(update)
+                except RecordingSessionError as error:
+                    self._stop_recording("logging_error", show_error=False)
+                    self.side_panel.set_connected(
+                        self._serial_connection.is_connected
+                    )
+                    self._show_logging_error(str(error))
         self.terminal.append_bytes(data)
 
     def _handle_reader_failure(self, message: str) -> None:
@@ -263,6 +272,9 @@ class MainWindow(QMainWindow):
             device=port.device,
             baud_rate=int(self.connection_bar.baud_combo.currentText()),
             line_ending=self.terminal.line_ending_combo.currentText(),
+            structured_data_delimiter=(
+                self.side_panel.data_delimiter_combo.currentData()
+            ),
         )
         try:
             self._recording_session.start(Path(selected_directory), config)

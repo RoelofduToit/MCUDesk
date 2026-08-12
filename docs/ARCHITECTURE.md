@@ -14,7 +14,8 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/serial/connection.py` owns the live PySerial object and its open/close lifecycle.
 - `src/serialscope/serial/reader.py` runs bounded serial reads in a dedicated `QThread` and emits raw byte chunks.
 - `src/serialscope/logging/raw_logger.py` owns a buffered binary log file and writes exact RX byte chunks.
-- `src/serialscope/logging/session.py` owns session directories, timing, metadata, and end-reason lifecycle around `RawLogger`.
+- `src/serialscope/logging/structured_csv_logger.py` writes parser-produced numeric samples to rectangular UTF-8 CSV.
+- `src/serialscope/logging/session.py` owns session directories, timing, metadata, and end-reason lifecycle around both loggers.
 - `src/serialscope/parsing/csv_parser.py` incrementally detects simple CSV headers and emits numeric channel updates without Qt dependencies.
 - `src/serialscope/parsing/key_value_parser.py` incrementally parses comma-separated numeric `key=value` lines.
 - `src/serialscope/parsing/json_parser.py` incrementally parses top-level numeric values from one JSON object per line.
@@ -45,7 +46,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.4.3 boundaries
+## Version 0.5.1 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -59,7 +60,9 @@ For transmit, `TerminalWidget` converts command text and the selected line endin
 
 When raw logging is active, `MainWindow` fans each received `bytes` chunk into two independent consumers: `TerminalWidget` decodes it for display, while `RawLogger` writes it directly to a buffered binary file. The logger never receives decoded text and adds no timestamps, delimiters, or metadata. It owns the file handle and logged-byte count. Manual stop, connection loss, and application shutdown flush and close it before serial teardown.
 
-Each `RecordingSession` creates a collision-safe directory containing `raw.log` and `session.json`. It records the application version, required user-supplied session name, local and UTC times, serial configuration, platform, elapsed duration, logged and connection RX totals, and a lifecycle end reason. Metadata is human-readable JSON and is replaced atomically. `RawLogger` remains concerned only with exact raw bytes.
+Each `RecordingSession` creates a collision-safe directory containing `raw.log`, `data.csv`, and `session.json`. It records the application version, required user-supplied session name, local and UTC times, serial configuration, platform, elapsed duration, logged and connection RX totals, structured row count/schema details, and a lifecycle end reason. Metadata is human-readable JSON and is replaced atomically. `RawLogger` remains concerned only with exact raw bytes.
+
+`StructuredCsvLogger` receives the same immutable `ChannelUpdate` objects already sent to the channel presentations; it never parses raw input. Its monotonic clock starts with the recording, and each accepted parser sample becomes one row with an `elapsed_s` value formatted to milliseconds. The session captures one comma, semicolon, or tab delimiter at start, records it in metadata, and keeps it fixed until close. This output choice has no relationship to input parser selection. The file starts with an `elapsed_s`-only header; before any rows exist, the first structured sample safely establishes the complete stable channel header. Missing known channels produce empty cells. Later unknown channels are omitted to keep the live file rectangular and are listed in final session metadata rather than triggering fragile in-place header rewrites. If no structured sample arrives, `data.csv` remains a valid header-only file.
 
 The UI timer updates elapsed-time presentation approximately once per second. It neither writes metadata nor touches the raw stream. Normal stop, serial disconnect/error, logging failure, and application shutdown finalize metadata with distinct end reasons.
 
@@ -79,9 +82,9 @@ The central horizontal splitter contains a `QTabWidget` and the unchanged compac
 
 The visible X range can show the latest 10, 30, 60, 300, 600, 1,800, or 3,600 seconds without changing retained history or channel selections. Stored and plotted X values remain monotonic elapsed seconds, while a dedicated PyQtGraph axis formats ticks as seconds, minutes, or hours/minutes and disables SI prefixes. Pause freezes the displayed curves while structured updates continue entering history; Resume immediately redraws the latest window. Clear resets graph samples and elapsed origin, empties existing curves, and retains channel selectors and selections so subsequent updates begin a fresh graph. None of these controls affects serial transport, parsing, Data/sidebar values, counters, or logging.
 
-Disconnect leaves graph history and visible series intact. A subsequent successful connection resets graph history, selectors, and curves before new data arrives, preventing data from separate devices or sessions from being mixed. Raw bytes, logging, counters, parser input, and session metadata remain independent.
+Disconnect leaves graph history and visible series intact. A subsequent successful connection resets graph history, selectors, and curves before new data arrives, preventing data from separate devices or sessions from being mixed. Manual stop, disconnect/error, and application shutdown flush and close both session data files before metadata finalization. Malformed parser input continues into `raw.log` but produces no `data.csv` row.
 
-Version 0.4.3 intentionally includes no graph export, cursors, statistics, multiple panes or axes, unit grouping, calculated channels, themes, dashboards, profiles, or protocol features.
+Version 0.5.1 intentionally includes no schema rewriting, structured export formats beyond the live session CSV, graph export, cursors, statistics, multiple panes or axes, unit grouping, calculated channels, themes, dashboards, profiles, or protocol features.
 
 ## Planned technology direction
 

@@ -7,6 +7,10 @@ from serialscope.logging.session import (
     SessionConfig,
     sanitize_session_name,
 )
+from serialscope.logging.structured_csv_logger import (
+    StructuredCsvLogger,
+    StructuredCsvLoggerError,
+)
 
 __all__ = [
     "RawLogger",
@@ -14,5 +18,7 @@ __all__ = [
     "RecordingSession",
     "RecordingSessionError",
     "SessionConfig",
+    "StructuredCsvLogger",
+    "StructuredCsvLoggerError",
     "sanitize_session_name",
 ]

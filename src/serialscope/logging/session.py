@@ -10,6 +10,11 @@ import re
 
 from serialscope import __version__
 from serialscope.logging.raw_logger import RawLogger, RawLoggerError
+from serialscope.logging.structured_csv_logger import (
+    StructuredCsvLogger,
+    StructuredCsvLoggerError,
+)
+from serialscope.parsing import ChannelUpdate
 
 
 class RecordingSessionError(Exception):
@@ -27,6 +32,7 @@ class SessionConfig:
     data_bits: int = 8
     parity: str = "none"
     stop_bits: int = 1
+    structured_data_delimiter: str = ","
 
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
@@ -57,9 +63,11 @@ class RecordingSession:
     def __init__(
         self,
         raw_logger: RawLogger | None = None,
+        structured_logger: StructuredCsvLogger | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._raw_logger = raw_logger or RawLogger()
+        self._structured_logger = structured_logger or StructuredCsvLogger()
         self._clock = clock or (lambda: datetime.now().astimezone())
         self._directory: Path | None = None
         self._config: SessionConfig | None = None
@@ -110,7 +118,15 @@ class RecordingSession:
                 f"{folder_base}_{timestamp}",
             )
             self._raw_logger.start(directory / "raw.log")
-        except (OSError, RawLoggerError) as error:
+            self._structured_logger.start(
+                directory / "data.csv",
+                delimiter=config.structured_data_delimiter,
+            )
+        except (OSError, RawLoggerError, StructuredCsvLoggerError) as error:
+            try:
+                self._raw_logger.stop()
+            except RawLoggerError:
+                pass
             raise RecordingSessionError(f"Could not start recording session: {error}") from error
 
         self._directory = directory
@@ -130,6 +146,11 @@ class RecordingSession:
                 "line_ending": config.line_ending,
             },
             "platform": platform.system(),
+            "structured_data_file": "data.csv",
+            "structured_data_delimiter": config.structured_data_delimiter,
+            "structured_row_count": 0,
+            "structured_columns": [],
+            "structured_ignored_channels": [],
             "status": "recording",
             "recording_end_local": None,
             "recording_end_utc": None,
@@ -145,6 +166,10 @@ class RecordingSession:
                 self._raw_logger.stop()
             except RawLoggerError:
                 pass
+            try:
+                self._structured_logger.stop()
+            except StructuredCsvLoggerError:
+                pass
             self._clear_active_state()
             raise
         return directory
@@ -158,6 +183,15 @@ class RecordingSession:
         except RawLoggerError as error:
             raise RecordingSessionError(str(error)) from error
 
+    def write_structured(self, update: ChannelUpdate) -> None:
+        """Write one parser-produced structured sample to data.csv."""
+        if not self.is_recording:
+            raise RecordingSessionError("No recording session is active.")
+        try:
+            self._structured_logger.write(update)
+        except StructuredCsvLoggerError as error:
+            raise RecordingSessionError(str(error)) from error
+
     def stop(self, end_reason: str, total_rx_bytes: int) -> None:
         """Close raw data and finalize metadata for the active session."""
         if not self.is_recording:
@@ -166,10 +200,15 @@ class RecordingSession:
         ended_at = self._now()
         started_at = self._started_at
         raw_error: RawLoggerError | None = None
+        structured_error: StructuredCsvLoggerError | None = None
         try:
             self._raw_logger.stop()
         except RawLoggerError as error:
             raw_error = error
+        try:
+            self._structured_logger.stop()
+        except StructuredCsvLoggerError as error:
+            structured_error = error
 
         self._metadata.update(
             {
@@ -181,6 +220,11 @@ class RecordingSession:
                     (ended_at - started_at).total_seconds(),
                 ),
                 "logged_byte_count": self.bytes_written,
+                "structured_row_count": self._structured_logger.row_count,
+                "structured_columns": list(self._structured_logger.columns),
+                "structured_ignored_channels": list(
+                    self._structured_logger.ignored_channels
+                ),
                 "total_rx_byte_count": total_rx_bytes,
                 "end_reason": end_reason,
             }
@@ -197,6 +241,8 @@ class RecordingSession:
             raise metadata_error
         if raw_error is not None:
             raise RecordingSessionError(str(raw_error)) from raw_error
+        if structured_error is not None:
+            raise RecordingSessionError(str(structured_error)) from structured_error
 
     def _now(self) -> datetime:
         value = self._clock()
