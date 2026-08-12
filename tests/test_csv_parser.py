@@ -177,3 +177,10 @@ def test_headerless_detection_supports_partial_chunks_and_crlf() -> None:
     updates = parser.feed(b"\n3,4.5\r\n")
 
     assert updates[0].channels == {"Channel 1": 3, "Channel 2": 4.5}
+
+
+def test_key_value_line_is_not_claimed_as_csv_header() -> None:
+    parser = CsvChannelParser()
+
+    assert parser.feed(b"TEMP=25.4,PRESSURE=2.51,RPM=1487\n") == []
+    assert parser.header is None

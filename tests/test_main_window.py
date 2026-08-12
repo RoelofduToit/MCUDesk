@@ -777,3 +777,62 @@ def test_csv_parsing_does_not_modify_recorded_raw_bytes(
 
     window.close()
     application.processEvents()
+
+
+def test_key_value_rx_updates_and_extends_channels() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+
+    reader.bytes_received.emit(b"TEMP=25.")
+    reader.bytes_received.emit(b"4,PRESSURE=2.51,RPM=1487\r\n")
+    reader.bytes_received.emit(b"TEMP=25.7,PRESSURE=2.48,FLOW=0.42\n")
+
+    assert window.side_panel.channels_widget.value_text("TEMP") == "25.7"
+    assert window.side_panel.channels_widget.value_text("PRESSURE") == "2.48"
+    assert window.side_panel.channels_widget.value_text("RPM") == "1487"
+    assert window.side_panel.channels_widget.value_text("FLOW") == "0.42"
+
+    window.close()
+    application.processEvents()
+
+
+def test_key_value_parsing_leaves_terminal_and_raw_log_exact(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.logging_button.click()
+    raw_data = b"TEMP=-12.4,FLOW=1.25e-3\r\n"
+
+    reader.bytes_received.emit(raw_data)
+    window.side_panel.logging_button.click()
+
+    session_directory = next(tmp_path.iterdir())
+    assert (session_directory / "raw.log").read_bytes() == raw_data
+    assert window.terminal.output.toPlainText() == raw_data.decode().replace("\r\n", "\n")
+    assert window.side_panel.channels_widget.value_text("TEMP") == "-12.4"
+    assert window.side_panel.channels_widget.value_text("FLOW") == "0.00125"
+
+    window.close()
+    application.processEvents()

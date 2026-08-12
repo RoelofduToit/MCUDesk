@@ -22,7 +22,7 @@ from serialscope.logging import (
     RecordingSessionError,
     SessionConfig,
 )
-from serialscope.parsing import CsvChannelParser
+from serialscope.parsing import SerialStreamParser
 from serialscope.serial import (
     SerialConnection,
     SerialConnectionError,
@@ -61,7 +61,7 @@ class MainWindow(QMainWindow):
         reader_factory: Callable[[SerialConnection], SerialReader] | None = None,
         raw_logger: RawLogger | None = None,
         recording_session: RecordingSession | None = None,
-        csv_parser: CsvChannelParser | None = None,
+        stream_parser: SerialStreamParser | None = None,
     ) -> None:
         super().__init__()
         self._port_scanner = port_scanner or discover_recommended_serial_ports
@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         self._reader_factory = reader_factory or SerialReader
         self._serial_reader: SerialReader | None = None
         self._recording_session = recording_session or RecordingSession(raw_logger)
-        self._csv_parser = csv_parser or CsvChannelParser()
+        self._stream_parser = stream_parser or SerialStreamParser()
         self._rx_bytes = 0
         self._tx_bytes = 0
         self._recording_timer = QTimer(self)
@@ -170,7 +170,7 @@ class MainWindow(QMainWindow):
                 self._show_logging_error(str(error))
             else:
                 self._update_recording_presentation()
-        for update in self._csv_parser.feed(data):
+        for update in self._stream_parser.feed(data):
             self.side_panel.channels_widget.update_channels(update)
         self.terminal.append_bytes(data)
 
@@ -204,7 +204,7 @@ class MainWindow(QMainWindow):
         self._update_counter_labels()
 
     def _reset_channels(self) -> None:
-        self._csv_parser.reset()
+        self._stream_parser.reset()
         self.side_panel.channels_widget.reset()
 
     def _update_counter_labels(self) -> None:

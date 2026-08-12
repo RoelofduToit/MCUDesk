@@ -41,8 +41,10 @@ class ChannelsWidget(QWidget):
 
     def update_channels(self, update: ChannelUpdate) -> None:
         """Display a channel update, rebuilding only for a new header."""
-        if tuple(self._value_labels) != update.names:
+        if update.replace_channels and tuple(self._value_labels) != update.names:
             self._rebuild(update.names)
+        elif not update.replace_channels:
+            self._add_missing_channels(update.names)
 
         for name, value in zip(update.names, update.values, strict=True):
             self._value_labels[name].setText(str(value))
@@ -61,7 +63,14 @@ class ChannelsWidget(QWidget):
 
     def _rebuild(self, names: tuple[str, ...]) -> None:
         self.reset()
+        self._add_missing_channels(names)
+        self.empty_label.hide()
+        self.scroll_area.show()
+
+    def _add_missing_channels(self, names: tuple[str, ...]) -> None:
         for name in names:
+            if name in self._value_labels:
+                continue
             value_label = QLabel("—")
             value_label.setObjectName("channelValueLabel")
             self._form.addRow(name, value_label)

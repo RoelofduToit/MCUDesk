@@ -17,6 +17,7 @@ class ChannelUpdate:
 
     names: tuple[str, ...]
     values: tuple[NumericValue, ...]
+    replace_channels: bool = True
 
     @property
     def channels(self) -> dict[str, NumericValue]:
@@ -136,6 +137,7 @@ class CsvChannelParser:
             len(fields) >= 2
             and all(fields)
             and len(set(fields)) == len(fields)
+            and all("=" not in field for field in fields)
             and cls._parse_values(fields) is None
             and all(cls._parse_number(field) is None for field in fields)
         )

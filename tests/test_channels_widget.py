@@ -34,3 +34,20 @@ def test_channels_view_reset_restores_empty_state() -> None:
     assert widget.empty_label.text() == "No channels detected"
     assert widget.scroll_area.isHidden()
     application.processEvents()
+
+
+def test_partial_updates_add_channels_without_removing_missing_channels() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = ChannelsWidget()
+    widget.update_channels(
+        ChannelUpdate(("TEMP", "RPM"), (25.4, 1487), replace_channels=False)
+    )
+
+    widget.update_channels(
+        ChannelUpdate(("TEMP", "FLOW"), (25.7, 0.42), replace_channels=False)
+    )
+
+    assert widget.value_text("TEMP") == "25.7"
+    assert widget.value_text("RPM") == "1487"
+    assert widget.value_text("FLOW") == "0.42"
+    application.processEvents()
