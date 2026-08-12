@@ -40,12 +40,18 @@ QLabel#connectionStatusDot {
 QLabel#connectionStatusDot[connectionState="connected"] {
     color: #3dcc87;
 }
+QLabel#connectionStatusDot[connectionState="error"] {
+    color: #e06c75;
+}
 QLabel#connectionStatusLabel {
     color: #aebdca;
     font-weight: 600;
 }
 QLabel#connectionStatusLabel[connectionState="connected"] {
     color: #8de1b5;
+}
+QLabel#connectionStatusLabel[connectionState="error"] {
+    color: #ed9a9f;
 }
 QComboBox, QLineEdit {
     min-height: 32px;

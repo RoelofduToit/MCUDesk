@@ -22,12 +22,17 @@ LINE_ENDINGS = {
     "CR": b"\r",
     "CRLF": b"\r\n",
 }
+DEFAULT_MAXIMUM_BLOCKS = 10_000
 
 
 class TerminalWidget(QFrame):
     """Display terminal content and an inert command entry row."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        maximum_blocks: int = DEFAULT_MAXIMUM_BLOCKS,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("terminalPanel")
 
@@ -48,6 +53,12 @@ class TerminalWidget(QFrame):
         hint = QLabel("Serial output")
         hint.setObjectName("mutedLabel")
         header_layout.addWidget(hint)
+
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.setObjectName("clearTerminalButton")
+        self.clear_button.setToolTip("Clear visible terminal output")
+        self.clear_button.clicked.connect(self.output_clear)
+        header_layout.addWidget(self.clear_button)
         layout.addWidget(header)
 
         self.output = QPlainTextEdit()
@@ -55,6 +66,7 @@ class TerminalWidget(QFrame):
         self.output.setReadOnly(True)
         self.output.setPlaceholderText("Serial data will appear here when connected.")
         self.output.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        self.output.document().setMaximumBlockCount(maximum_blocks)
         layout.addWidget(self.output, 1)
 
         command_area = QWidget()
@@ -104,11 +116,21 @@ class TerminalWidget(QFrame):
         if not text:
             return
 
+        scroll_bar = self.output.verticalScrollBar()
+        previous_value = scroll_bar.value()
+        should_follow = previous_value >= scroll_bar.maximum()
+
         cursor = self.output.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(text)
-        self.output.setTextCursor(cursor)
-        self.output.ensureCursorVisible()
+        if should_follow:
+            scroll_bar.setValue(scroll_bar.maximum())
+        else:
+            scroll_bar.setValue(previous_value)
+
+    def output_clear(self) -> None:
+        """Clear only the visible terminal history."""
+        self.output.clear()
 
     def reset_stream_decoder(self) -> None:
         """Reset decoding state for a newly connected byte stream."""

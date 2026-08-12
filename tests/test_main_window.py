@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QGroupBox, QLineEdit, QPl
 from serial import SerialException
 
 from serialscope.serial import SerialConnection, SerialPortInfo
-from serialscope.ui.main_window import MainWindow
+from serialscope.ui.main_window import MainWindow, format_byte_count
 
 
 class FakeSignal:
@@ -164,7 +164,7 @@ def test_connection_failure_restores_safe_ui_state(monkeypatch) -> None:
     window.connection_bar.connect_button.click()
 
     assert not connection.is_connected
-    assert window.connection_bar.status_label.text() == "Disconnected"
+    assert window.connection_bar.status_label.text() == "Connection error"
     assert window.connection_bar.connect_button.text() == "Connect"
     assert window.connection_bar.port_combo.isEnabled()
     assert window.connection_bar.baud_combo.isEnabled()
@@ -271,9 +271,71 @@ def test_reader_failure_safely_disconnects_and_reports_error(monkeypatch) -> Non
 
     assert readers[0].stopped
     assert not connection.is_connected
-    assert window.connection_bar.status_label.text() == "Disconnected"
+    assert window.connection_bar.status_label.text() == "Connection error"
     assert window.connection_bar.connect_button.text() == "Connect"
     assert errors == ["Serial connection to COM4 was lost: device removed"]
+
+    window.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("byte_count", "formatted"),
+    [
+        (0, "0 B"),
+        (842, "842 B"),
+        (12_400, "12.4 KB"),
+        (3_800_000, "3.8 MB"),
+    ],
+)
+def test_byte_count_formatting(byte_count: int, formatted: str) -> None:
+    assert format_byte_count(byte_count) == formatted
+
+
+def test_new_successful_connection_resets_session_counters() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+    )
+    window._rx_bytes = 12_400
+    window._tx_bytes = 2_000
+    window._update_counter_labels()
+
+    window.connection_bar.connect_button.click()
+
+    assert window._rx_bytes == 0
+    assert window._tx_bytes == 0
+    assert window.rx_counter.text() == "RX: 0 B"
+    assert window.tx_counter.text() == "TX: 0 B"
+
+    window.close()
+    application.processEvents()
+
+
+def test_clear_terminal_does_not_reset_counters_or_disconnect() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+    )
+    window.connection_bar.connect_button.click()
+    window._handle_received_bytes(b"data\n")
+    window._tx_bytes = 1_200
+    window._update_counter_labels()
+
+    window.terminal.clear_button.click()
+
+    assert window.terminal.output.toPlainText() == ""
+    assert window.rx_counter.text() == "RX: 5 B"
+    assert window.tx_counter.text() == "TX: 1.2 KB"
+    assert connection.is_connected
 
     window.close()
     application.processEvents()
@@ -400,7 +462,7 @@ def test_write_failure_preserves_command_and_safely_disconnects(monkeypatch) -> 
     assert window.tx_counter.text() == "TX: 0 B"
     assert reader.stopped
     assert not connection.is_connected
-    assert window.connection_bar.status_label.text() == "Disconnected"
+    assert window.connection_bar.status_label.text() == "Connection error"
     assert not window.terminal.send_button.isEnabled()
     assert errors == ["Could not write to COM4: device removed"]
 

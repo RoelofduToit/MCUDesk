@@ -26,6 +26,15 @@ from serialscope.ui.side_panel import SidePanel
 from serialscope.ui.terminal_widget import TerminalWidget
 
 
+def format_byte_count(byte_count: int) -> str:
+    """Format bytes using decimal SI units for status presentation."""
+    if byte_count < 1_000:
+        return f"{byte_count} B"
+    if byte_count < 1_000_000:
+        return f"{byte_count / 1_000:.1f} KB"
+    return f"{byte_count / 1_000_000:.1f} MB"
+
+
 class MainWindow(QMainWindow):
     """Top-level application window."""
 
@@ -92,17 +101,18 @@ class MainWindow(QMainWindow):
         port = self.connection_bar.selected_port
         if port is None:
             self._show_connection_error("Select a serial port before connecting.")
-            self.connection_bar.set_connected(False)
+            self.connection_bar.set_connection_state("error")
             return
 
         baud_rate = int(self.connection_bar.baud_combo.currentText())
         try:
             self._serial_connection.connect(port.device, baud_rate)
         except SerialConnectionError as error:
-            self.connection_bar.set_connected(False)
+            self.connection_bar.set_connection_state("error")
             self._show_connection_error(str(error))
             return
 
+        self._reset_session_counters()
         self.connection_bar.set_connected(True)
         self.terminal.set_connected(True)
         self.terminal.command_input.setFocus()
@@ -123,11 +133,12 @@ class MainWindow(QMainWindow):
 
     def _handle_received_bytes(self, data: bytes) -> None:
         self._rx_bytes += len(data)
-        self.rx_counter.setText(f"RX: {self._rx_bytes} B")
+        self._update_counter_labels()
         self.terminal.append_bytes(data)
 
     def _handle_reader_failure(self, message: str) -> None:
         self._return_to_disconnected_state()
+        self.connection_bar.set_connection_state("error")
         self._show_connection_error(message)
 
     def send_command(self) -> None:
@@ -140,13 +151,23 @@ class MainWindow(QMainWindow):
             written = self._serial_connection.write(data)
         except SerialConnectionError as error:
             self._return_to_disconnected_state()
+            self.connection_bar.set_connection_state("error")
             self._show_connection_error(str(error))
             return
 
         self._tx_bytes += written
-        self.tx_counter.setText(f"TX: {self._tx_bytes} B")
+        self._update_counter_labels()
         self.terminal.command_input.clear()
         self.terminal.command_input.setFocus()
+
+    def _reset_session_counters(self) -> None:
+        self._rx_bytes = 0
+        self._tx_bytes = 0
+        self._update_counter_labels()
+
+    def _update_counter_labels(self) -> None:
+        self.rx_counter.setText(f"RX: {format_byte_count(self._rx_bytes)}")
+        self.tx_counter.setText(f"TX: {format_byte_count(self._tx_bytes)}")
 
     def _return_to_disconnected_state(self) -> None:
         self._stop_serial_reader()
@@ -162,10 +183,13 @@ class MainWindow(QMainWindow):
         try:
             self._serial_connection.disconnect()
         except SerialConnectionError as error:
-            self._show_connection_error(str(error))
-        finally:
-            self.connection_bar.set_connected(False)
+            self.connection_bar.set_connection_state("error")
             self.terminal.set_connected(False)
+            self._show_connection_error(str(error))
+            return
+
+        self.connection_bar.set_connected(False)
+        self.terminal.set_connected(False)
 
     def _show_connection_error(self, message: str) -> None:
         QMessageBox.critical(self, "Serial connection error", message)

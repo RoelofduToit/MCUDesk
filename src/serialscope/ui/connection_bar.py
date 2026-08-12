@@ -74,17 +74,26 @@ class ConnectionBar(QFrame):
         self.status_label.setObjectName("connectionStatusLabel")
         layout.addWidget(self.status_label)
 
-        self.set_connected(False)
+        self.set_connection_state("disconnected")
 
     def set_connected(self, connected: bool) -> None:
         """Present the current connection state without owning its logic."""
+        self.set_connection_state("connected" if connected else "disconnected")
+
+    def set_connection_state(self, state: str) -> None:
+        """Present connected, disconnected, or error state."""
+        connected = state == "connected"
         self.connect_button.setText("Disconnect" if connected else "Connect")
-        self.status_label.setText("Connected" if connected else "Disconnected")
+        labels = {
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "error": "Connection error",
+        }
+        self.status_label.setText(labels[state])
         self.port_combo.setEnabled(not connected)
         self.baud_combo.setEnabled(not connected)
         self.refresh_button.setEnabled(not connected)
 
-        state = "connected" if connected else "disconnected"
         self.status_dot.setProperty("connectionState", state)
         self.status_label.setProperty("connectionState", state)
         self.status_dot.style().unpolish(self.status_dot)
