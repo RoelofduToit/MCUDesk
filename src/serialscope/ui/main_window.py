@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +32,8 @@ from serialscope.serial import (
     discover_recommended_serial_ports,
 )
 from serialscope.ui.connection_bar import ConnectionBar
+from serialscope.ui.data_widget import DataWidget
+from serialscope.ui.graphs_widget import GraphsWidget
 from serialscope.ui.side_panel import SidePanel
 from serialscope.ui.terminal_widget import TerminalWidget
 
@@ -95,12 +98,20 @@ class MainWindow(QMainWindow):
 
         self.workspace_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.workspace_splitter.setObjectName("workspaceSplitter")
+        self.workspace_tabs = QTabWidget()
+        self.workspace_tabs.setObjectName("workspaceTabs")
         self.terminal = TerminalWidget()
         self.terminal.send_button.clicked.connect(self.send_command)
         self.terminal.command_input.returnPressed.connect(self.send_command)
+        self.data_widget = DataWidget()
+        self.graphs_widget = GraphsWidget()
+        self.workspace_tabs.addTab(self.terminal, "Terminal")
+        self.workspace_tabs.addTab(self.data_widget, "Data")
+        self.workspace_tabs.addTab(self.graphs_widget, "Graphs")
+        self.workspace_tabs.setCurrentWidget(self.terminal)
         self.side_panel = SidePanel()
         self.side_panel.logging_button.clicked.connect(self.toggle_logging)
-        self.workspace_splitter.addWidget(self.terminal)
+        self.workspace_splitter.addWidget(self.workspace_tabs)
         self.workspace_splitter.addWidget(self.side_panel)
         self.workspace_splitter.setStretchFactor(0, 1)
         self.workspace_splitter.setStretchFactor(1, 0)
@@ -172,6 +183,7 @@ class MainWindow(QMainWindow):
                 self._update_recording_presentation()
         for update in self._stream_parser.feed(data):
             self.side_panel.channels_widget.update_channels(update)
+            self.data_widget.update_channels(update)
         self.terminal.append_bytes(data)
 
     def _handle_reader_failure(self, message: str) -> None:
@@ -206,6 +218,7 @@ class MainWindow(QMainWindow):
     def _reset_channels(self) -> None:
         self._stream_parser.reset()
         self.side_panel.channels_widget.reset()
+        self.data_widget.reset()
 
     def _update_counter_labels(self) -> None:
         self.rx_counter.setText(f"RX: {format_byte_count(self._rx_bytes)}")

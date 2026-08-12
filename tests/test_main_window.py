@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
+    QTabWidget,
 )
 
 from serial import SerialException
@@ -79,6 +80,53 @@ def test_main_window_constructs_ui_shell() -> None:
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert window.rx_counter.text() == "RX: 0 B"
     assert window.tx_counter.text() == "TX: 0 B"
+
+    window.close()
+    application.processEvents()
+
+
+def test_workspace_has_terminal_data_and_graphs_tabs() -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(port_scanner=lambda: [])
+
+    assert isinstance(window.workspace_tabs, QTabWidget)
+    assert [
+        window.workspace_tabs.tabText(index)
+        for index in range(window.workspace_tabs.count())
+    ] == ["Terminal", "Data", "Graphs"]
+    assert window.workspace_tabs.currentWidget() is window.terminal
+    assert window.workspace_tabs.indexOf(window.terminal) == 0
+    assert window.workspace_tabs.indexOf(window.data_widget) == 1
+    assert window.workspace_tabs.indexOf(window.graphs_widget) == 2
+
+    window.close()
+    application.processEvents()
+
+
+def test_switching_workspace_tabs_preserves_live_channel_state() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+
+    window.workspace_tabs.setCurrentWidget(window.graphs_widget)
+    reader.bytes_received.emit(b"A,B\n1,2\n")
+    window.workspace_tabs.setCurrentWidget(window.data_widget)
+
+    assert window.data_widget.value_text("A") == "1"
+    assert window.side_panel.channels_widget.value_text("A") == "1"
+    assert window.connection_bar.status_label.text() == "Connected"
+    assert window.rx_counter.text() == "RX: 8 B"
+
+    window.workspace_tabs.setCurrentWidget(window.graphs_widget)
+    assert window.data_widget.value_text("A") == "1"
+    assert connection.is_connected
 
     window.close()
     application.processEvents()

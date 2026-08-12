@@ -10,6 +10,28 @@ QWidget {
 QMainWindow, QSplitter {
     background-color: #0c1219;
 }
+QTabWidget#workspaceTabs::pane {
+    background-color: #151e28;
+    border: 1px solid #263442;
+    border-radius: 0 5px 5px 5px;
+}
+QTabBar::tab {
+    color: #8fa3b8;
+    background-color: #111923;
+    border: 1px solid #263442;
+    border-bottom: 0;
+    padding: 9px 18px;
+    margin-right: 2px;
+}
+QTabBar::tab:selected {
+    color: #d9e2ec;
+    background-color: #151e28;
+    border-top-color: #2f9bd1;
+}
+QTabBar::tab:hover:!selected {
+    color: #bac8d5;
+    background-color: #18232e;
+}
 QFrame#connectionBar, QFrame#terminalPanel, QFrame#sidePanel {
     background-color: #151e28;
     border: 1px solid #263442;
@@ -108,6 +130,29 @@ QPlainTextEdit#terminalOutput {
     border: 0;
     padding: 14px;
     selection-background-color: #255b72;
+}
+QTableWidget#channelDataTable {
+    color: #d9e2ec;
+    background-color: #0e151d;
+    alternate-background-color: #111b25;
+    border: 1px solid #293846;
+    gridline-color: #263442;
+    selection-background-color: #255b72;
+}
+QTableWidget#channelDataTable QHeaderView::section {
+    color: #aebdca;
+    background-color: #18232e;
+    border: 0;
+    border-bottom: 1px solid #314354;
+    padding: 8px;
+    font-weight: 600;
+}
+QLabel#dataEmptyLabel, QLabel#graphsEmptyLabel {
+    color: #94a7b9;
+    font-size: 12pt;
+}
+QLabel#graphsEmptyDetail {
+    color: #718399;
 }
 QGroupBox {
     color: #bac8d5;

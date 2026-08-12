@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 adds deterministic CSV, key/value, and JSON-line channel detection as an optional RX branch.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection. Version 0.4 introduces a tabbed workspace while preserving those independent data paths.
 
 ## Current structure
 
@@ -20,6 +20,8 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/parsing/json_parser.py` incrementally parses top-level numeric values from one JSON object per line.
 - `src/serialscope/parsing/stream_parser.py` deterministically selects and locks a parser for the current connection.
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
+- `src/serialscope/ui/data_widget.py` presents the same channel updates in a larger, stable-order table.
+- `src/serialscope/ui/graphs_widget.py` owns the plotting tab's empty foundation without graph dependencies.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
@@ -41,7 +43,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.3.3 boundaries
+## Version 0.4.1 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -55,7 +57,7 @@ For transmit, `TerminalWidget` converts command text and the selected line endin
 
 When raw logging is active, `MainWindow` fans each received `bytes` chunk into two independent consumers: `TerminalWidget` decodes it for display, while `RawLogger` writes it directly to a buffered binary file. The logger never receives decoded text and adds no timestamps, delimiters, or metadata. It owns the file handle and logged-byte count. Manual stop, connection loss, and application shutdown flush and close it before serial teardown.
 
-Each `RecordingSession` creates a collision-safe directory containing `raw.log` and `session.json`. It records the application version, optional session name, local and UTC times, serial configuration, platform, elapsed duration, logged and connection RX totals, and a lifecycle end reason. Metadata is human-readable JSON and is replaced atomically. `RawLogger` remains concerned only with exact raw bytes.
+Each `RecordingSession` creates a collision-safe directory containing `raw.log` and `session.json`. It records the application version, required user-supplied session name, local and UTC times, serial configuration, platform, elapsed duration, logged and connection RX totals, and a lifecycle end reason. Metadata is human-readable JSON and is replaced atomically. `RawLogger` remains concerned only with exact raw bytes.
 
 The UI timer updates elapsed-time presentation approximately once per second. It neither writes metadata nor touches the raw stream. Normal stop, serial disconnect/error, logging failure, and application shutdown finalize metadata with distinct end reasons.
 
@@ -69,7 +71,9 @@ JSON lines must decode as complete JSON objects before they can claim the stream
 
 `SerialStreamParser` feeds all deterministic parsers only until one produces a structured update, then locks that format until connection reset. JSON is tested first because successful object decoding is conservative and prevents its comma-separated members from being mistaken for a CSV header. Key/value lines cannot qualify as CSV headers because CSV channel names containing `=` are rejected. Explicit or confirmed headerless CSV therefore coexists without delimiter guessing.
 
-Version 0.3.3 intentionally includes no delimiter inference, nested JSON or arrays, unit inference, calibration, statistics, structured export, databases, graphs, profiles, or protocol features.
+The central horizontal splitter now contains a `QTabWidget` and the unchanged compact sidebar. The existing `TerminalWidget` is hosted directly in the default Terminal tab, so switching tabs does not affect RX, TX, parsing, recording, counters, or connection lifecycle. `MainWindow` forwards each parser-produced `ChannelUpdate` to both the compact sidebar and the larger Data table; neither presentation owns parsing logic. Both views reset together only at the existing connection lifecycle boundaries. The Graphs tab is a dependency-free empty state.
+
+Version 0.4.1 intentionally includes no plotting implementation or history buffers, channel selection, statistics, unit inference, structured export, themes, dashboards, profiles, or protocol features.
 
 ## Planned technology direction
 
