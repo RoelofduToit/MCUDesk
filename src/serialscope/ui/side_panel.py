@@ -22,6 +22,8 @@ class SidePanel(QFrame):
         super().__init__(parent)
         self.setObjectName("sidePanel")
         self.setMinimumWidth(230)
+        self._connected = False
+        self._recording = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -71,7 +73,7 @@ class SidePanel(QFrame):
 
         self.session_name_input = QLineEdit()
         self.session_name_input.setObjectName("sessionNameInput")
-        self.session_name_input.setPlaceholderText("Optional")
+        self.session_name_input.setPlaceholderText("Required")
         layout.addWidget(self.session_name_input)
 
         status_row = QWidget()
@@ -109,9 +111,9 @@ class SidePanel(QFrame):
         return group
 
     def set_connected(self, connected: bool) -> None:
-        """Allow starting a recording only while serial is connected."""
-        if self.logging_button.text() == "Start Logging":
-            self.logging_button.setEnabled(connected)
+        """Update recording availability for the serial connection state."""
+        self._connected = connected
+        self._update_logging_button_enabled()
 
     def set_logging_state(
         self,
@@ -121,6 +123,7 @@ class SidePanel(QFrame):
         elapsed: str = "00:00:00",
     ) -> None:
         """Present raw logging state without performing file operations."""
+        self._recording = recording
         self.logging_status_label.setText("Recording" if recording else "Not recording")
         state = "active" if recording else "inactive"
         self.logging_status_dot.setProperty("recordingState", state)
@@ -131,3 +134,7 @@ class SidePanel(QFrame):
         self.logged_bytes_label.setText(f"Logged: {byte_count}")
         self.logging_button.setText("Stop Logging" if recording else "Start Logging")
         self.session_name_input.setEnabled(not recording)
+        self._update_logging_button_enabled()
+
+    def _update_logging_button_enabled(self) -> None:
+        self.logging_button.setEnabled(self._recording or self._connected)

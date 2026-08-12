@@ -48,7 +48,7 @@ def sanitize_session_name(name: str) -> str:
     sanitized = sanitized[:80].rstrip(" ._")
     if sanitized.upper() in _WINDOWS_RESERVED_NAMES:
         sanitized = f"Session_{sanitized}"
-    return sanitized or "SerialSession"
+    return sanitized
 
 
 class RecordingSession:
@@ -96,6 +96,10 @@ class RecordingSession:
         """Create a collision-safe session directory and begin raw logging."""
         if self.is_recording:
             raise RecordingSessionError("A recording session is already active.")
+        if not config.session_name.strip():
+            raise RecordingSessionError(
+                "Enter a session name before starting a recording."
+            )
 
         started_at = self._now()
         folder_base = sanitize_session_name(config.session_name)

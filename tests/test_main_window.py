@@ -10,7 +10,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QComboBox, QGroupBox, QLineEdit, QPlainTextEdit
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QGroupBox,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+)
 
 from serial import SerialException
 
@@ -83,6 +90,83 @@ def test_port_dropdown_shows_empty_state() -> None:
 
     assert window.connection_bar.port_combo.currentText() == "No serial ports found"
     assert window.connection_bar.selected_port is None
+
+    window.close()
+    application.processEvents()
+
+
+def test_start_logging_enablement_follows_connection_state() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+    )
+
+    assert not window.side_panel.logging_button.isEnabled()
+    window.side_panel.session_name_input.setText("Disconnected test")
+    assert not window.side_panel.logging_button.isEnabled()
+
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.clear()
+    assert window.side_panel.logging_button.isEnabled()
+    window.side_panel.session_name_input.setText("   ")
+    assert window.side_panel.logging_button.isEnabled()
+    window.side_panel.session_name_input.setText("Connected test")
+    assert window.side_panel.logging_button.isEnabled()
+
+    window.connection_bar.connect_button.click()
+    assert not window.side_panel.logging_button.isEnabled()
+
+    window.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize("session_name", ["", "   "])
+def test_blank_recording_name_warns_without_creating_files(
+    monkeypatch,
+    tmp_path: Path,
+    session_name: str,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    warnings: list[tuple[str, str]] = []
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, title, message: warnings.append((title, message)),
+    )
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: pytest.fail("directory chooser must not open"),
+    )
+    window.show()
+    application.processEvents()
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText(session_name)
+
+    window.side_panel.logging_button.click()
+    application.processEvents()
+
+    assert warnings == [
+        (
+            "Session name required",
+            "Enter a session name before starting a recording.",
+        )
+    ]
+    assert not window._recording_session.is_recording
+    assert not window._recording_timer.isActive()
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    assert list(tmp_path.iterdir()) == []
+    assert window.side_panel.session_name_input.hasFocus()
 
     window.close()
     application.processEvents()
@@ -517,6 +601,7 @@ def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
     assert (session_directory / "raw.log").read_bytes() == b"valid\n\xff\x00binary"
     assert window.side_panel.logging_status_label.text() == "Not recording"
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    assert window.side_panel.session_name_input.text() == "Test run"
     assert connection.is_connected
 
     window.close()
@@ -545,6 +630,7 @@ def test_connection_loss_stops_and_preserves_log(monkeypatch, tmp_path: Path) ->
         reader_factory=reader_factory,
     )
     window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Disconnect test")
     window.side_panel.logging_button.click()
     readers[0].bytes_received.emit(b"preserved")
 
@@ -578,6 +664,7 @@ def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> 
         reader_factory=lambda _connection: reader,
     )
     window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Shutdown test")
     window.side_panel.logging_button.click()
     reader.bytes_received.emit(b"before close")
 
@@ -763,6 +850,7 @@ def test_csv_parsing_does_not_modify_recorded_raw_bytes(
         reader_factory=lambda _connection: reader,
     )
     window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("CSV raw test")
     window.side_panel.logging_button.click()
     raw_data = b"A,B\r\n1,2.5\r\n\xffbinary\n"
 
@@ -822,6 +910,7 @@ def test_key_value_parsing_leaves_terminal_and_raw_log_exact(
         reader_factory=lambda _connection: reader,
     )
     window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Key value raw test")
     window.side_panel.logging_button.click()
     raw_data = b"TEMP=-12.4,FLOW=1.25e-3\r\n"
 
@@ -833,6 +922,139 @@ def test_key_value_parsing_leaves_terminal_and_raw_log_exact(
     assert window.terminal.output.toPlainText() == raw_data.decode().replace("\r\n", "\n")
     assert window.side_panel.channels_widget.value_text("TEMP") == "-12.4"
     assert window.side_panel.channels_widget.value_text("FLOW") == "0.00125"
+
+    window.close()
+    application.processEvents()
+
+
+def test_json_rx_updates_adds_and_retains_channels() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+
+    reader.bytes_received.emit(b'{"TC1":10')
+    reader.bytes_received.emit(b'0.4,"TC2":98.7}\r\n')
+    reader.bytes_received.emit(b'{"TC1":101.2,"TC3":105.7}\n')
+
+    channels = window.side_panel.channels_widget
+    assert channels.value_text("TC1") == "101.2"
+    assert channels.value_text("TC2") == "98.7"
+    assert channels.value_text("TC3") == "105.7"
+
+    window.close()
+    application.processEvents()
+
+
+def test_json_parser_state_resets_for_new_connection() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+    readers[0].bytes_received.emit(b'{"old":1')
+    window.connection_bar.connect_button.click()
+
+    window.connection_bar.connect_button.click()
+    readers[1].bytes_received.emit(b'{"new":2}\n')
+
+    assert window.side_panel.channels_widget.value_text("old") is None
+    assert window.side_panel.channels_widget.value_text("new") == "2"
+
+    window.close()
+    application.processEvents()
+
+
+def test_json_parsing_leaves_terminal_and_raw_log_exact(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("JSON raw test")
+    window.side_panel.logging_button.click()
+    raw_data = b'{"TEMP":-12.4,"FLOW":0.00125}\r\n'
+
+    reader.bytes_received.emit(raw_data)
+    window.side_panel.logging_button.click()
+
+    session_directory = next(tmp_path.iterdir())
+    assert (session_directory / "raw.log").read_bytes() == raw_data
+    assert window.terminal.output.toPlainText() == raw_data.decode().replace("\r\n", "\n")
+    assert window.side_panel.channels_widget.value_text("TEMP") == "-12.4"
+    assert window.rx_counter.text() == f"RX: {len(raw_data)} B"
+
+    window.close()
+    application.processEvents()
+
+
+def test_terminal_control_filter_does_not_change_raw_log_or_rx_count(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("CircuitPython console")
+    window.side_panel.logging_button.click()
+    raw_data = (
+        b"\x1b]0;CircuitPython | code.py\x1b\\"
+        b"\x1b[32m"
+        b'{"TC2":99.19,"TC3":106.16}\n'
+        b"\x1b[0m"
+    )
+
+    reader.bytes_received.emit(raw_data[:12])
+    reader.bytes_received.emit(raw_data[12:37])
+    reader.bytes_received.emit(raw_data[37:])
+    window.side_panel.logging_button.click()
+
+    session_directory = next(tmp_path.iterdir())
+    assert (session_directory / "raw.log").read_bytes() == raw_data
+    assert window.rx_counter.text() == f"RX: {len(raw_data)} B"
+    assert window.terminal.output.toPlainText() == (
+        '{"TC2":99.19,"TC3":106.16}\n'
+    )
 
     window.close()
     application.processEvents()

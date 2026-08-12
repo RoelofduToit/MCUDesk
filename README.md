@@ -2,7 +2,7 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.3.2 provides cross-platform two-way serial communication, named raw recording sessions, and deterministic channel detection for simple CSV and numeric key/value streams. Structured export, plotting, profiles, and databases are intentionally not implemented.
+Version 0.3.3 provides cross-platform two-way serial communication, named raw recording sessions, and deterministic channel detection for simple CSV, numeric key/value, and top-level numeric JSON-line streams. Structured export, plotting, profiles, and databases are intentionally not implemented.
 
 ## Requirements
 

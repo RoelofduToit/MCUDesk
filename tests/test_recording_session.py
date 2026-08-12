@@ -7,6 +7,7 @@ import pytest
 from serialscope import __version__
 from serialscope.logging import (
     RecordingSession,
+    RecordingSessionError,
     SessionConfig,
     sanitize_session_name,
 )
@@ -20,7 +21,7 @@ class MutableClock:
         return self.current
 
 
-def _config(session_name: str = "") -> SessionConfig:
+def _config(session_name: str = "Test session") -> SessionConfig:
     return SessionConfig(
         session_name=session_name,
         device="COM4",
@@ -34,7 +35,7 @@ def _config(session_name: str = "") -> SessionConfig:
     [
         ("Pico temperature test", "Pico_temperature_test"),
         ('bad<>:"/\\|?* name', "bad_name"),
-        ("  ", "SerialSession"),
+        ("  ", ""),
         ("CON", "Session_CON"),
     ],
 )
@@ -42,33 +43,45 @@ def test_session_name_sanitization(name: str, sanitized: str) -> None:
     assert sanitize_session_name(name) == sanitized
 
 
-def test_default_and_custom_session_folder_names(tmp_path: Path) -> None:
+def test_custom_session_folder_name_is_sanitized(tmp_path: Path) -> None:
     clock = MutableClock(datetime(2026, 8, 12, 18, 15, tzinfo=timezone.utc))
-    default_session = RecordingSession(clock=clock)
     custom_session = RecordingSession(clock=clock)
 
-    default_directory = default_session.start(tmp_path, _config())
     custom_directory = custom_session.start(
         tmp_path,
-        _config("Pico temperature test"),
+        _config("Reactor Test #3 - Hot Run"),
     )
 
-    assert default_directory.name == "SerialSession_2026-08-12_1815"
-    assert custom_directory.name == "Pico_temperature_test_2026-08-12_1815"
-    default_session.stop("normal", 0)
+    assert custom_directory.name == "Reactor_Test_#3_-_Hot_Run_2026-08-12_1815"
     custom_session.stop("normal", 0)
+
+
+@pytest.mark.parametrize("session_name", ["", "   "])
+def test_blank_session_name_is_rejected(
+    tmp_path: Path,
+    session_name: str,
+) -> None:
+    session = RecordingSession()
+
+    with pytest.raises(
+        RecordingSessionError,
+        match="Enter a session name before starting a recording",
+    ):
+        session.start(tmp_path, _config(session_name))
+
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_existing_session_directory_is_not_overwritten(tmp_path: Path) -> None:
     clock = MutableClock(datetime(2026, 8, 12, 18, 15, tzinfo=timezone.utc))
-    existing = tmp_path / "SerialSession_2026-08-12_1815"
+    existing = tmp_path / "Test_session_2026-08-12_1815"
     existing.mkdir()
     (existing / "keep.txt").write_text("keep", encoding="utf-8")
     session = RecordingSession(clock=clock)
 
     directory = session.start(tmp_path, _config())
 
-    assert directory.name == "SerialSession_2026-08-12_1815_2"
+    assert directory.name == "Test_session_2026-08-12_1815_2"
     assert (existing / "keep.txt").read_text(encoding="utf-8") == "keep"
     session.stop("normal", 0)
 
@@ -84,7 +97,7 @@ def test_session_writes_exact_raw_data_and_complete_metadata(tmp_path: Path) -> 
     )
     clock = MutableClock(start)
     session = RecordingSession(clock=clock)
-    config = _config("Pico temperature test")
+    config = _config("Reactor Test #3 - Hot Run")
 
     directory = session.start(tmp_path, config)
     start_metadata = json.loads((directory / "session.json").read_text("utf-8"))
@@ -96,7 +109,7 @@ def test_session_writes_exact_raw_data_and_complete_metadata(tmp_path: Path) -> 
     metadata = json.loads((directory / "session.json").read_text("utf-8"))
     assert (directory / "raw.log").read_bytes() == b"text\n\xff\x00binary"
     assert start_metadata["serialscope_version"] == __version__
-    assert start_metadata["session_name"] == "Pico temperature test"
+    assert start_metadata["session_name"] == "Reactor Test #3 - Hot Run"
     assert start_metadata["recording_start_local"] == start.isoformat()
     assert start_metadata["recording_start_utc"] == start.astimezone(timezone.utc).isoformat()
     assert start_metadata["serial"] == {

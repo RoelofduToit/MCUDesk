@@ -49,3 +49,59 @@ def test_auto_scroll_pauses_above_bottom_and_resumes_at_bottom() -> None:
 
     terminal.close()
     application.processEvents()
+
+
+def test_complete_osc_title_is_removed_from_display() -> None:
+    application = QApplication.instance() or QApplication([])
+    terminal = TerminalWidget()
+
+    terminal.append_bytes(
+        b"\x1b]0;\xf0\x9f\x90\x8dcode.py | 10.0.3\x1b\\Useful text\n"
+    )
+
+    assert terminal.output.toPlainText() == "Useful text\n"
+    application.processEvents()
+
+
+def test_osc_title_split_across_chunks_is_removed() -> None:
+    application = QApplication.instance() or QApplication([])
+    terminal = TerminalWidget()
+
+    terminal.append_bytes(b"before\n\x1b]0;Circuit")
+    terminal.append_bytes(b"Python console\x1b")
+    terminal.append_bytes(b"\\after\n")
+
+    assert terminal.output.toPlainText() == "before\nafter\n"
+    application.processEvents()
+
+
+def test_csi_sequences_are_removed_from_display() -> None:
+    application = QApplication.instance() or QApplication([])
+    terminal = TerminalWidget()
+
+    terminal.append_bytes(b"\x1b[2J\x1b[H\x1b[32mGreen\x1b[0m text\n")
+
+    assert terminal.output.toPlainText() == "Green text\n"
+    application.processEvents()
+
+
+def test_csi_sequence_split_across_chunks_is_removed() -> None:
+    application = QApplication.instance() or QApplication([])
+    terminal = TerminalWidget()
+
+    terminal.append_bytes(b"normal \x1b[38;5;")
+    terminal.append_bytes(b"42mtext")
+
+    assert terminal.output.toPlainText() == "normal text"
+    application.processEvents()
+
+
+def test_normal_json_and_text_are_unchanged() -> None:
+    application = QApplication.instance() or QApplication([])
+    terminal = TerminalWidget()
+    data = b'{"TC2":99.19,"TC3":106.16}\nplain text\n'
+
+    terminal.append_bytes(data)
+
+    assert terminal.output.toPlainText() == data.decode()
+    application.processEvents()

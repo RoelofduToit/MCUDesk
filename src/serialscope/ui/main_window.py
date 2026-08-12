@@ -222,6 +222,16 @@ class MainWindow(QMainWindow):
         if not self._serial_connection.is_connected:
             return
 
+        session_name = self.side_panel.session_name_input.text()
+        if not session_name.strip():
+            QMessageBox.warning(
+                self,
+                "Session name required",
+                "Enter a session name before starting a recording.",
+            )
+            self.side_panel.session_name_input.setFocus()
+            return
+
         selected_directory = QFileDialog.getExistingDirectory(
             self,
             "Choose recording session location",
@@ -233,7 +243,7 @@ class MainWindow(QMainWindow):
         if port is None:
             return
         config = SessionConfig(
-            session_name=self.side_panel.session_name_input.text().strip(),
+            session_name=session_name,
             device=port.device,
             baud_rate=int(self.connection_bar.baud_combo.currentText()),
             line_ending=self.terminal.line_ending_combo.currentText(),

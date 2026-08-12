@@ -23,6 +23,8 @@ LINE_ENDINGS = {
     "CRLF": b"\r\n",
 }
 DEFAULT_MAXIMUM_BLOCKS = 10_000
+ESCAPE = "\x1b"
+STRING_TERMINATOR = "\\"
 
 
 class TerminalWidget(QFrame):
@@ -97,6 +99,7 @@ class TerminalWidget(QFrame):
         layout.addWidget(command_area)
 
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._control_sequence_state = "text"
         self.set_connected(False)
 
     def command_bytes(self) -> bytes:
@@ -112,7 +115,7 @@ class TerminalWidget(QFrame):
 
     def append_bytes(self, data: bytes) -> None:
         """Decode and append a raw stream chunk without altering line breaks."""
-        text = self._decoder.decode(data)
+        text = self._filter_control_sequences(self._decoder.decode(data))
         if not text:
             return
 
@@ -135,3 +138,40 @@ class TerminalWidget(QFrame):
     def reset_stream_decoder(self) -> None:
         """Reset decoding state for a newly connected byte stream."""
         self._decoder.reset()
+        self._control_sequence_state = "text"
+
+    def _filter_control_sequences(self, text: str) -> str:
+        """Remove common terminal controls from display text incrementally."""
+        visible: list[str] = []
+
+        for character in text:
+            state = self._control_sequence_state
+            if state == "text":
+                if character == ESCAPE:
+                    self._control_sequence_state = "escape"
+                else:
+                    visible.append(character)
+            elif state == "escape":
+                if character == "]":
+                    self._control_sequence_state = "osc"
+                elif character == "[":
+                    self._control_sequence_state = "csi"
+                elif character == ESCAPE:
+                    self._control_sequence_state = "escape"
+                else:
+                    self._control_sequence_state = "text"
+            elif state == "csi":
+                if "@" <= character <= "~":
+                    self._control_sequence_state = "text"
+            elif state == "osc":
+                if character == "\x07":
+                    self._control_sequence_state = "text"
+                elif character == ESCAPE:
+                    self._control_sequence_state = "osc_escape"
+            elif state == "osc_escape":
+                if character == STRING_TERMINATOR:
+                    self._control_sequence_state = "text"
+                elif character != ESCAPE:
+                    self._control_sequence_state = "osc"
+
+        return "".join(visible)

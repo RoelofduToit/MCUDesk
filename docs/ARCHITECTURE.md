@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 adds deterministic CSV and key/value channel detection as an optional RX branch.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 adds deterministic CSV, key/value, and JSON-line channel detection as an optional RX branch.
 
 ## Current structure
 
@@ -17,6 +17,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/logging/session.py` owns session directories, timing, metadata, and end-reason lifecycle around `RawLogger`.
 - `src/serialscope/parsing/csv_parser.py` incrementally detects simple CSV headers and emits numeric channel updates without Qt dependencies.
 - `src/serialscope/parsing/key_value_parser.py` incrementally parses comma-separated numeric `key=value` lines.
+- `src/serialscope/parsing/json_parser.py` incrementally parses top-level numeric values from one JSON object per line.
 - `src/serialscope/parsing/stream_parser.py` deterministically selects and locks a parser for the current connection.
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
@@ -40,7 +41,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.3.2 boundaries
+## Version 0.3.3 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -64,9 +65,11 @@ Incoming RX bytes fan out independently to terminal display, raw session logging
 
 Key/value lines require at least two unique, non-empty keys with finite numeric values. Whitespace around keys, values, commas, and equals signs is ignored. Integer, floating-point, negative, and scientific-notation values are supported. Updates may add channels or omit existing channels; omitted values remain visible until updated later.
 
-`SerialStreamParser` feeds both deterministic parsers only until one produces a structured update, then locks that format until connection reset. Key/value lines cannot qualify as CSV headers because CSV channel names containing `=` are rejected. Explicit or confirmed headerless CSV therefore coexists without delimiter guessing.
+JSON lines must decode as complete JSON objects before they can claim the stream. Only finite top-level integer and floating-point values become channels; strings, booleans, nulls, arrays, and nested objects are ignored. JSON updates add newly observed keys and retain omitted channels in the UI. Malformed or unsupported JSON produces no update and cannot alter terminal or raw-log data.
 
-Version 0.3.2 intentionally includes no delimiter inference, JSON parsing, unit inference, calibration, statistics, structured export, databases, graphs, profiles, or protocol features.
+`SerialStreamParser` feeds all deterministic parsers only until one produces a structured update, then locks that format until connection reset. JSON is tested first because successful object decoding is conservative and prevents its comma-separated members from being mistaken for a CSV header. Key/value lines cannot qualify as CSV headers because CSV channel names containing `=` are rejected. Explicit or confirmed headerless CSV therefore coexists without delimiter guessing.
+
+Version 0.3.3 intentionally includes no delimiter inference, nested JSON or arrays, unit inference, calibration, statistics, structured export, databases, graphs, profiles, or protocol features.
 
 ## Planned technology direction
 
