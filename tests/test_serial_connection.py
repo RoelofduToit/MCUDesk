@@ -61,3 +61,25 @@ def test_connection_failure_is_translated_and_state_remains_disconnected() -> No
 
     assert not connection.is_connected
     assert connection.device is None
+
+
+def test_write_sends_raw_bytes_and_returns_actual_count() -> None:
+    serial_port = Mock(is_open=True, port="COM4")
+    serial_port.write.return_value = 7
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    connection.connect("COM4", 115200)
+
+    written = connection.write(b"STATUS\n")
+
+    assert written == 7
+    serial_port.write.assert_called_once_with(b"STATUS\n")
+
+
+def test_write_failure_is_translated() -> None:
+    serial_port = Mock(is_open=True, port="COM4")
+    serial_port.write.side_effect = SerialException("device removed")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    connection.connect("COM4", 115200)
+
+    with pytest.raises(SerialConnectionError, match="device removed"):
+        connection.write(b"STATUS\n")

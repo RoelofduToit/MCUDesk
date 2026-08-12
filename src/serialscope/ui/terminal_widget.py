@@ -4,6 +4,7 @@ import codecs
 
 from PySide6.QtGui import QFontDatabase, QTextCursor
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -13,6 +14,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+LINE_ENDINGS = {
+    "None": b"",
+    "LF": b"\n",
+    "CR": b"\r",
+    "CRLF": b"\r\n",
+}
 
 
 class TerminalWidget(QFrame):
@@ -63,12 +72,31 @@ class TerminalWidget(QFrame):
         )
         command_layout.addWidget(self.command_input, 1)
 
+        self.line_ending_combo = QComboBox()
+        self.line_ending_combo.setObjectName("lineEndingCombo")
+        self.line_ending_combo.addItems(LINE_ENDINGS)
+        self.line_ending_combo.setCurrentText("LF")
+        self.line_ending_combo.setToolTip("Line ending appended to transmitted text")
+        command_layout.addWidget(self.line_ending_combo)
+
         self.send_button = QPushButton("Send")
         self.send_button.setObjectName("sendButton")
         command_layout.addWidget(self.send_button)
         layout.addWidget(command_area)
 
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self.set_connected(False)
+
+    def command_bytes(self) -> bytes:
+        """Encode the current command and selected line ending as raw bytes."""
+        line_ending = LINE_ENDINGS[self.line_ending_combo.currentText()]
+        return self.command_input.text().encode("utf-8") + line_ending
+
+    def set_connected(self, connected: bool) -> None:
+        """Enable transmit controls only while a serial port is connected."""
+        self.command_input.setEnabled(connected)
+        self.line_ending_combo.setEnabled(connected)
+        self.send_button.setEnabled(connected)
 
     def append_bytes(self, data: bytes) -> None:
         """Decode and append a raw stream chunk without altering line breaks."""

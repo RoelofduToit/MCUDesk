@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 established the project foundation. Version 0.1.1 added the initial desktop UI shell, version 0.1.2 added serial-port discovery, version 0.1.3 added connection lifecycle management, and version 0.1.4 adds receive-only serial data. It does not transmit or interpret serial data.
+Phase 0 established the project foundation. Version 0.1.1 added the initial desktop UI shell, version 0.1.2 added serial-port discovery, version 0.1.3 added connection lifecycle management, version 0.1.4 added serial receive, and version 0.1.5 adds serial transmit. It does not interpret serial data.
 
 ## Current structure
 
@@ -34,7 +34,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.1.4 boundaries
+## Version 0.1.5 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -42,7 +42,9 @@ The application performs a synchronous serial-port enumeration at startup and wh
 
 After connection, a `SerialReaderWorker` performs bounded reads in a dedicated `QThread`. It emits the original `bytes` chunks and never accesses widgets. `MainWindow` wires those signals to the terminal and RX counter. `TerminalWidget` uses incremental UTF-8 decoding with replacement for invalid sequences, preserving partial multibyte characters across chunks. Disconnect and window shutdown request reader termination, wait for its short-timeout read to finish, and then close the port.
 
-Version 0.1.4 intentionally does not write or parse serial data. Send remains inert. It also includes no graphs, database, logging pipeline, parsing, profiles, reconnect behavior, or other protocol features.
+For transmit, `TerminalWidget` converts command text and the selected line ending to UTF-8 `bytes`. `MainWindow` requests the write and updates the TX counter from the actual count returned. `SerialConnection` exclusively accesses PySerial and accepts raw bytes, preserving a path for future binary transmission without coupling the serial layer to text.
+
+Version 0.1.5 intentionally includes no local transmit echo, history, macros, binary/HEX entry, or serial-data interpretation. It also includes no graphs, database, logging pipeline, parsing, profiles, reconnect behavior, or other protocol features.
 
 ## Planned technology direction
 

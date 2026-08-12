@@ -41,6 +41,7 @@ class MainWindow(QMainWindow):
         self._reader_factory = reader_factory or SerialReader
         self._serial_reader: SerialReader | None = None
         self._rx_bytes = 0
+        self._tx_bytes = 0
         self.setObjectName("mainWindow")
         self.setWindowTitle("SerialScope")
         self.setMinimumSize(800, 520)
@@ -62,6 +63,8 @@ class MainWindow(QMainWindow):
         self.workspace_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.workspace_splitter.setObjectName("workspaceSplitter")
         self.terminal = TerminalWidget()
+        self.terminal.send_button.clicked.connect(self.send_command)
+        self.terminal.command_input.returnPressed.connect(self.send_command)
         self.side_panel = SidePanel()
         self.workspace_splitter.addWidget(self.terminal)
         self.workspace_splitter.addWidget(self.side_panel)
@@ -101,6 +104,8 @@ class MainWindow(QMainWindow):
             return
 
         self.connection_bar.set_connected(True)
+        self.terminal.set_connected(True)
+        self.terminal.command_input.setFocus()
         self.terminal.reset_stream_decoder()
         self._start_serial_reader()
 
@@ -122,13 +127,35 @@ class MainWindow(QMainWindow):
         self.terminal.append_bytes(data)
 
     def _handle_reader_failure(self, message: str) -> None:
+        self._return_to_disconnected_state()
+        self._show_connection_error(message)
+
+    def send_command(self) -> None:
+        """Encode and transmit the current command through the serial layer."""
+        if not self._serial_connection.is_connected:
+            return
+
+        data = self.terminal.command_bytes()
+        try:
+            written = self._serial_connection.write(data)
+        except SerialConnectionError as error:
+            self._return_to_disconnected_state()
+            self._show_connection_error(str(error))
+            return
+
+        self._tx_bytes += written
+        self.tx_counter.setText(f"TX: {self._tx_bytes} B")
+        self.terminal.command_input.clear()
+        self.terminal.command_input.setFocus()
+
+    def _return_to_disconnected_state(self) -> None:
         self._stop_serial_reader()
         try:
             self._serial_connection.disconnect()
         except SerialConnectionError:
             pass
         self.connection_bar.set_connected(False)
-        self._show_connection_error(message)
+        self.terminal.set_connected(False)
 
     def _disconnect_serial_port(self) -> None:
         self._stop_serial_reader()
@@ -138,6 +165,7 @@ class MainWindow(QMainWindow):
             self._show_connection_error(str(error))
         finally:
             self.connection_bar.set_connected(False)
+            self.terminal.set_connected(False)
 
     def _show_connection_error(self, message: str) -> None:
         QMessageBox.critical(self, "Serial connection error", message)

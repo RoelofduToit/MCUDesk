@@ -1,8 +1,12 @@
 import os
-from unittest.mock import Mock
+from unittest.mock import Mock, call
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QGroupBox, QLineEdit, QPlainTextEdit
 
 from serial import SerialException
@@ -56,6 +60,8 @@ def test_main_window_constructs_ui_shell() -> None:
     assert window.findChild(QComboBox, "baudCombo").currentText() == "115200"
     assert window.findChild(QPlainTextEdit, "terminalOutput").isReadOnly()
     assert window.findChild(QLineEdit, "commandInput") is not None
+    assert window.terminal.line_ending_combo.currentText() == "LF"
+    assert not window.terminal.send_button.isEnabled()
     assert window.findChild(QGroupBox, "connectionSection") is not None
     assert window.findChild(QGroupBox, "channelsSection") is not None
     assert window.findChild(QGroupBox, "sessionSection") is not None
@@ -268,6 +274,135 @@ def test_reader_failure_safely_disconnects_and_reports_error(monkeypatch) -> Non
     assert window.connection_bar.status_label.text() == "Disconnected"
     assert window.connection_bar.connect_button.text() == "Connect"
     assert errors == ["Serial connection to COM4 was lost: device removed"]
+
+    window.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("line_ending", "expected"),
+    [
+        ("None", b"STATUS"),
+        ("LF", b"STATUS\n"),
+        ("CR", b"STATUS\r"),
+        ("CRLF", b"STATUS\r\n"),
+    ],
+)
+def test_command_text_encodes_as_utf8_with_selected_line_ending(
+    line_ending: str,
+    expected: bytes,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(port_scanner=lambda: [])
+    window.terminal.command_input.setText("STATUS")
+    window.terminal.line_ending_combo.setCurrentText(line_ending)
+
+    assert window.terminal.command_bytes() == expected
+
+    window.close()
+    application.processEvents()
+
+
+def test_send_button_writes_bytes_accumulates_tx_and_clears_input() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    serial_port.write.side_effect = lambda data: len(data)
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+    )
+    window.show()
+    window.activateWindow()
+    application.processEvents()
+    window.connection_bar.connect_button.click()
+
+    window.terminal.command_input.setText("STATUS")
+    window.terminal.send_button.click()
+    window.terminal.command_input.setText("µ")
+    window.terminal.send_button.click()
+    application.processEvents()
+
+    assert serial_port.write.call_args_list == [call(b"STATUS\n"), call("µ\n".encode())]
+    assert window.tx_counter.text() == "TX: 10 B"
+    assert window.terminal.command_input.text() == ""
+    assert window.terminal.command_input.hasFocus()
+    assert window.terminal.output.toPlainText() == ""
+
+    window.close()
+    application.processEvents()
+
+
+def test_enter_key_sends_command() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    serial_port.write.side_effect = lambda data: len(data)
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+    )
+    window.show()
+    window.connection_bar.connect_button.click()
+    window.terminal.command_input.setText("PING")
+
+    QTest.keyClick(window.terminal.command_input, Qt.Key.Key_Return)
+
+    serial_port.write.assert_called_once_with(b"PING\n")
+    assert window.terminal.command_input.text() == ""
+
+    window.close()
+    application.processEvents()
+
+
+def test_disconnected_send_is_disabled_and_safe() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=False, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(port_scanner=lambda: [], serial_connection=connection)
+
+    window.send_command()
+
+    serial_port.write.assert_not_called()
+    assert not window.terminal.command_input.isEnabled()
+    assert not window.terminal.send_button.isEnabled()
+    assert window.tx_counter.text() == "TX: 0 B"
+
+    window.close()
+    application.processEvents()
+
+
+def test_write_failure_preserves_command_and_safely_disconnects(monkeypatch) -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    serial_port.write.side_effect = SerialException("device removed")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    errors: list[str] = []
+    monkeypatch.setattr(
+        MainWindow,
+        "_show_connection_error",
+        lambda _window, message: errors.append(message),
+    )
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+    window.terminal.command_input.setText("STATUS")
+
+    window.terminal.send_button.click()
+
+    assert window.terminal.command_input.text() == "STATUS"
+    assert window.tx_counter.text() == "TX: 0 B"
+    assert reader.stopped
+    assert not connection.is_connected
+    assert window.connection_bar.status_label.text() == "Disconnected"
+    assert not window.terminal.send_button.isEnabled()
+    assert errors == ["Could not write to COM4: device removed"]
 
     window.close()
     application.processEvents()

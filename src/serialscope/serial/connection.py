@@ -85,3 +85,17 @@ class SerialConnection:
             raise SerialConnectionError(
                 f"Serial connection to {device} was lost: {error}"
             ) from error
+
+    def write(self, data: bytes) -> int:
+        """Write raw bytes and return the number successfully transmitted."""
+        serial_port = self._serial_port
+        if serial_port is None or not serial_port.is_open:
+            raise SerialConnectionError("The serial port is not connected.")
+
+        try:
+            return serial_port.write(data)
+        except (SerialException, OSError) as error:
+            device = serial_port.port
+            raise SerialConnectionError(
+                f"Could not write to {device}: {error}"
+            ) from error
