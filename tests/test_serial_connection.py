@@ -24,6 +24,7 @@ def test_successful_connection_uses_standard_serial_settings() -> None:
         xonxoff=False,
         rtscts=False,
         dsrdtr=False,
+        timeout=0.1,
     )
 
 
@@ -37,6 +38,18 @@ def test_disconnect_closes_and_releases_serial_port() -> None:
     serial_port.close.assert_called_once_with()
     assert not connection.is_connected
     assert connection.device is None
+
+
+def test_read_returns_raw_bytes_from_open_connection() -> None:
+    serial_port = Mock(is_open=True, port="COM4", in_waiting=3)
+    serial_port.read.return_value = b"\xff\x00A"
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    connection.connect("COM4", 115200)
+
+    data = connection.read()
+
+    assert data == b"\xff\x00A"
+    serial_port.read.assert_called_once_with(3)
 
 
 def test_connection_failure_is_translated_and_state_remains_disconnected() -> None:

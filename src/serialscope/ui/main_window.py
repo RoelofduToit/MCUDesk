@@ -18,6 +18,7 @@ from serialscope.serial import (
     SerialConnection,
     SerialConnectionError,
     SerialPortInfo,
+    SerialReader,
     discover_recommended_serial_ports,
 )
 from serialscope.ui.connection_bar import ConnectionBar
@@ -32,10 +33,14 @@ class MainWindow(QMainWindow):
         self,
         port_scanner: Callable[[], list[SerialPortInfo]] | None = None,
         serial_connection: SerialConnection | None = None,
+        reader_factory: Callable[[SerialConnection], SerialReader] | None = None,
     ) -> None:
         super().__init__()
         self._port_scanner = port_scanner or discover_recommended_serial_ports
         self._serial_connection = serial_connection or SerialConnection()
+        self._reader_factory = reader_factory or SerialReader
+        self._serial_reader: SerialReader | None = None
+        self._rx_bytes = 0
         self.setObjectName("mainWindow")
         self.setWindowTitle("SerialScope")
         self.setMinimumSize(800, 520)
@@ -96,8 +101,37 @@ class MainWindow(QMainWindow):
             return
 
         self.connection_bar.set_connected(True)
+        self.terminal.reset_stream_decoder()
+        self._start_serial_reader()
+
+    def _start_serial_reader(self) -> None:
+        self._serial_reader = self._reader_factory(self._serial_connection)
+        self._serial_reader.bytes_received.connect(self._handle_received_bytes)
+        self._serial_reader.failed.connect(self._handle_reader_failure)
+        self._serial_reader.start()
+
+    def _stop_serial_reader(self) -> None:
+        reader = self._serial_reader
+        self._serial_reader = None
+        if reader is not None:
+            reader.stop()
+
+    def _handle_received_bytes(self, data: bytes) -> None:
+        self._rx_bytes += len(data)
+        self.rx_counter.setText(f"RX: {self._rx_bytes} B")
+        self.terminal.append_bytes(data)
+
+    def _handle_reader_failure(self, message: str) -> None:
+        self._stop_serial_reader()
+        try:
+            self._serial_connection.disconnect()
+        except SerialConnectionError:
+            pass
+        self.connection_bar.set_connected(False)
+        self._show_connection_error(message)
 
     def _disconnect_serial_port(self) -> None:
+        self._stop_serial_reader()
         try:
             self._serial_connection.disconnect()
         except SerialConnectionError as error:
@@ -110,6 +144,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Release an open serial port before the window is destroyed."""
+        self._stop_serial_reader()
         try:
             self._serial_connection.disconnect()
         except SerialConnectionError:

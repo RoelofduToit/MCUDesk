@@ -8,11 +8,14 @@ from serialscope.serial.port_scanner import (
     is_likely_useful_port,
     recommended_serial_ports,
 )
+from serialscope.serial.reader import SerialReader, SerialReaderWorker
 
 __all__ = [
     "SerialPortInfo",
     "SerialConnection",
     "SerialConnectionError",
+    "SerialReader",
+    "SerialReaderWorker",
     "discover_recommended_serial_ports",
     "discover_serial_ports",
     "is_likely_useful_port",

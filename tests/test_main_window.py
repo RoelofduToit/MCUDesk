@@ -11,6 +11,32 @@ from serialscope.serial import SerialConnection, SerialPortInfo
 from serialscope.ui.main_window import MainWindow
 
 
+class FakeSignal:
+    def __init__(self) -> None:
+        self.callback = None
+
+    def connect(self, callback) -> None:
+        self.callback = callback
+
+    def emit(self, value) -> None:
+        assert self.callback is not None
+        self.callback(value)
+
+
+class FakeReader:
+    def __init__(self, _connection: SerialConnection) -> None:
+        self.bytes_received = FakeSignal()
+        self.failed = FakeSignal()
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+
 def test_main_window_has_application_title() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])
@@ -77,9 +103,17 @@ def test_ui_controls_follow_connection_lifecycle() -> None:
     application = QApplication.instance() or QApplication([])
     serial_port = Mock(is_open=True, port="COM4")
     connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
     window = MainWindow(
         port_scanner=lambda: [SerialPortInfo("COM4")],
         serial_connection=connection,
+        reader_factory=reader_factory,
     )
 
     window.connection_bar.connect_button.click()
@@ -89,6 +123,7 @@ def test_ui_controls_follow_connection_lifecycle() -> None:
     assert not window.connection_bar.port_combo.isEnabled()
     assert not window.connection_bar.baud_combo.isEnabled()
     assert not window.connection_bar.refresh_button.isEnabled()
+    assert readers[0].started
 
     window.connection_bar.connect_button.click()
 
@@ -97,6 +132,7 @@ def test_ui_controls_follow_connection_lifecycle() -> None:
     assert window.connection_bar.port_combo.isEnabled()
     assert window.connection_bar.baud_combo.isEnabled()
     assert window.connection_bar.refresh_button.isEnabled()
+    assert readers[0].stopped
     serial_port.close.assert_called_once_with()
 
     window.close()
@@ -137,9 +173,17 @@ def test_closing_window_closes_serial_connection() -> None:
     application = QApplication.instance() or QApplication([])
     serial_port = Mock(is_open=True, port="COM4")
     connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
     window = MainWindow(
         port_scanner=lambda: [SerialPortInfo("COM4")],
         serial_connection=connection,
+        reader_factory=reader_factory,
     )
     window.connection_bar.connect_button.click()
 
@@ -148,3 +192,82 @@ def test_closing_window_closes_serial_connection() -> None:
 
     serial_port.close.assert_called_once_with()
     assert not connection.is_connected
+    assert readers[0].stopped
+
+
+def test_received_chunks_append_and_increment_raw_byte_count() -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+
+    readers[0].bytes_received.emit(b"RPM: 1435\n")
+    readers[0].bytes_received.emit(b"Pressure: 2.31\n")
+
+    assert window.terminal.output.toPlainText() == "RPM: 1435\nPressure: 2.31\n"
+    assert window.rx_counter.text() == "RX: 25 B"
+    assert window.tx_counter.text() == "TX: 0 B"
+
+    window.close()
+    application.processEvents()
+
+
+def test_invalid_utf8_is_displayed_without_crashing() -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(port_scanner=lambda: [])
+
+    window._handle_received_bytes(b"value: \xff\n")
+
+    assert window.terminal.output.toPlainText() == "value: �\n"
+    assert window.rx_counter.text() == "RX: 9 B"
+
+    window.close()
+    application.processEvents()
+
+
+def test_reader_failure_safely_disconnects_and_reports_error(monkeypatch) -> None:
+    application = QApplication.instance() or QApplication([])
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+    errors: list[str] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    monkeypatch.setattr(
+        MainWindow,
+        "_show_connection_error",
+        lambda _window, message: errors.append(message),
+    )
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+
+    readers[0].failed.emit("Serial connection to COM4 was lost: device removed")
+
+    assert readers[0].stopped
+    assert not connection.is_connected
+    assert window.connection_bar.status_label.text() == "Disconnected"
+    assert window.connection_bar.connect_button.text() == "Connect"
+    assert errors == ["Serial connection to COM4 was lost: device removed"]
+
+    window.close()
+    application.processEvents()

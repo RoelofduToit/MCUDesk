@@ -2,7 +2,7 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.1.3 discovers serial ports on Windows and Linux and supports opening and closing a selected port with standard 8-N-1 settings. Receiving and transmitting serial data, plotting, parsing, profiles, logging, and persistence are intentionally not implemented.
+Version 0.1.4 discovers serial ports on Windows and Linux, opens and closes a selected port with standard 8-N-1 settings, and displays incoming bytes live in the terminal. Serial transmission, plotting, parsing, profiles, logging, and persistence are intentionally not implemented.
 
 ## Requirements
 

@@ -12,7 +12,7 @@ class SerialConnectionError(Exception):
 
 
 class SerialConnection:
-    """Own a single PySerial connection without reading or writing data."""
+    """Own a single PySerial connection and provide bounded byte reads."""
 
     def __init__(
         self,
@@ -48,6 +48,7 @@ class SerialConnection:
                 xonxoff=False,
                 rtscts=False,
                 dsrdtr=False,
+                timeout=0.1,
             )
         except (SerialException, OSError) as error:
             self._serial_port = None
@@ -67,4 +68,20 @@ class SerialConnection:
         except (SerialException, OSError) as error:
             raise SerialConnectionError(
                 f"Could not close {serial_port.port}: {error}"
+            ) from error
+
+    def read(self, maximum_bytes: int = 4096) -> bytes:
+        """Read an available byte chunk, bounded by the configured timeout."""
+        serial_port = self._serial_port
+        if serial_port is None or not serial_port.is_open:
+            raise SerialConnectionError("The serial port is not connected.")
+
+        try:
+            available = serial_port.in_waiting
+            size = min(maximum_bytes, max(1, available))
+            return bytes(serial_port.read(size))
+        except (SerialException, OSError) as error:
+            device = serial_port.port
+            raise SerialConnectionError(
+                f"Serial connection to {device} was lost: {error}"
             ) from error

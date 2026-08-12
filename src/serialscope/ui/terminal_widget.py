@@ -1,6 +1,8 @@
 """Terminal output and command controls."""
 
-from PySide6.QtGui import QFontDatabase
+import codecs
+
+from PySide6.QtGui import QFontDatabase, QTextCursor
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -65,3 +67,21 @@ class TerminalWidget(QFrame):
         self.send_button.setObjectName("sendButton")
         command_layout.addWidget(self.send_button)
         layout.addWidget(command_area)
+
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+    def append_bytes(self, data: bytes) -> None:
+        """Decode and append a raw stream chunk without altering line breaks."""
+        text = self._decoder.decode(data)
+        if not text:
+            return
+
+        cursor = self.output.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.insertText(text)
+        self.output.setTextCursor(cursor)
+        self.output.ensureCursorVisible()
+
+    def reset_stream_decoder(self) -> None:
+        """Reset decoding state for a newly connected byte stream."""
+        self._decoder.reset()
