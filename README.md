@@ -2,7 +2,7 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.5.1 records exact raw serial bytes alongside parser-produced numeric samples in session `data.csv` files, while retaining the tabbed Data and live Graphs workspace. Advanced export, statistics, profiles, and databases are intentionally not implemented.
+Version 0.5.2 adds persistent Dark and Light appearance preferences while retaining exact raw and structured session recording, the Data workspace, and live Graphs. Advanced customization, export, statistics, profiles, and databases are intentionally not implemented.
 
 ## Requirements
 

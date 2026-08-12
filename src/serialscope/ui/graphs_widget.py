@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from serialscope.data import ChannelHistory
 from serialscope.parsing import ChannelUpdate
 from serialscope.ui.elapsed_time_axis import ElapsedTimeAxis
+from serialscope.ui.theme import DARK_GRAPH_PALETTE, GraphPalette
 
 
 TIME_WINDOWS = {
@@ -55,6 +56,7 @@ class GraphsWidget(QWidget):
         self._selectors: dict[str, QCheckBox] = {}
         self._series: dict[str, pg.PlotDataItem] = {}
         self._paused = False
+        self._graph_palette = DARK_GRAPH_PALETTE
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -117,6 +119,7 @@ class GraphsWidget(QWidget):
         self.plot_widget.setLabel("left", "Value")
         self.plot_widget.addLegend()
         layout.addWidget(self.plot_widget, 1)
+        self.apply_theme(DARK_GRAPH_PALETTE)
         self._apply_x_range(0.0)
 
         self._refresh_timer = QTimer(self)
@@ -204,6 +207,21 @@ class GraphsWidget(QWidget):
             series.setData([], [])
         self._apply_x_range(0.0)
 
+    def apply_theme(self, palette: GraphPalette) -> None:
+        """Update graph surfaces without altering history or selections."""
+        self._graph_palette = palette
+        self.plot_widget.setBackground(palette.background)
+        for orientation in ("bottom", "left"):
+            axis = self.plot_widget.getAxis(orientation)
+            axis.setPen(palette.foreground)
+            axis.setTextPen(palette.foreground)
+        legend = self.plot_widget.plotItem.legend
+        if legend is not None:
+            legend.setBrush(palette.background)
+            legend.setPen(palette.foreground)
+            for _sample, label in legend.items:
+                label.setText(label.text, color=palette.foreground)
+
     def reset(self) -> None:
         """Clear selector, series, and history for a new connection."""
         for checkbox in self._selectors.values():
@@ -233,6 +251,7 @@ class GraphsWidget(QWidget):
                 name=name,
                 pen=pg.mkPen(color, width=2),
             )
+            self.apply_theme(self._graph_palette)
             self.refresh_plot()
         else:
             series = self._series.pop(name, None)

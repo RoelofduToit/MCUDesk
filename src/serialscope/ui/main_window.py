@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QVBoxLayout,
     QWidget,
+    QApplication,
 )
 
 from serialscope.logging import (
@@ -24,6 +25,7 @@ from serialscope.logging import (
     SessionConfig,
 )
 from serialscope.parsing import SerialStreamParser
+from serialscope.settings import ApplicationSettings
 from serialscope.serial import (
     SerialConnection,
     SerialConnectionError,
@@ -34,8 +36,10 @@ from serialscope.serial import (
 from serialscope.ui.connection_bar import ConnectionBar
 from serialscope.ui.data_widget import DataWidget
 from serialscope.ui.graphs_widget import GraphsWidget
+from serialscope.ui.preferences_dialog import PreferencesDialog
 from serialscope.ui.side_panel import SidePanel
 from serialscope.ui.terminal_widget import TerminalWidget
+from serialscope.ui.theme import apply_application_theme
 
 
 def format_byte_count(byte_count: int) -> str:
@@ -65,6 +69,7 @@ class MainWindow(QMainWindow):
         raw_logger: RawLogger | None = None,
         recording_session: RecordingSession | None = None,
         stream_parser: SerialStreamParser | None = None,
+        application_settings: ApplicationSettings | None = None,
     ) -> None:
         super().__init__()
         self._port_scanner = port_scanner or discover_recommended_serial_ports
@@ -73,6 +78,8 @@ class MainWindow(QMainWindow):
         self._serial_reader: SerialReader | None = None
         self._recording_session = recording_session or RecordingSession(raw_logger)
         self._stream_parser = stream_parser or SerialStreamParser()
+        self._application_settings = application_settings or ApplicationSettings()
+        self._selected_theme = self._application_settings.theme
         self._rx_bytes = 0
         self._tx_bytes = 0
         self._recording_timer = QTimer(self)
@@ -119,8 +126,48 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self.workspace_splitter, 1)
 
         self.setCentralWidget(central_widget)
+        self._build_menu_bar()
         self._build_status_bar()
+        delimiter_index = self.side_panel.data_delimiter_combo.findData(
+            self._application_settings.structured_data_delimiter
+        )
+        self.side_panel.data_delimiter_combo.setCurrentIndex(
+            max(0, delimiter_index)
+        )
+        self.side_panel.data_delimiter_combo.currentIndexChanged.connect(
+            self._save_delimiter_preference
+        )
+        self.apply_theme(self._selected_theme)
         self.refresh_ports()
+
+    @property
+    def selected_theme(self) -> str:
+        return self._selected_theme
+
+    def apply_theme(self, theme: str) -> None:
+        """Apply a theme live without changing application state."""
+        application = QApplication.instance()
+        if application is None:
+            return
+        self._selected_theme = theme
+        graph_palette = apply_application_theme(application, theme)
+        self.graphs_widget.apply_theme(graph_palette)
+
+    def _save_delimiter_preference(self) -> None:
+        self._application_settings.set_structured_data_delimiter(
+            self.side_panel.data_delimiter_combo.currentData()
+        )
+
+    def _show_preferences(self) -> None:
+        dialog = PreferencesDialog(self._selected_theme, self)
+        if dialog.exec() == PreferencesDialog.DialogCode.Accepted:
+            self._application_settings.set_theme(dialog.selected_theme)
+            self.apply_theme(dialog.selected_theme)
+
+    def _build_menu_bar(self) -> None:
+        settings_menu = self.menuBar().addMenu("Settings")
+        self.preferences_action = settings_menu.addAction("Preferences")
+        self.preferences_action.triggered.connect(self._show_preferences)
 
     def refresh_ports(self) -> None:
         """Refresh the connection bar with currently available ports."""

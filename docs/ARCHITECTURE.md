@@ -10,6 +10,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 
 - `main.py` is a minimal source-checkout launcher.
 - `src/serialscope/app.py` owns the Qt application lifecycle.
+- `src/serialscope/settings.py` validates and persists small user preferences through `QSettings`.
 - `src/serialscope/serial/port_scanner.py` discovers ports through PySerial and returns Qt-independent structured metadata.
 - `src/serialscope/serial/connection.py` owns the live PySerial object and its open/close lifecycle.
 - `src/serialscope/serial/reader.py` runs bounded serial reads in a dedicated `QThread` and emits raw byte chunks.
@@ -25,6 +26,8 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/ui/data_widget.py` presents the same channel updates in a larger, stable-order table.
 - `src/serialscope/ui/graphs_widget.py` owns graph-channel selection and PyQtGraph presentation.
 - `src/serialscope/ui/elapsed_time_axis.py` formats seconds-valued graph ticks as human-readable elapsed time without SI prefixes.
+- `src/serialscope/ui/preferences_dialog.py` provides the compact confirmed appearance settings UI.
+- `src/serialscope/ui/theme.py` applies consistent Light and Dark application/graph palettes centrally.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
@@ -46,7 +49,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.5.1 boundaries
+## Version 0.5.2 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -84,7 +87,13 @@ The visible X range can show the latest 10, 30, 60, 300, 600, 1,800, or 3,600 se
 
 Disconnect leaves graph history and visible series intact. A subsequent successful connection resets graph history, selectors, and curves before new data arrives, preventing data from separate devices or sessions from being mixed. Manual stop, disconnect/error, and application shutdown flush and close both session data files before metadata finalization. Malformed parser input continues into `raw.log` but produces no `data.csv` row.
 
-Version 0.5.1 intentionally includes no schema rewriting, structured export formats beyond the live session CSV, graph export, cursors, statistics, multiple panes or axes, unit grouping, calculated channels, themes, dashboards, profiles, or protocol features.
+`ApplicationSettings` uses Qt `QSettings`, relying on Qt's platform-native storage location, and persists only lowercase `dark` or `light` plus the structured-data delimiter. Dark is the default. Legacy `system` values and all unknown themes fall back to Dark; unknown delimiters fall back to comma. No connection or recording state is persisted. Delimiter changes are saved when the user changes that dedicated Session control; an active recording still captures and locks its delimiter at session start.
+
+The Preferences dialog exposes exactly Dark and Light. Confirmed changes apply live through the centralized theme layer without reconstructing widgets or mutating serial, parser, recording, Data, or graph state. Both themes use centralized restrained stylesheets and a shared typography definition, control dimensions, and spacing. SerialScope does not derive its appearance from the operating-system theme, giving it consistent geometry and typography across desktop environments.
+
+`GraphsWidget` receives a shared graph palette from the theme layer and updates its background, axes, legend, and text without clearing history or selections. Trace colors remain deterministic and independent of user customization.
+
+Version 0.5.2 intentionally includes no custom theme editor, accent or trace color picker, font picker, schema rewriting, structured export formats beyond the live session CSV, graph export, cursors, statistics, multiple panes or axes, unit grouping, calculated channels, dashboards, profiles, or protocol features.
 
 ## Planned technology direction
 

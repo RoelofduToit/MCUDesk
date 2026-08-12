@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from serial import SerialException
 
 from serialscope.logging import RecordingSession, RecordingSessionError, SessionConfig
+from serialscope.settings import ApplicationSettings
 from serialscope.serial import SerialConnection, SerialPortInfo
 from serialscope.ui.main_window import MainWindow, format_byte_count
 
@@ -60,6 +61,113 @@ def test_main_window_has_application_title() -> None:
 
     assert window.windowTitle() == "SerialScope"
 
+    window.close()
+    application.processEvents()
+
+
+def test_main_window_restores_and_persists_delimiter_preference(tmp_path: Path) -> None:
+    application = QApplication.instance() or QApplication([])
+    settings_path = tmp_path / "settings.ini"
+    settings = ApplicationSettings(
+        QSettings(str(settings_path), QSettings.Format.IniFormat)
+    )
+    settings.set_structured_data_delimiter(";")
+    window = MainWindow(port_scanner=lambda: [], application_settings=settings)
+
+    assert window.side_panel.data_delimiter_combo.currentData() == ";"
+    window.side_panel.data_delimiter_combo.setCurrentText("Tab")
+
+    restored = ApplicationSettings(
+        QSettings(str(settings_path), QSettings.Format.IniFormat)
+    )
+    assert restored.structured_data_delimiter == "\t"
+    window.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_theme_applies_without_resetting_live_application_state(
+    tmp_path: Path,
+    theme: str,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    settings = ApplicationSettings(
+        QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    )
+    window = MainWindow(port_scanner=lambda: [], application_settings=settings)
+    raw_data = b'{"A":1,"B":2}\n'
+    window._handle_received_bytes(raw_data)
+    window.graphs_widget.set_channel_selected("A", True)
+    history_before = window.graphs_widget.history.points("A")
+
+    window.apply_theme(theme)
+
+    assert window.selected_theme == theme
+    assert window.graphs_widget.history.points("A") == history_before
+    assert window.graphs_widget.selected_channels == ("A",)
+    assert window.data_widget.value_text("A") == "1"
+    assert window.side_panel.channels_widget.value_text("A") == "1"
+    assert window.terminal.output.toPlainText() == raw_data.decode()
+    assert application.styleSheet()
+
+    window.close()
+    application.processEvents()
+
+
+def test_preferences_action_is_available() -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(port_scanner=lambda: [])
+
+    assert window.preferences_action.text() == "Preferences"
+
+    window.close()
+    application.processEvents()
+
+
+def test_main_window_restores_persisted_theme(tmp_path: Path) -> None:
+    application = QApplication.instance() or QApplication([])
+    settings = ApplicationSettings(
+        QSettings(
+            str(tmp_path / "settings.ini"),
+            QSettings.Format.IniFormat,
+        )
+    )
+    settings.set_theme("dark")
+
+    window = MainWindow(port_scanner=lambda: [], application_settings=settings)
+
+    assert window.selected_theme == "dark"
+    assert application.styleSheet()
+    window.close()
+    application.processEvents()
+
+
+def test_light_dark_switch_preserves_typography_and_control_geometry(
+    tmp_path: Path,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    settings = ApplicationSettings(
+        QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    )
+    window = MainWindow(port_scanner=lambda: [], application_settings=settings)
+    window.show()
+    application.processEvents()
+    controls = (
+        window.connection_bar.connect_button,
+        window.side_panel.session_name_input,
+        window.side_panel.data_delimiter_combo,
+    )
+
+    window.apply_theme("dark")
+    application.processEvents()
+    dark_fonts = [control.font().toString() for control in controls]
+    dark_sizes = [control.sizeHint() for control in controls]
+
+    window.apply_theme("light")
+    application.processEvents()
+
+    assert [control.font().toString() for control in controls] == dark_fonts
+    assert [control.sizeHint() for control in controls] == dark_sizes
     window.close()
     application.processEvents()
 
@@ -820,6 +928,7 @@ def test_connection_loss_stops_and_preserves_log(monkeypatch, tmp_path: Path) ->
     )
     window.connection_bar.connect_button.click()
     window.side_panel.session_name_input.setText("Disconnect test")
+    window.side_panel.data_delimiter_combo.setCurrentText("Comma (,)")
     window.side_panel.logging_button.click()
     raw_data = b"A,B\n1,2\n"
     readers[0].bytes_received.emit(raw_data)
@@ -859,6 +968,7 @@ def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> 
     )
     window.connection_bar.connect_button.click()
     window.side_panel.session_name_input.setText("Shutdown test")
+    window.side_panel.data_delimiter_combo.setCurrentText("Comma (,)")
     window.side_panel.logging_button.click()
     raw_data = b'{"A":1,"B":2}\n'
     reader.bytes_received.emit(raw_data)
@@ -1301,6 +1411,7 @@ def test_recording_writes_parser_updates_to_structured_csv(
     )
     window.connection_bar.connect_button.click()
     window.side_panel.session_name_input.setText("Structured parser test")
+    window.side_panel.data_delimiter_combo.setCurrentText("Comma (,)")
     window.side_panel.logging_button.click()
 
     reader.bytes_received.emit(raw_data)
