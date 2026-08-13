@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QApplication,
+    QDialog,
 )
 
 from serialscope.logging import (
@@ -25,6 +26,7 @@ from serialscope.logging import (
     SessionConfig,
 )
 from serialscope.parsing import SerialStreamParser
+from serialscope.data import ChannelMetadataRegistry
 from serialscope.replay import ReplaySession, ReplaySessionError, load_replay_session
 from serialscope.settings import ApplicationSettings
 from serialscope.serial import (
@@ -35,6 +37,7 @@ from serialscope.serial import (
     discover_recommended_serial_ports,
 )
 from serialscope.ui.connection_bar import ConnectionBar
+from serialscope.ui.channel_settings_dialog import ChannelSettingsDialog
 from serialscope.ui.data_widget import DataWidget
 from serialscope.ui.dashboard_widget import DashboardWidget
 from serialscope.ui.graphs_widget import GraphsWidget
@@ -85,6 +88,8 @@ class MainWindow(QMainWindow):
         self._rx_bytes = 0
         self._tx_bytes = 0
         self._replay_session: ReplaySession | None = None
+        self._channel_metadata = ChannelMetadataRegistry()
+        self._live_channel_metadata: dict[str, dict[str, str]] | None = None
         self._recording_timer = QTimer(self)
         self._recording_timer.setInterval(1_000)
         self._recording_timer.timeout.connect(self._update_recording_presentation)
@@ -188,6 +193,33 @@ class MainWindow(QMainWindow):
         self.preferences_action = settings_menu.addAction("Preferences")
         self.preferences_action.triggered.connect(self._show_preferences)
 
+        channels_menu = self.menuBar().addMenu("Channels")
+        self.configure_channels_action = channels_menu.addAction(
+            "Configure Channels..."
+        )
+        self.configure_channels_action.triggered.connect(
+            self._show_channel_settings
+        )
+
+    def _show_channel_settings(self) -> None:
+        dialog = ChannelSettingsDialog(self._channel_metadata, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            dialog.apply()
+            self._apply_channel_metadata()
+
+    def _apply_channel_metadata(self) -> None:
+        self.data_widget.set_channel_metadata(self._channel_metadata)
+        self.graphs_widget.set_channel_metadata(self._channel_metadata)
+        self.dashboard_widget.set_channel_metadata(self._channel_metadata)
+        if self._recording_session.is_recording:
+            try:
+                self._recording_session.set_channel_metadata(
+                    self._channel_metadata.snapshot()
+                )
+            except RecordingSessionError as error:
+                self._stop_recording("logging_error", show_error=False)
+                self._show_logging_error(str(error))
+
     @property
     def is_replay_mode(self) -> bool:
         return self._replay_session is not None
@@ -236,16 +268,25 @@ class MainWindow(QMainWindow):
         if self._replay_session is None:
             return
         self._replay_session = None
+        live_metadata = self._live_channel_metadata or {}
+        self._live_channel_metadata = None
+        self._channel_metadata.replace(live_metadata, tuple(live_metadata))
         self.replay_banner.clear()
         self.replay_banner.hide()
         self.connection_bar.setEnabled(True)
         self.close_session_action.setEnabled(False)
         self._reset_channels(reset_graphs=True)
+        self._apply_channel_metadata()
         self.side_panel.set_connected(False)
         self.workspace_tabs.setCurrentWidget(self.terminal)
 
     def _enter_replay_mode(self, session: ReplaySession) -> None:
+        self._live_channel_metadata = self._channel_metadata.snapshot()
         self._replay_session = session
+        replay_metadata = session.metadata.get("channels", {})
+        if not isinstance(replay_metadata, dict):
+            replay_metadata = {}
+        self._channel_metadata.replace(replay_metadata, session.channel_names)
         metadata = session.metadata
         details = [f"Replay Mode — {session.name}"]
         serial_metadata = metadata.get("serial", {})
@@ -273,6 +314,7 @@ class MainWindow(QMainWindow):
         self.data_widget.load_replay(session)
         self.graphs_widget.load_replay(session)
         self.dashboard_widget.load_replay(session)
+        self._apply_channel_metadata()
         self.workspace_tabs.setCurrentWidget(self.data_widget)
         self.close_session_action.setEnabled(True)
 
@@ -367,10 +409,14 @@ class MainWindow(QMainWindow):
             else:
                 self._update_recording_presentation()
         for update in self._stream_parser.feed(data):
+            known_channels = self._channel_metadata.source_names
+            self._channel_metadata.ensure(update.names)
             self.side_panel.channels_widget.update_channels(update)
             self.data_widget.update_channels(update)
             self.graphs_widget.update_channels(update)
             self.dashboard_widget.update_channels(update)
+            if self._channel_metadata.source_names != known_channels:
+                self._apply_channel_metadata()
             if self._recording_session.is_recording:
                 try:
                     self._recording_session.write_structured(update)
@@ -462,6 +508,7 @@ class MainWindow(QMainWindow):
             structured_data_delimiter=(
                 self.side_panel.data_delimiter_combo.currentData()
             ),
+            channels=self._channel_metadata.snapshot(),
         )
         try:
             self._recording_session.start(Path(selected_directory), config)

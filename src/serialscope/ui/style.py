@@ -123,6 +123,10 @@ QLabel#dashboardTileValue {
     font-size: 24pt;
     font-weight: 600;
 }
+QLabel#dashboardTileUnit {
+    color: #8fa3b8;
+    font-size: 11pt;
+}
 QLabel#dashboardEmptyLabel {
     color: #718399;
     font-size: 12pt;
@@ -366,6 +370,7 @@ QLabel#dashboardTileValue {
     font-size: 24pt;
     font-weight: 600;
 }
+QLabel#dashboardTileUnit { color: #607486; font-size: 11pt; }
 QLabel#dashboardEmptyLabel { color: #718399; font-size: 12pt; }
 QLabel#connectionStatusDot { color: #7f8c99; font-size: 11pt; }
 QLabel#connectionStatusDot[connectionState="connected"] { color: #168552; }

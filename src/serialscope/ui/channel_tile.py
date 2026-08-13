@@ -4,6 +4,7 @@ import math
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from serialscope.data import ChannelPresentation
 
 
 def format_dashboard_value(value: int | float) -> str:
@@ -47,5 +48,15 @@ class ChannelTile(QFrame):
         )
         layout.addWidget(self.value_label, 1)
 
+        self.unit_label = QLabel("")
+        self.unit_label.setObjectName("dashboardTileUnit")
+        self.unit_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.unit_label)
+
     def set_value(self, value: int | float) -> None:
         self.value_label.setText(format_dashboard_value(value))
+
+    def set_presentation(self, presentation: ChannelPresentation) -> None:
+        self.name_label.setText(presentation.display_name)
+        self.name_label.setToolTip(f"Source: {self.channel_name}")
+        self.unit_label.setText(presentation.unit)

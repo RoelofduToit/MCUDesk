@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, and version 0.6 adds offline session replay, graph inspection, and a simple HMI Dashboard while preserving the independent live data paths.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, and version 0.7 adds presentation-only channel aliases and engineering units.
 
 ## Current structure
 
@@ -22,12 +22,14 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/parsing/json_parser.py` incrementally parses top-level numeric values from one JSON object per line.
 - `src/serialscope/parsing/stream_parser.py` deterministically selects and locks a parser for the current connection.
 - `src/serialscope/data/channel_history.py` retains Qt-independent, monotonic, bounded numeric history for plotting.
+- `src/serialscope/data/channel_metadata.py` retains optional aliases and units keyed by authoritative source channel names.
 - `src/serialscope/data/graph_processing.py` performs pure display smoothing/interpolation and measured-data inspection/statistics without mutating graph history.
 - `src/serialscope/replay/session_loader.py` validates and loads completed session metadata and structured CSV into immutable, Qt-independent replay data.
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
 - `src/serialscope/ui/data_widget.py` presents the same channel updates in a larger, stable-order table.
 - `src/serialscope/ui/dashboard_widget.py` owns Dashboard channel choices, latest values, scrolling, and responsive tile placement.
 - `src/serialscope/ui/channel_tile.py` presents one channel name and formatted numeric value without owning data acquisition.
+- `src/serialscope/ui/channel_settings_dialog.py` edits aliases and free-text units while keeping source names read-only.
 - `src/serialscope/ui/graphs_widget.py` owns graph-channel selection and PyQtGraph presentation.
 - `src/serialscope/ui/elapsed_time_axis.py` formats seconds-valued graph ticks as human-readable elapsed time without SI prefixes.
 - `src/serialscope/ui/preferences_dialog.py` provides the compact confirmed appearance settings UI.
@@ -53,7 +55,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.6.3 boundaries
+## Version 0.7.1 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -113,7 +115,13 @@ Dashboard channel availability is derived from structured channel names and rema
 
 Disconnect leaves the last live Dashboard values visible without generating updates. A successful new connection resets availability, selections, and tiles before accepting the new device's structured state. Replay entry similarly replaces Dashboard state with replay channel names and final recorded values; closing replay clears that state. Dark/Light styling remains centralized and theme changes do not reconstruct tiles or alter selection/value state. Dashboard construction is deferred until it receives structured data or becomes visible, keeping unopened application windows lightweight.
 
-Version 0.6.3 intentionally includes no gauges, engineering units, aliases, alarms, process graphics, drag-and-drop layout, saved dashboards, playback clock, user formulas, or device-control features.
+Every structured channel retains its parser/device-provided source name as its authoritative identity. `ChannelMetadataRegistry` stores only optional, trimmed presentation metadata (`alias` and user-supplied `unit`) under that source key. Empty aliases fall back to the source name and empty units remain blank. Duplicate aliases are valid and cannot merge histories, selections, tiles, CSV columns, or any other source-keyed state.
+
+Channels → Configure Channels opens a table whose source-name column is read-only. Applying changes updates existing Data rows, graph selectors/legend/cursor/statistics text, and Dashboard selectors/tiles in place. Graph history and selected series, Dashboard selections, numeric values, serial state, parsing, and recording remain intact. Units are presentation text only: SerialScope performs no inference, conversion, calibration, or scaling.
+
+`RecordingSession` copies the registry's non-empty presentation metadata into the small `channels` object in `session.json`, and can refresh that object when metadata changes during an active recording. `StructuredCsvLogger` continues receiving unchanged `ChannelUpdate` objects, so `data.csv` headers always use original source names. Raw serial bytes and `raw.log` remain completely independent. Replay accepts older sessions without `channels`, and when metadata exists MainWindow applies it to Data, Graphs, and Dashboard while the replay model remains source-keyed.
+
+Version 0.7.1 intentionally includes no automatic unit detection, unit conversion, calibration, alarms, device profiles, saved dashboard layouts, user formulas, or device-control features.
 
 ## Planned technology direction
 

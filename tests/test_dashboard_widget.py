@@ -9,6 +9,7 @@ from serialscope.parsing import ChannelUpdate
 from serialscope.replay import load_replay_session
 from serialscope.ui.channel_tile import format_dashboard_value
 from serialscope.ui.dashboard_widget import DashboardWidget
+from serialscope.data import ChannelMetadataRegistry
 
 
 def test_dashboard_starts_empty_and_adds_channels_once_unselected() -> None:
@@ -137,5 +138,26 @@ def test_replay_exposes_latest_values_and_reset_clears_them(tmp_path: Path) -> N
     widget.reset()
     assert widget.channel_names == ()
     assert widget.tile_count == 0
+    widget.close()
+    application.processEvents()
+
+
+def test_dashboard_alias_and_unit_change_preserve_source_selection() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("TC1",), (101.42,)))
+    widget.set_channel_selected("TC1", True)
+    registry = ChannelMetadataRegistry()
+    registry.set("TC1", "Reactor Temperature", "°C")
+
+    widget.set_channel_metadata(registry)
+
+    tile = widget._tiles["TC1"]
+    assert widget.selected_channels == ("TC1",)
+    assert widget.tile_count == 1
+    assert tile.name_label.text() == "Reactor Temperature"
+    assert tile.name_label.toolTip() == "Source: TC1"
+    assert tile.unit_label.text() == "°C"
+    assert tile.value_label.text() == "101.42"
     widget.close()
     application.processEvents()

@@ -31,6 +31,9 @@ def make_session(path: Path) -> Path:
                 "serial": {"device": "/dev/ttyACM0", "baud_rate": 115200},
                 "elapsed_seconds": 4000,
                 "structured_row_count": 3,
+                "channels": {
+                    "TC1": {"alias": "Reactor Temperature", "unit": "°C"}
+                },
             }
         ),
         encoding="utf-8",
@@ -63,6 +66,10 @@ def test_replay_populates_data_graphs_metadata_and_can_close(tmp_path: Path) -> 
     assert window.dashboard_widget.selected_channels == ()
     window.dashboard_widget.set_channel_selected("TC1", True)
     assert window.dashboard_widget.tile_value_text("TC1") == "22"
+    assert window.dashboard_widget._tiles["TC1"].name_label.text() == "Reactor Temperature"
+    assert window.dashboard_widget._tiles["TC1"].unit_label.text() == "°C"
+    assert window.data_widget.table.item(0, 0).text() == "Reactor Temperature"
+    assert window.data_widget.table.item(0, 2).text() == "°C"
     window.graphs_widget.set_channel_selected("TC1", True)
     x_values, y_values = window.graphs_widget._series["TC1"].getData()
     assert x_values.tolist() == pytest.approx([0.0, 120.5, 4000.0])
@@ -73,6 +80,7 @@ def test_replay_populates_data_graphs_metadata_and_can_close(tmp_path: Path) -> 
     window.apply_theme("light")
     assert window.graphs_widget.selected_channels == ("TC1",)
     assert window.graphs_widget._series["TC1"].getData()[1].tolist() == history_before
+    assert window.graphs_widget._series["TC1"].name() == "Reactor Temperature"
     assert window.dashboard_widget.selected_channels == ("TC1",)
     assert window.dashboard_widget.tile_value_text("TC1") == "22"
 

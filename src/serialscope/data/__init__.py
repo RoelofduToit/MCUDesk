@@ -1,6 +1,10 @@
 """Structured numeric data models."""
 
 from serialscope.data.channel_history import ChannelHistory
+from serialscope.data.channel_metadata import (
+    ChannelMetadataRegistry,
+    ChannelPresentation,
+)
 from serialscope.data.graph_processing import (
     ChannelStatistics,
     calculate_statistics,
@@ -12,6 +16,8 @@ from serialscope.data.graph_processing import (
 
 __all__ = [
     "ChannelHistory",
+    "ChannelMetadataRegistry",
+    "ChannelPresentation",
     "ChannelStatistics",
     "calculate_statistics",
     "interpolate_points",

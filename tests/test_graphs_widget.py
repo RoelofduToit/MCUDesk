@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 from serialscope.parsing import ChannelUpdate
 from serialscope.ui.graphs_widget import GraphsWidget, visible_x_range
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, LIGHT_GRAPH_PALETTE
+from serialscope.data import ChannelMetadataRegistry
 
 
 @pytest.mark.parametrize(
@@ -337,5 +338,34 @@ def test_graph_inspection_elements_remain_functional_in_both_themes() -> None:
         assert widget.inspect_at(0.0) == {"A": (0.0, 1)}
         assert widget.cursor_line.pen.color().name() == palette.cursor
 
+    widget.close()
+    application.processEvents()
+
+
+def test_alias_and_unit_update_legend_cursor_statistics_without_reset() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 11.0, 12.0))
+    widget = GraphsWidget(clock=lambda: next(times))
+    for value in (98.4, 104.6, 100.6):
+        widget.update_channels(ChannelUpdate(("TC1",), (value,)))
+    widget.set_channel_selected("TC1", True)
+    history_before = widget.history.points("TC1")
+    registry = ChannelMetadataRegistry()
+    registry.set("TC1", "Reactor Temperature", "°C")
+
+    widget.set_channel_metadata(registry)
+    widget._update_statistics(widget._source_points())
+
+    assert widget.channel_names == ("TC1",)
+    assert widget.selected_channels == ("TC1",)
+    assert widget.history.points("TC1") == history_before
+    assert widget._series["TC1"].name() == "Reactor Temperature"
+    presentation = registry.get("TC1")
+    nearest = widget.inspect_at(1.1)["TC1"]
+    assert presentation.display_name == "Reactor Temperature"
+    assert nearest == (1.0, 104.6)
+    assert "Reactor Temperature: 104.6 °C" in widget.cursor_text_at(1.1)
+    assert "Reactor Temperature" in widget.statistics_label.text()
+    assert "°C" in widget.statistics_label.text()
     widget.close()
     application.processEvents()

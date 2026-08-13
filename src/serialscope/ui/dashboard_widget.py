@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from serialscope.parsing import ChannelUpdate
+from serialscope.data import ChannelMetadataRegistry
 from serialscope.replay import ReplaySession
 from serialscope.ui.channel_tile import ChannelTile
 
@@ -32,6 +33,7 @@ class DashboardWidget(QWidget):
         self._latest_values: dict[str, int | float] = {}
         self._tiles: dict[str, ChannelTile] = {}
         self._column_count = 0
+        self._metadata = ChannelMetadataRegistry()
         self._built = False
         if not lazy:
             self._build_ui()
@@ -157,6 +159,15 @@ class DashboardWidget(QWidget):
         tile = self._tiles.get(name)
         return tile.value_label.text() if tile is not None else None
 
+    def set_channel_metadata(self, registry: ChannelMetadataRegistry) -> None:
+        self._metadata = registry
+        for source_name, checkbox in self._items.items():
+            presentation = registry.get(source_name)
+            checkbox.setText(presentation.display_name)
+            checkbox.setToolTip(f"Source: {source_name}")
+        for source_name, tile in self._tiles.items():
+            tile.set_presentation(registry.get(source_name))
+
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         if self._built:
@@ -185,6 +196,9 @@ class DashboardWidget(QWidget):
             self._selector_layout.count() - 1, checkbox
         )
         self._items[name] = checkbox
+        presentation = self._metadata.get(name)
+        checkbox.setText(presentation.display_name)
+        checkbox.setToolTip(f"Source: {name}")
 
     def _selection_changed_from_sender(self, selected: bool) -> None:
         checkbox = self.sender()
@@ -195,6 +209,7 @@ class DashboardWidget(QWidget):
         if selected:
             if name not in self._tiles:
                 tile = ChannelTile(name)
+                tile.set_presentation(self._metadata.get(name))
                 value = self._latest_values.get(name)
                 if value is not None:
                     tile.set_value(value)

@@ -2,7 +2,7 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.6.3 adds a responsive Dashboard tab for selected live or replay channels. Large numeric tiles update from the same structured channel events used by Data and Graphs, without introducing another parser or changing recorded data. Graph inspection and display-only processing remain available in the Graphs tab.
+Version 0.7.1 adds optional user-defined channel aliases and engineering units. Configure them through **Channels → Configure Channels...**; Data, Graphs, cursor/statistics readouts, and Dashboard use the presentation metadata while serial input, parser channel names, `raw.log`, and `data.csv` retain authoritative source identities.
 
 ## Requirements
 

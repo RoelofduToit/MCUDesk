@@ -172,3 +172,31 @@ def test_selected_structured_delimiter_is_stored_in_metadata(tmp_path: Path) -> 
 
     metadata = json.loads((directory / "session.json").read_text("utf-8"))
     assert metadata["structured_data_delimiter"] == "\t"
+
+
+def test_channel_metadata_is_stored_but_csv_keeps_source_names(tmp_path: Path) -> None:
+    monotonic_values = iter((10.0, 10.5))
+    session = RecordingSession(
+        structured_logger=StructuredCsvLogger(clock=lambda: next(monotonic_values))
+    )
+    config = SessionConfig(
+        session_name="Metadata",
+        device="COM4",
+        baud_rate=115200,
+        line_ending="LF",
+        channels={"TC1": {"alias": "Temperature", "unit": "°C"}},
+    )
+    directory = session.start(tmp_path, config)
+    session.write_structured(ChannelUpdate(("TC1",), (100.0,)))
+    session.set_channel_metadata(
+        {"TC1": {"alias": "Reactor Temperature", "unit": "°C"}}
+    )
+    session.stop("normal", 0)
+
+    metadata = json.loads((directory / "session.json").read_text("utf-8"))
+    assert metadata["channels"] == {
+        "TC1": {"alias": "Reactor Temperature", "unit": "°C"}
+    }
+    assert (directory / "data.csv").read_text(encoding="utf-8").startswith(
+        "elapsed_s,TC1\n"
+    )

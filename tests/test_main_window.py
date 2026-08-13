@@ -128,6 +128,16 @@ def test_preferences_action_is_available() -> None:
     application.processEvents()
 
 
+def test_channel_configuration_action_is_available() -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(port_scanner=lambda: [])
+
+    assert window.configure_channels_action.text() == "Configure Channels..."
+
+    window.close()
+    application.processEvents()
+
+
 def test_main_window_restores_persisted_theme(tmp_path: Path) -> None:
     application = QApplication.instance() or QApplication([])
     settings = ApplicationSettings(

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import platform
 import re
+from typing import Mapping
 
 from serialscope import __version__
 from serialscope.logging.raw_logger import RawLogger, RawLoggerError
@@ -33,6 +34,7 @@ class SessionConfig:
     parity: str = "none"
     stop_bits: int = 1
     structured_data_delimiter: str = ","
+    channels: Mapping[str, Mapping[str, str]] | None = None
 
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
@@ -151,6 +153,13 @@ class RecordingSession:
             "structured_row_count": 0,
             "structured_columns": [],
             "structured_ignored_channels": [],
+            "channels": {
+                name: {
+                    "alias": str(values.get("alias", "")).strip(),
+                    "unit": str(values.get("unit", "")).strip(),
+                }
+                for name, values in (config.channels or {}).items()
+            },
             "status": "recording",
             "recording_end_local": None,
             "recording_end_utc": None,
@@ -173,6 +182,21 @@ class RecordingSession:
             self._clear_active_state()
             raise
         return directory
+
+    def set_channel_metadata(
+        self, channels: Mapping[str, Mapping[str, str]]
+    ) -> None:
+        """Update presentation metadata without touching structured source data."""
+        if not self.is_recording:
+            return
+        self._metadata["channels"] = {
+            name: {
+                "alias": str(values.get("alias", "")).strip(),
+                "unit": str(values.get("unit", "")).strip(),
+            }
+            for name, values in channels.items()
+        }
+        self._write_metadata()
 
     def write(self, data: bytes) -> int:
         """Forward an exact byte chunk to the raw-only logger."""

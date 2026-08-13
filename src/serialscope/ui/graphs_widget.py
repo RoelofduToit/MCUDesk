@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from serialscope.data import (
     ChannelHistory,
+    ChannelMetadataRegistry,
     calculate_statistics,
     nearest_measurement,
     process_display_points,
@@ -67,6 +68,7 @@ class GraphsWidget(QWidget):
         self._paused = False
         self._replay_session: ReplaySession | None = None
         self._graph_palette = DARK_GRAPH_PALETTE
+        self._metadata = ChannelMetadataRegistry()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -274,6 +276,27 @@ class GraphsWidget(QWidget):
     def has_series(self, name: str) -> bool:
         return name in self._series
 
+    def set_channel_metadata(self, registry: ChannelMetadataRegistry) -> None:
+        """Refresh presentation labels without changing source-keyed graph state."""
+        self._metadata = registry
+        legend = self.plot_widget.plotItem.legend
+        for source_name, checkbox in self._selectors.items():
+            presentation = registry.get(source_name)
+            checkbox.setText(presentation.display_name)
+            checkbox.setToolTip(f"Source: {source_name}")
+            series = self._series.get(source_name)
+            if series is not None:
+                series.opts["name"] = presentation.display_name
+                if legend is not None:
+                    label = legend.getLabel(series)
+                    if label is not None:
+                        label.setText(
+                            presentation.display_name,
+                            color=self._graph_palette.foreground,
+                        )
+        if not self._paused:
+            self.refresh_plot()
+
     def refresh_plot(self) -> None:
         if self._paused:
             return
@@ -402,7 +425,7 @@ class GraphsWidget(QWidget):
                 minValue=180,
             )
             self._series[name] = self.plot_widget.plot(
-                name=name,
+                name=self._metadata.get(name).display_name,
                 pen=pg.mkPen(color, width=2),
             )
             self._measured_series[name] = self.plot_widget.plot(
@@ -437,6 +460,9 @@ class GraphsWidget(QWidget):
         )
         self._selector_layout.insertWidget(self._selector_layout.count() - 1, checkbox)
         self._selectors[name] = checkbox
+        presentation = self._metadata.get(name)
+        checkbox.setText(presentation.display_name)
+        checkbox.setToolTip(f"Source: {name}")
 
     def _refresh_live_plot(self) -> None:
         # Completed replay data is immutable; leaving it alone permits zoom and pan.
@@ -482,13 +508,7 @@ class GraphsWidget(QWidget):
         target = max(0.0, mouse_point.x())
         self.cursor_line.setPos(target)
         self.cursor_line.show()
-        lines = [f"Time: {target:.2f} s"]
-        for name, points in self._source_points().items():
-            nearest = nearest_measurement(*points, target)
-            if nearest is not None:
-                timestamp, value = nearest
-                lines.append(f"{name}: {value:g}  (measured at {timestamp:.2f} s)")
-        self.cursor_readout.setText("   |   ".join(lines))
+        self.cursor_readout.setText(self.cursor_text_at(target))
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         """Inspect graph mouse motion without retaining scene-signal proxies."""
@@ -504,6 +524,18 @@ class GraphsWidget(QWidget):
             for name, points in self._source_points().items()
             if (nearest := nearest_measurement(*points, elapsed_time)) is not None
         }
+
+    def cursor_text_at(self, elapsed_time: float) -> str:
+        """Format nearest measured values with presentation metadata."""
+        lines = [f"Time: {max(0.0, elapsed_time):.2f} s"]
+        for name, (timestamp, value) in self.inspect_at(elapsed_time).items():
+            presentation = self._metadata.get(name)
+            unit = f" {presentation.unit}" if presentation.unit else ""
+            lines.append(
+                f"{presentation.display_name}: {value:g}{unit}  "
+                f"(measured at {timestamp:.2f} s)"
+            )
+        return "   |   ".join(lines)
 
     @property
     def cursor_line(self) -> pg.InfiniteLine:
@@ -525,7 +557,10 @@ class GraphsWidget(QWidget):
         for name, (x_values, y_values) in points.items():
             statistics = calculate_statistics(x_values, y_values, lower, upper)
             if statistics is not None:
+                presentation = self._metadata.get(name)
+                unit = f" {presentation.unit}" if presentation.unit else ""
                 rows.append(
-                    f"{name}  Min {statistics.minimum:g}  Max {statistics.maximum:g}  Avg {statistics.average:g}"
+                    f"{presentation.display_name}  Min {statistics.minimum:g}{unit}  "
+                    f"Max {statistics.maximum:g}{unit}  Avg {statistics.average:g}{unit}"
                 )
         self.statistics_label.setText("   |   ".join(rows) if rows else "Statistics: no measured data")

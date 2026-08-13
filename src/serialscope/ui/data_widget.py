@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
+from serialscope.data import ChannelMetadataRegistry
 
 
 class DataWidget(QWidget):
@@ -29,14 +30,17 @@ class DataWidget(QWidget):
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty_label, 1)
 
-        self.table = QTableWidget(0, 2)
+        self.table = QTableWidget(0, 3)
         self.table.setObjectName("channelDataTable")
-        self.table.setHorizontalHeaderLabels(["Channel", "Value"])
+        self.table.setHorizontalHeaderLabels(["Channel", "Value", "Unit"])
         self.table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
         self.table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
         )
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -46,6 +50,7 @@ class DataWidget(QWidget):
         layout.addWidget(self.table, 1)
 
         self._rows: dict[str, int] = {}
+        self._metadata = ChannelMetadataRegistry()
 
     def update_channels(self, update: ChannelUpdate) -> None:
         """Apply the same immutable channel update used by the compact view."""
@@ -77,6 +82,15 @@ class DataWidget(QWidget):
         row = self._rows.get(name)
         return self.table.item(row, 1).text() if row is not None else None
 
+    def set_channel_metadata(self, registry: ChannelMetadataRegistry) -> None:
+        self._metadata = registry
+        for source_name, row in self._rows.items():
+            presentation = registry.get(source_name)
+            name_item = self.table.item(row, 0)
+            name_item.setText(presentation.display_name)
+            name_item.setToolTip(f"Source: {source_name}")
+            self.table.item(row, 2).setText(presentation.unit)
+
     @property
     def channel_names(self) -> tuple[str, ...]:
         return tuple(self._rows)
@@ -89,7 +103,9 @@ class DataWidget(QWidget):
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(name))
             self.table.setItem(row, 1, QTableWidgetItem("—"))
+            self.table.setItem(row, 2, QTableWidgetItem(""))
             self._rows[name] = row
+        self.set_channel_metadata(self._metadata)
         if self._rows:
             self.empty_label.hide()
             self.table.show()
