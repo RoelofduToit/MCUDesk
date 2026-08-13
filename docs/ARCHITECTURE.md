@@ -22,6 +22,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/parsing/json_parser.py` incrementally parses top-level numeric values from one JSON object per line.
 - `src/serialscope/parsing/stream_parser.py` deterministically selects and locks a parser for the current connection.
 - `src/serialscope/data/channel_history.py` retains Qt-independent, monotonic, bounded numeric history for plotting.
+- `src/serialscope/data/graph_processing.py` performs pure display smoothing/interpolation and measured-data inspection/statistics without mutating graph history.
 - `src/serialscope/replay/session_loader.py` validates and loads completed session metadata and structured CSV into immutable, Qt-independent replay data.
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
 - `src/serialscope/ui/data_widget.py` presents the same channel updates in a larger, stable-order table.
@@ -50,7 +51,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.6.1 boundaries
+## Version 0.6.2 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -94,11 +95,17 @@ The Preferences dialog exposes exactly Dark and Light. Confirmed changes apply l
 
 `GraphsWidget` receives a shared graph palette from the theme layer and updates its background, axes, legend, and text without clearing history or selections. Trace colors remain deterministic and independent of user customization.
 
+Graph source measurements and display curves are deliberately separate. Every redraw starts again from the immutable live `ChannelHistory` or loaded `ReplaySession` points. The display pipeline is explicitly: measured data → optional smoothing → optional interpolation → PyQtGraph curve. Moving Average and EMA operate only on a temporary value tuple. Linear and shape-preserving PCHIP interpolation retain authoritative timestamps and measurements while generating bounded display points; the implementation adapts density to avoid expanding a curve beyond approximately 100,000 display points.
+
+Interpolation honors the selected maximum gap. An interval larger than that threshold receives an explicit non-finite display separator, so PyQtGraph leaves a visible break rather than disguising missing acquisition time. The optional measured-point overlay plots only source samples and makes generated curves distinguishable from measurements.
+
+Cursor inspection uses a nearest-timestamp lookup against each selected channel's actual source samples and labels the sample time explicitly. Minimum, maximum, and arithmetic average are likewise calculated only from measured samples in the visible X range, never from smoothed or interpolated points. Reset Zoom restores the current live/replay time-window range and automatic Y range without touching history, channel selection, serial state, or replay data. Pause continues freezing presentation while live source history accumulates; processing changes made while paused take effect on Resume.
+
 Completed session replay is a separate offline data path. The loader reads `session.json` and `data.csv` once through `pathlib`, `json`, and `csv`, honors the session's fixed structured delimiter, validates elapsed timestamps and numeric values, and retains missing cells as missing samples. It does not feed recorded rows back through the live serial transport or parsers. Replay history is immutable and unbounded by the live one-hour acquisition buffer, so the complete loaded recording remains available for graph inspection. The Data view receives only the latest available value for each channel.
 
 `MainWindow` owns the mutually exclusive live/replay presentation state and explicitly confirms before disconnecting an active serial device. An active recording blocks replay entry until the user stops it. File → Close Session clears replay-only values and histories before restoring disconnected live controls. Theme application updates presentation in place and does not reload or mutate replay data. The sidebar is vertically scrollable with no horizontal scrolling so compact-height windows retain access to session controls.
 
-Version 0.6.1 intentionally includes no playback clock, speed controls, seeking, raw-terminal replay, session editing, export, comparison, annotations, downsampling, or database indexing.
+Version 0.6.2 intentionally includes no playback clock, speed controls, seeking, raw-terminal replay, session editing, export, comparison, annotations, full decimation, FFT, formulas, or database indexing.
 
 ## Planned technology direction
 

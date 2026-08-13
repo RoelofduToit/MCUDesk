@@ -2,7 +2,7 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.6.1 adds offline replay of completed SerialScope session folders. Use **File → Open Session...** to load `session.json` and `data.csv`; the Data and Graphs tabs then show the recorded structured values without requiring a serial connection. Use **File → Close Session** to return to the live workspace.
+Version 0.6.2 adds measured-value cursor inspection, visible-range statistics, Reset Zoom, and optional display-only smoothing and Linear/PCHIP interpolation to live and replay graphs. Recorded measurements, parser output, raw logs, and structured session CSV remain unchanged. Use **File → Open Session...** to inspect a completed session without a serial connection.
 
 ## Requirements
 

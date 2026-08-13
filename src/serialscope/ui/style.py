@@ -83,6 +83,13 @@ QLabel#replayModeBanner {
     padding: 7px 10px;
     font-weight: 600;
 }
+QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
+    color: #aebdca;
+    background-color: #182630;
+    border: 1px solid #293f4d;
+    border-radius: 4px;
+    padding: 6px 9px;
+}
 QLabel#connectionStatusDot {
     color: #7f8c99;
     font-size: 11pt;
@@ -286,6 +293,13 @@ QLabel#replayModeBanner {
     border-radius: 4px;
     padding: 7px 10px;
     font-weight: 600;
+}
+QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
+    color: #374f5e;
+    background-color: #e4edf2;
+    border: 1px solid #c1d2da;
+    border-radius: 4px;
+    padding: 6px 9px;
 }
 QLabel#connectionStatusDot { color: #7f8c99; font-size: 11pt; }
 QLabel#connectionStatusDot[connectionState="connected"] { color: #168552; }

@@ -11,10 +11,12 @@ from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
 class GraphPalette:
     background: str
     foreground: str
+    cursor: str
+    readout_background: str
 
 
-LIGHT_GRAPH_PALETTE = GraphPalette("#f5f7fa", "#263442")
-DARK_GRAPH_PALETTE = GraphPalette("#0a1016", "#aebdca")
+LIGHT_GRAPH_PALETTE = GraphPalette("#f5f7fa", "#263442", "#46697c", "#e4edf2")
+DARK_GRAPH_PALETTE = GraphPalette("#0a1016", "#aebdca", "#7ba9bf", "#182630")
 
 
 def apply_application_theme(application: QApplication, theme: str) -> GraphPalette:
