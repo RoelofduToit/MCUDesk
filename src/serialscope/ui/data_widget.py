@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from serialscope.parsing import ChannelUpdate
+from serialscope.replay import ReplaySession
 
 
 class DataWidget(QWidget):
@@ -61,6 +62,16 @@ class DataWidget(QWidget):
         self._rows.clear()
         self.table.hide()
         self.empty_label.show()
+
+    def load_replay(self, session: ReplaySession) -> None:
+        """Show the latest available value for every recorded channel."""
+        self.reset()
+        self._add_missing_channels(session.channel_names)
+        latest = session.latest_values
+        for name in session.channel_names:
+            value = latest.get(name)
+            if value is not None:
+                self.table.item(self._rows[name], 1).setText(str(value))
 
     def value_text(self, name: str) -> str | None:
         row = self._rows.get(name)

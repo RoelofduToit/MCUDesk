@@ -25,6 +25,7 @@ from serialscope.logging import (
     SessionConfig,
 )
 from serialscope.parsing import SerialStreamParser
+from serialscope.replay import ReplaySession, ReplaySessionError, load_replay_session
 from serialscope.settings import ApplicationSettings
 from serialscope.serial import (
     SerialConnection,
@@ -82,6 +83,7 @@ class MainWindow(QMainWindow):
         self._selected_theme = self._application_settings.theme
         self._rx_bytes = 0
         self._tx_bytes = 0
+        self._replay_session: ReplaySession | None = None
         self._recording_timer = QTimer(self)
         self._recording_timer.setInterval(1_000)
         self._recording_timer.timeout.connect(self._update_recording_presentation)
@@ -102,6 +104,12 @@ class MainWindow(QMainWindow):
             self.toggle_serial_connection
         )
         root_layout.addWidget(self.connection_bar)
+
+        self.replay_banner = QLabel()
+        self.replay_banner.setObjectName("replayModeBanner")
+        self.replay_banner.setWordWrap(True)
+        self.replay_banner.hide()
+        root_layout.addWidget(self.replay_banner)
 
         self.workspace_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.workspace_splitter.setObjectName("workspaceSplitter")
@@ -165,9 +173,134 @@ class MainWindow(QMainWindow):
             self.apply_theme(dialog.selected_theme)
 
     def _build_menu_bar(self) -> None:
+        file_menu = self.menuBar().addMenu("File")
+        self.open_session_action = file_menu.addAction("Open Session...")
+        self.open_session_action.triggered.connect(self.open_session)
+        self.close_session_action = file_menu.addAction("Close Session")
+        self.close_session_action.triggered.connect(self.close_session)
+        self.close_session_action.setEnabled(False)
+
         settings_menu = self.menuBar().addMenu("Settings")
         self.preferences_action = settings_menu.addAction("Preferences")
         self.preferences_action.triggered.connect(self._show_preferences)
+
+    @property
+    def is_replay_mode(self) -> bool:
+        return self._replay_session is not None
+
+    def open_session(self) -> None:
+        """Choose and load a completed recording with explicit live-state safety."""
+        if self._recording_session.is_recording:
+            QMessageBox.warning(
+                self,
+                "Recording in progress",
+                "Stop the active recording before opening a session.",
+            )
+            return
+        if self._serial_connection.is_connected:
+            response = QMessageBox.question(
+                self,
+                "Disconnect serial device?",
+                "Opening a recorded session requires disconnecting the serial device. Disconnect now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if response != QMessageBox.StandardButton.Yes:
+                return
+            self._disconnect_serial_port()
+            if self._serial_connection.is_connected:
+                return
+
+        selected = QFileDialog.getExistingDirectory(
+            self, "Open recorded session"
+        )
+        if selected:
+            self.load_session(Path(selected))
+
+    def load_session(self, directory: Path) -> bool:
+        """Load a selected directory and enter replay mode on success."""
+        try:
+            session = load_replay_session(directory)
+        except ReplaySessionError as error:
+            QMessageBox.critical(self, "Session replay error", str(error))
+            return False
+        self._enter_replay_mode(session)
+        return True
+
+    def close_session(self) -> None:
+        """Leave replay mode and restore the disconnected live workspace."""
+        if self._replay_session is None:
+            return
+        self._replay_session = None
+        self.replay_banner.clear()
+        self.replay_banner.hide()
+        self.connection_bar.setEnabled(True)
+        self.close_session_action.setEnabled(False)
+        self._reset_channels(reset_graphs=True)
+        self.side_panel.set_connected(False)
+        self.workspace_tabs.setCurrentWidget(self.terminal)
+
+    def _enter_replay_mode(self, session: ReplaySession) -> None:
+        self._replay_session = session
+        metadata = session.metadata
+        details = [f"Replay Mode — {session.name}"]
+        serial_metadata = metadata.get("serial", {})
+        if not isinstance(serial_metadata, dict):
+            serial_metadata = {}
+        device = (
+            serial_metadata.get("device")
+            or metadata.get("serial_port")
+            or metadata.get("device")
+        )
+        baud = serial_metadata.get("baud_rate") or metadata.get("baud_rate")
+        if device:
+            details.append(f"{device}{f' @ {baud}' if baud else ''}")
+        duration = metadata.get("elapsed_seconds") or metadata.get(
+            "elapsed_duration_seconds"
+        )
+        if duration is not None:
+            details.append(f"Duration: {duration} s")
+        self.replay_banner.setText("  |  ".join(details))
+        self.replay_banner.setToolTip(self._replay_metadata_text(session))
+        self.replay_banner.show()
+        self.connection_bar.setEnabled(False)
+        self.side_panel.set_connected(False)
+        self.side_panel.channels_widget.load_replay(session)
+        self.data_widget.load_replay(session)
+        self.graphs_widget.load_replay(session)
+        self.workspace_tabs.setCurrentWidget(self.data_widget)
+        self.close_session_action.setEnabled(True)
+
+    @staticmethod
+    def _replay_metadata_text(session: ReplaySession) -> str:
+        metadata = session.metadata
+        serial_metadata = metadata.get("serial", {})
+        if not isinstance(serial_metadata, dict):
+            serial_metadata = {}
+        fields = (
+            ("Session", session.name),
+            ("Started", metadata.get("recording_start_local")),
+            ("Ended", metadata.get("recording_end_local")),
+            (
+                "Duration",
+                metadata.get("elapsed_seconds")
+                or metadata.get("elapsed_duration_seconds"),
+            ),
+            (
+                "Port",
+                serial_metadata.get("device")
+                or metadata.get("serial_port")
+                or metadata.get("device"),
+            ),
+            (
+                "Baud",
+                serial_metadata.get("baud_rate") or metadata.get("baud_rate"),
+            ),
+            ("SerialScope", metadata.get("serialscope_version")),
+            ("Delimiter", repr(metadata.get("structured_data_delimiter", ","))),
+            ("Rows", metadata.get("structured_row_count", len(session.samples))),
+        )
+        return "\n".join(f"{label}: {value}" for label, value in fields if value is not None)
 
     def refresh_ports(self) -> None:
         """Refresh the connection bar with currently available ports."""

@@ -1,5 +1,6 @@
 """Placeholder controls for the side panel."""
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -9,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -26,7 +28,21 @@ class SidePanel(QFrame):
         self._connected = False
         self._recording = False
 
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setObjectName("sidePanelScrollArea")
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        content = QWidget()
+        content.setObjectName("sidePanelContent")
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
@@ -38,6 +54,8 @@ class SidePanel(QFrame):
         layout.addWidget(self._channels_group())
         layout.addWidget(self._session_group())
         layout.addStretch()
+        self.scroll_area.setWidget(content)
+        outer_layout.addWidget(self.scroll_area)
         self.set_connected(False)
 
     @staticmethod

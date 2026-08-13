@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from serialscope.data import ChannelHistory
 from serialscope.parsing import ChannelUpdate
+from serialscope.replay import ReplaySession
 from serialscope.ui.elapsed_time_axis import ElapsedTimeAxis
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, GraphPalette
 
@@ -56,6 +57,7 @@ class GraphsWidget(QWidget):
         self._selectors: dict[str, QCheckBox] = {}
         self._series: dict[str, pg.PlotDataItem] = {}
         self._paused = False
+        self._replay_session: ReplaySession | None = None
         self._graph_palette = DARK_GRAPH_PALETTE
 
         layout = QVBoxLayout(self)
@@ -124,7 +126,7 @@ class GraphsWidget(QWidget):
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setInterval(100)
-        self._refresh_timer.timeout.connect(self.refresh_plot)
+        self._refresh_timer.timeout.connect(self._refresh_live_plot)
         self._refresh_timer.start()
 
     @property
@@ -147,17 +149,15 @@ class GraphsWidget(QWidget):
         """Collect a structured update and expose newly observed channels."""
         self.history.add_update(update)
         for name in update.names:
-            if name in self._selectors:
-                continue
-            checkbox = QCheckBox(name)
-            checkbox.setObjectName("graphChannelCheckBox")
-            checkbox.toggled.connect(
-                lambda selected, channel=name: self._set_channel_selected(
-                    channel, selected
-                )
-            )
-            self._selector_layout.insertWidget(self._selector_layout.count() - 1, checkbox)
-            self._selectors[name] = checkbox
+            self._add_channel(name)
+
+    def load_replay(self, session: ReplaySession) -> None:
+        """Present a completed session without feeding the live history model."""
+        self.reset()
+        self._replay_session = session
+        for name in session.channel_names:
+            self._add_channel(name)
+        self.refresh_plot()
 
     def set_channel_selected(self, name: str, selected: bool) -> None:
         self._selectors[name].setChecked(selected)
@@ -170,7 +170,12 @@ class GraphsWidget(QWidget):
             return
 
         points = {
-            name: self.history.points(name) for name in self._series
+            name: (
+                self._replay_session.points(name)
+                if self._replay_session is not None
+                else self.history.points(name)
+            )
+            for name in self._series
         }
         latest_time = max(
             (x_values[-1] for x_values, _y_values in points.values() if x_values),
@@ -178,7 +183,7 @@ class GraphsWidget(QWidget):
         )
         cutoff = (
             latest_time - self.time_window_seconds
-            if latest_time is not None
+            if latest_time is not None and self._replay_session is None
             else None
         )
         for name, series in self._series.items():
@@ -189,6 +194,8 @@ class GraphsWidget(QWidget):
                     len(x_values),
                 )
                 series.setData(x_values[visible:], y_values[visible:])
+            elif x_values:
+                series.setData(x_values, y_values)
             else:
                 series.setData([], [])
         self._apply_x_range(latest_time or 0.0)
@@ -203,6 +210,7 @@ class GraphsWidget(QWidget):
     def clear_history(self) -> None:
         """Clear active-connection history while preserving channel choices."""
         self.history.reset()
+        self._replay_session = None
         for series in self._series.values():
             series.setData([], [])
         self._apply_x_range(0.0)
@@ -232,6 +240,7 @@ class GraphsWidget(QWidget):
             self.plot_widget.removeItem(series)
         self._series.clear()
         self.history.reset()
+        self._replay_session = None
         self._paused = False
         self.pause_button.setText("Pause")
         self._apply_x_range(0.0)
@@ -257,3 +266,21 @@ class GraphsWidget(QWidget):
             series = self._series.pop(name, None)
             if series is not None:
                 self.plot_widget.removeItem(series)
+
+    def _add_channel(self, name: str) -> None:
+        if name in self._selectors:
+            return
+        checkbox = QCheckBox(name)
+        checkbox.setObjectName("graphChannelCheckBox")
+        checkbox.toggled.connect(
+            lambda selected, channel=name: self._set_channel_selected(
+                channel, selected
+            )
+        )
+        self._selector_layout.insertWidget(self._selector_layout.count() - 1, checkbox)
+        self._selectors[name] = checkbox
+
+    def _refresh_live_plot(self) -> None:
+        # Completed replay data is immutable; leaving it alone permits zoom and pan.
+        if self._replay_session is None:
+            self.refresh_plot()

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "serialscope"
-version = "0.5.2"
+version = "0.6.1"
 description = "A modern cross-platform serial terminal and engineering data tool."
 readme = "README.md"
 requires-python = ">=3.10"

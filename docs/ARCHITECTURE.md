@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection. Version 0.4 introduces a tabbed workspace while preserving those independent data paths.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, and version 0.6 adds offline session replay while preserving the independent live data paths.
 
 ## Current structure
 
@@ -22,6 +22,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/parsing/json_parser.py` incrementally parses top-level numeric values from one JSON object per line.
 - `src/serialscope/parsing/stream_parser.py` deterministically selects and locks a parser for the current connection.
 - `src/serialscope/data/channel_history.py` retains Qt-independent, monotonic, bounded numeric history for plotting.
+- `src/serialscope/replay/session_loader.py` validates and loads completed session metadata and structured CSV into immutable, Qt-independent replay data.
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
 - `src/serialscope/ui/data_widget.py` presents the same channel updates in a larger, stable-order table.
 - `src/serialscope/ui/graphs_widget.py` owns graph-channel selection and PyQtGraph presentation.
@@ -49,7 +50,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.5.2 boundaries
+## Version 0.6.1 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -93,7 +94,11 @@ The Preferences dialog exposes exactly Dark and Light. Confirmed changes apply l
 
 `GraphsWidget` receives a shared graph palette from the theme layer and updates its background, axes, legend, and text without clearing history or selections. Trace colors remain deterministic and independent of user customization.
 
-Version 0.5.2 intentionally includes no custom theme editor, accent or trace color picker, font picker, schema rewriting, structured export formats beyond the live session CSV, graph export, cursors, statistics, multiple panes or axes, unit grouping, calculated channels, dashboards, profiles, or protocol features.
+Completed session replay is a separate offline data path. The loader reads `session.json` and `data.csv` once through `pathlib`, `json`, and `csv`, honors the session's fixed structured delimiter, validates elapsed timestamps and numeric values, and retains missing cells as missing samples. It does not feed recorded rows back through the live serial transport or parsers. Replay history is immutable and unbounded by the live one-hour acquisition buffer, so the complete loaded recording remains available for graph inspection. The Data view receives only the latest available value for each channel.
+
+`MainWindow` owns the mutually exclusive live/replay presentation state and explicitly confirms before disconnecting an active serial device. An active recording blocks replay entry until the user stops it. File → Close Session clears replay-only values and histories before restoring disconnected live controls. Theme application updates presentation in place and does not reload or mutate replay data. The sidebar is vertically scrollable with no horizontal scrolling so compact-height windows retain access to session controls.
+
+Version 0.6.1 intentionally includes no playback clock, speed controls, seeking, raw-terminal replay, session editing, export, comparison, annotations, downsampling, or database indexing.
 
 ## Planned technology direction
 

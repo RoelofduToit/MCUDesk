@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 
 from serialscope.parsing import ChannelUpdate
+from serialscope.replay import ReplaySession
 
 
 class ChannelsWidget(QWidget):
@@ -56,6 +57,12 @@ class ChannelsWidget(QWidget):
         self._value_labels.clear()
         self.scroll_area.hide()
         self.empty_label.show()
+
+    def load_replay(self, session: ReplaySession) -> None:
+        """Show the latest available values from a completed session."""
+        self._rebuild(session.channel_names)
+        for name, value in session.latest_values.items():
+            self._value_labels[name].setText(str(value))
 
     def value_text(self, name: str) -> str | None:
         label = self._value_labels.get(name)

@@ -39,6 +39,19 @@ QTabBar::tab:hover:!selected {
     color: #bac8d5;
     background-color: #18232e;
 }
+QMenu {
+    color: #d9e2ec;
+    background-color: #151e28;
+    border: 1px solid #314354;
+}
+QMenu::item:selected:enabled {
+    color: #eef7fc;
+    background-color: #28465a;
+}
+QMenu::item:disabled {
+    color: #647585;
+    background-color: transparent;
+}
 QFrame#connectionBar, QFrame#terminalPanel, QFrame#sidePanel {
     background-color: #151e28;
     border: 1px solid #263442;
@@ -61,6 +74,14 @@ QLabel#fieldLabel, QLabel#panelTitle {
 }
 QLabel#mutedLabel {
     color: #718399;
+}
+QLabel#replayModeBanner {
+    color: #bfe7fa;
+    background-color: #132a38;
+    border: 1px solid #28566d;
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-weight: 600;
 }
 QLabel#connectionStatusDot {
     color: #7f8c99;
@@ -230,6 +251,19 @@ QTabBar::tab:selected {
     background-color: #f7f9fb;
     border-top-color: #1978a8;
 }
+QMenu {
+    color: #263442;
+    background-color: #f7f9fb;
+    border: 1px solid #b8c5cf;
+}
+QMenu::item:selected:enabled {
+    color: #172f3d;
+    background-color: #c9dfe9;
+}
+QMenu::item:disabled {
+    color: #929da6;
+    background-color: transparent;
+}
 QFrame#connectionBar, QFrame#terminalPanel, QFrame#sidePanel {
     background-color: #f7f9fb;
     border: 1px solid #c5cfd8;
@@ -245,6 +279,14 @@ QLabel#fieldLabel, QLabel#panelTitle {
     letter-spacing: 1px;
 }
 QLabel#mutedLabel, QLabel#graphsEmptyDetail { color: #718399; }
+QLabel#replayModeBanner {
+    color: #174b65;
+    background-color: #dcecf3;
+    border: 1px solid #9fc5d5;
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-weight: 600;
+}
 QLabel#connectionStatusDot { color: #7f8c99; font-size: 11pt; }
 QLabel#connectionStatusDot[connectionState="connected"] { color: #168552; }
 QLabel#connectionStatusDot[connectionState="error"] { color: #c43f4d; }
