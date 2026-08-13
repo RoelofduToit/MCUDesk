@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
-from serialscope.data import ChannelMetadataRegistry, evaluate_alarm
+from serialscope.data import ChannelKey, ChannelMetadataRegistry, evaluate_alarm
 
 
 class DataWidget(QWidget):
@@ -30,9 +30,9 @@ class DataWidget(QWidget):
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty_label, 1)
 
-        self.table = QTableWidget(0, 4)
+        self.table = QTableWidget(0, 5)
         self.table.setObjectName("channelDataTable")
-        self.table.setHorizontalHeaderLabels(["Channel", "Value", "Unit", "Status"])
+        self.table.setHorizontalHeaderLabels(["Channel", "Value", "Unit", "Status", "Source"])
         self.table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
@@ -45,6 +45,9 @@ class DataWidget(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(
             3, QHeaderView.ResizeMode.ResizeToContents
         )
+        self.table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.ResizeToContents
+        )
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -55,6 +58,26 @@ class DataWidget(QWidget):
         self._rows: dict[str, int] = {}
         self._metadata = ChannelMetadataRegistry()
         self._latest_values: dict[str, int | float] = {}
+        self._source_names: dict[str, str] = {}
+        self.set_source_count(1)
+
+    def set_source_count(self, count: int) -> None:
+        """Show source identity only when it disambiguates multiple devices."""
+        self.table.setColumnHidden(4, count < 2)
+
+    def remove_source(self, source_id: str) -> None:
+        prefix = f"{source_id}\x1f"
+        retained = [name for name in self._rows if not name.startswith(prefix)]
+        values = {name: self._latest_values[name] for name in retained if name in self._latest_values}
+        sources = {name: self._source_names.get(name, "") for name in retained}
+        self.reset()
+        self._source_names = sources
+        if retained:
+            self._add_missing_channels(tuple(retained))
+            for name, value in values.items():
+                self._latest_values[name] = value
+                self.table.item(self._rows[name], 1).setText(str(value))
+                self._update_status(name)
 
     def update_channels(self, update: ChannelUpdate) -> None:
         """Apply the same immutable channel update used by the compact view."""
@@ -66,6 +89,13 @@ class DataWidget(QWidget):
             self._latest_values[name] = value
             self.table.item(self._rows[name], 1).setText(str(value))
             self._update_status(name)
+
+    def update_source(
+        self, source_id: str, display_name: str, update: ChannelUpdate
+    ) -> None:
+        names = tuple(f"{source_id}\x1f{name}" for name in update.names)
+        self._source_names.update({name: display_name for name in names})
+        self.update_channels(ChannelUpdate(names, update.values, False))
 
     def reset(self) -> None:
         """Clear channel state and restore the empty presentation."""
@@ -87,7 +117,9 @@ class DataWidget(QWidget):
                 self._latest_values[name] = value
                 self._update_status(name)
 
-    def value_text(self, name: str) -> str | None:
+    def value_text(self, name: str | ChannelKey) -> str | None:
+        if isinstance(name, ChannelKey):
+            name = name.storage_key
         row = self._rows.get(name)
         return self.table.item(row, 1).text() if row is not None else None
 
@@ -115,6 +147,7 @@ class DataWidget(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem("—"))
             self.table.setItem(row, 2, QTableWidgetItem(""))
             self.table.setItem(row, 3, QTableWidgetItem("UNKNOWN"))
+            self.table.setItem(row, 4, QTableWidgetItem(self._source_names.get(name, "")))
             self._rows[name] = row
         self.set_channel_metadata(self._metadata)
         if self._rows:

@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QWidget,
 )
@@ -23,6 +24,25 @@ class ConnectionBar(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(10)
+
+        self.source_label = QLabel("DEVICE")
+        self.source_label.setObjectName("fieldLabel")
+        layout.addWidget(self.source_label)
+        self.source_combo = QComboBox()
+        self.source_combo.setObjectName("serialSourceCombo")
+        self.source_combo.setMinimumContentsLength(10)
+        layout.addWidget(self.source_combo)
+        self.source_name_input = QLineEdit()
+        self.source_name_input.setObjectName("serialSourceName")
+        self.source_name_input.setPlaceholderText("Device name")
+        self.source_name_input.setMaximumWidth(150)
+        layout.addWidget(self.source_name_input)
+        self.add_source_button = QPushButton("Add Device")
+        self.add_source_button.setObjectName("addSerialSourceButton")
+        layout.addWidget(self.add_source_button)
+        self.remove_source_button = QPushButton("Remove")
+        self.remove_source_button.setObjectName("removeSerialSourceButton")
+        layout.addWidget(self.remove_source_button)
 
         port_label = QLabel("PORT")
         port_label.setObjectName("fieldLabel")
@@ -75,6 +95,16 @@ class ConnectionBar(QFrame):
         layout.addWidget(self.status_label)
 
         self.set_connection_state("disconnected")
+        self.set_source_count(1)
+
+    def set_source_count(self, count: int) -> None:
+        """Reveal source management only when it distinguishes devices."""
+        multiple = count >= 2
+        self.source_label.setVisible(multiple)
+        self.source_combo.setVisible(multiple)
+        self.source_name_input.setVisible(multiple)
+        self.remove_source_button.setVisible(multiple)
+        self.add_source_button.setText("+ Add Device" if not multiple else "+ Add")
 
     def set_connected(self, connected: bool) -> None:
         """Present the current connection state without owning its logic."""

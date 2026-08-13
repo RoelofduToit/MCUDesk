@@ -56,6 +56,11 @@ class TerminalWidget(QFrame):
         hint.setObjectName("mutedLabel")
         header_layout.addWidget(hint)
 
+        self.source_combo = QComboBox()
+        self.source_combo.setObjectName("terminalSourceCombo")
+        self.source_combo.setToolTip("Device shown by this terminal and used for TX")
+        header_layout.addWidget(self.source_combo)
+
         self.clear_button = QPushButton("Clear")
         self.clear_button.setObjectName("clearTerminalButton")
         self.clear_button.setToolTip("Clear visible terminal output")
@@ -100,6 +105,9 @@ class TerminalWidget(QFrame):
 
         self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self._control_sequence_state = "text"
+        self._source_text: dict[str, str] = {}
+        self._source_bytes: dict[str, bytearray] = {}
+        self.source_combo.currentIndexChanged.connect(self._source_changed)
         self.set_connected(False)
 
     def command_bytes(self) -> bytes:
@@ -130,6 +138,42 @@ class TerminalWidget(QFrame):
             scroll_bar.setValue(scroll_bar.maximum())
         else:
             scroll_bar.setValue(previous_value)
+        source_id = self.selected_source_id
+        if source_id is not None:
+            self._source_text[source_id] = self.output.toPlainText()
+
+    @property
+    def selected_source_id(self) -> str | None:
+        value = self.source_combo.currentData()
+        return str(value) if value is not None else None
+
+    def set_sources(self, sources: tuple[tuple[str, str], ...]) -> None:
+        selected = self.selected_source_id
+        self.source_combo.blockSignals(True)
+        self.source_combo.clear()
+        for source_id, display_name in sources:
+            self.source_combo.addItem(display_name, source_id)
+            self._source_text.setdefault(source_id, "")
+            self._source_bytes.setdefault(source_id, bytearray())
+        index = self.source_combo.findData(selected)
+        self.source_combo.setCurrentIndex(max(0, index))
+        self.source_combo.blockSignals(False)
+        self.source_combo.setVisible(len(sources) >= 2)
+        self._source_changed()
+
+    def append_source_bytes(self, source_id: str, data: bytes) -> None:
+        self._source_bytes.setdefault(source_id, bytearray()).extend(data)
+        if source_id == self.selected_source_id:
+            self.append_bytes(data)
+            return
+
+    def _source_changed(self) -> None:
+        source_id = self.selected_source_id
+        self.reset_stream_decoder()
+        raw = bytes(self._source_bytes.get(source_id or "", b""))
+        text = self._filter_control_sequences(self._decoder.decode(raw))
+        self._source_text[source_id or ""] = text
+        self.output.setPlainText(text)
 
     def output_clear(self) -> None:
         """Clear only the visible terminal history."""

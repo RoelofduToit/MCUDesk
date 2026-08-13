@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.data import (
+    ChannelKey,
     ChannelMetadataRegistry,
     DashboardLayout,
     GridPosition,
@@ -50,6 +51,8 @@ class DashboardWidget(QWidget):
         self._column_count = 1
         self._tile_size = self._PREFERRED_TILE_SIZE
         self._metadata = ChannelMetadataRegistry()
+        self._source_names: dict[str, str] = {}
+        self._show_source_labels = False
         self._drop_candidate: GridPosition | None = None
         self._built = False
         self.setAcceptDrops(True)
@@ -127,6 +130,14 @@ class DashboardWidget(QWidget):
         return tuple(name for name in self._items if name in self._tiles)
 
     @property
+    def selected_channel_keys(self) -> tuple[ChannelKey, ...]:
+        return tuple(
+            ChannelKey.from_storage_key(name)
+            for name in self.selected_channels
+            if "\x1f" in name
+        )
+
+    @property
     def tile_count(self) -> int:
         return len(self._tiles)
 
@@ -143,6 +154,37 @@ class DashboardWidget(QWidget):
                 tile.set_alarm_state(
                     evaluate_alarm(value, self._metadata.get(name).alarms)
                 )
+
+    def update_source(
+        self, source_id: str, display_name: str, update: ChannelUpdate
+    ) -> None:
+        names = tuple(f"{source_id}\x1f{name}" for name in update.names)
+        self._source_names.update({name: display_name for name in names})
+        self.update_channels(ChannelUpdate(names, update.values, False))
+
+    def set_source_count(self, count: int) -> None:
+        self._show_source_labels = count >= 2
+        for tile in self._tiles.values():
+            tile.source_label.setVisible(self._show_source_labels)
+
+    def remove_source(self, source_id: str) -> None:
+        prefix = f"{source_id}\x1f"
+        for name in tuple(self._items):
+            if not name.startswith(prefix):
+                continue
+            checkbox = self._items.pop(name)
+            self._selector_layout.removeWidget(checkbox)
+            checkbox.setParent(None)
+            self._available_names.remove(name)
+            tile = self._tiles.pop(name, None)
+            if tile is not None:
+                tile.setParent(None)
+            self.layout_model.remove(name)
+            self._latest_values.pop(name, None)
+            self._source_names.pop(name, None)
+        if self._built:
+            self.empty_label.setVisible(not self._tiles)
+            self._reflow(force=True)
 
     def load_replay(self, session: ReplaySession) -> None:
         """Expose replay channels and their final recorded values."""
@@ -172,9 +214,10 @@ class DashboardWidget(QWidget):
         self.empty_label.show()
         self._reflow(force=True)
 
-    def set_channel_selected(self, name: str, selected: bool) -> None:
+    def set_channel_selected(self, name: str | ChannelKey, selected: bool) -> None:
         self._build_ui()
-        self._items[name].setChecked(selected)
+        key = name.storage_key if isinstance(name, ChannelKey) else name
+        self._items[key].setChecked(selected)
 
     def tile_value_text(self, name: str) -> str | None:
         tile = self._tiles.get(name)
@@ -267,7 +310,11 @@ class DashboardWidget(QWidget):
     def _selection_changed(self, name: str, selected: bool) -> None:
         if selected:
             if name not in self._tiles:
-                tile = ChannelTile(name, self._tile_content)
+                tile = ChannelTile(
+                    name,
+                    self._tile_content,
+                    source_name=self._source_names.get(name, ""),
+                )
                 tile.set_presentation(self._metadata.get(name))
                 value = self._latest_values.get(name)
                 if value is not None:
@@ -278,6 +325,7 @@ class DashboardWidget(QWidget):
                 self._tiles[name] = tile
                 self.layout_model.add(name)
                 tile.show()
+                tile.source_label.setVisible(self._show_source_labels)
         else:
             tile = self._tiles.pop(name, None)
             if tile is not None:
@@ -309,13 +357,15 @@ class DashboardWidget(QWidget):
         size = self._tile_size if tile_size is None else tile_size
         return max(1, (max(1, width) + self._GRID_SPACING) // (size + self._GRID_SPACING))
 
-    def move_tile(self, source_name: str, destination: GridPosition) -> None:
+    def move_tile(self, source_name: str | ChannelKey, destination: GridPosition) -> None:
         """Snap one source-keyed tile into a cell, swapping any occupant."""
-        self.layout_model.move(source_name, destination)
+        key = source_name.storage_key if isinstance(source_name, ChannelKey) else source_name
+        self.layout_model.move(key, destination)
         self._render_grid()
 
-    def tile_position(self, source_name: str) -> GridPosition | None:
-        return self.layout_model.position(source_name)
+    def tile_position(self, source_name: str | ChannelKey) -> GridPosition | None:
+        key = source_name.storage_key if isinstance(source_name, ChannelKey) else source_name
+        return self.layout_model.position(key)
 
     def _render_grid(self) -> None:
         for source_name, tile in self._tiles.items():

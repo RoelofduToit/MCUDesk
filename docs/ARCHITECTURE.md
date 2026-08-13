@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, and version 0.7 adds presentation-only channel metadata and deterministic alarms.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, and version 0.8 introduces independent multi-device acquisition.
 
 ## Current structure
 
@@ -59,7 +59,36 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.7.2 boundaries
+## Version 0.8.0 multi-device architecture
+
+`SerialSourceManager` owns the runtime source collection and enforces exclusive ownership of physical port identifiers. Every `SerialSource` has a unique stable runtime `source_id`, editable display name, port and baud configuration, `SerialConnection`, `SerialReader`, `SerialStreamParser`, byte counters, and latest values. Reader signals cross the Qt thread boundary; workers never access widgets. A failure or disconnect stops only the affected source and leaves other source readers, parsers, and presentation state intact.
+
+`ChannelKey(source_id, channel_name)` is the domain identity for a structured channel. Raw names such as `TC1` are meaningful only within their source. Metadata registries remain independent per source, so aliases, units, and alarm limits for two identically named channels cannot collide. JSON-friendly storage keys are reversible and presentation layers always retain the original source and channel components.
+
+Parser state is never shared. Bytes from a source enter only that source's stream parser. The resulting source-aware event fans out to its terminal stream, source graph workspace, combined Data view, and combined Dashboard. Terminal RX and TX are selected by device and TX is never broadcast. Graphs uses a complete independent `GraphsWidget` per source, retaining separate history, selections, pause/clear state, processing settings, and replay data. Cross-device plotting is intentionally not implemented.
+
+Data and Dashboard combine source-aware values for operational visibility. Dashboard layout positions are keyed by the reversible source-aware identity, allowing two `TC1` tiles from different devices. Tiles include a secondary device label and retain square geometry, alarms, aliases, engineering units, and the logical canvas drag model.
+
+`MultiSourceRecordingSession` establishes one parent experiment directory and one common host monotonic origin. It snapshots the connected participants when recording starts; adding another source is blocked until recording stops. Each participant receives an independent raw logger and structured logger:
+
+```text
+Experiment_2026-08-13_2030/
+├── session.json
+├── Pi_Pico/
+│   ├── raw.log
+│   └── data.csv
+└── Arduino_Uno/
+    ├── raw.log
+    └── data.csv
+```
+
+Raw bytes never cross source boundaries. Structured rows use each device's actual asynchronous arrival time relative to the shared session origin; files are not synchronized or combined. `session.json` lists source IDs, names, ports, baud rates, relative file paths, channel metadata, byte totals, row counts, and lifecycle state.
+
+Replay recognizes the `devices` list and loads each referenced structured file into an independent `ReplaySource`. Graph workspaces remain separated while Data and Dashboard can present all sources. The loader treats the earlier root-level `data.csv` format as one conceptual `legacy_source`, preserving backward compatibility without feeding replay through live parsers or serial transport.
+
+Version 0.8.0 intentionally excludes combined graphs/CSV, device-clock synchronization, mid-recording participants, broadcast TX, automatic device matching, network sources, and protocol-specific transports.
+
+## Legacy single-device foundations through Version 0.7.2
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -119,7 +148,7 @@ Dashboard channel availability is derived from structured channel names and rema
 
 Dashboard positioning is represented by `DashboardLayout` as source channel → `GridPosition(row, column)`, never as pixel coordinates. New selections receive the first free cell; deselection frees only that cell and does not compact other tiles. Drag MIME data carries the authoritative source name, and a drop is converted to a logical cell. Empty destinations preserve gaps; occupied destinations deterministically swap tiles. Qt geometry is regenerated from the model, keeping measurements, aliases, units, alarm status, and live updates independent of drag operations.
 
-Tiles are constrained to a 1:1 aspect ratio. Resize changes only the square pixel size within minimum/preferred bounds and never rewrites logical positions. The normal four-column grid fits typical workspace widths without horizontal scrolling; exceptionally narrow viewports retain the logical layout using horizontal overflow rather than silently reordering it, while tall layouts remain vertically scrollable. The model exposes a serializable snapshot for future session/profile persistence, but v0.7.2 does not persist named Dashboard layouts.
+Tiles are constrained to a 1:1 aspect ratio. The logical canvas exposes as many square columns as fit the current viewport and never rewrites existing positions. Narrow viewports retain off-screen user positions through horizontal overflow, while sparse/tall arrangements remain vertically scrollable. The model exposes a serializable snapshot for future session/profile persistence, but v0.8.0 does not persist named Dashboard layouts.
 
 Disconnect leaves the last live Dashboard values visible without generating updates. A successful new connection resets availability, selections, and tiles before accepting the new device's structured state. Replay entry similarly replaces Dashboard state with replay channel names and final recorded values; closing replay clears that state. Dark/Light styling remains centralized and theme changes do not reconstruct tiles or alter selection/value state. Dashboard construction is deferred until it receives structured data or becomes visible, keeping unopened application windows lightweight.
 

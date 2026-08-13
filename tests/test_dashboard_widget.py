@@ -10,7 +10,7 @@ from serialscope.replay import load_replay_session
 from serialscope.ui.channel_tile import ChannelTile, format_dashboard_value
 from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
 from serialscope.ui.dashboard_widget import DashboardWidget
-from serialscope.data import AlarmLimits, ChannelMetadataRegistry, GridPosition
+from serialscope.data import AlarmLimits, ChannelKey, ChannelMetadataRegistry, GridPosition
 
 
 def test_dashboard_starts_empty_and_adds_channels_once_unselected() -> None:
@@ -467,4 +467,28 @@ def test_long_dashboard_alias_is_elided_without_changing_square_tile() -> None:
     assert tile.width() == tile.height() == 150
     assert tile.value_label.isVisibleTo(tile)
     tile.close()
+    application.processEvents()
+
+
+def test_identical_channel_names_from_two_sources_have_independent_tiles() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_source("pico", "Pi Pico", ChannelUpdate(("TC1",), (10,)))
+    widget.update_source("arduino", "Arduino Uno", ChannelUpdate(("TC1",), (20,)))
+    pico = ChannelKey("pico", "TC1")
+    arduino = ChannelKey("arduino", "TC1")
+    widget.set_channel_selected(pico, True)
+    widget.set_channel_selected(arduino, True)
+    arduino_position = widget.tile_position(arduino)
+
+    widget.move_tile(pico, GridPosition(3, 4))
+
+    assert widget.tile_count == 2
+    assert widget.tile_position(pico) == GridPosition(3, 4)
+    assert widget.tile_position(arduino) == arduino_position
+    assert widget._tiles[pico.storage_key].source_label.text() == "Pi Pico"
+    assert widget._tiles[arduino.storage_key].source_label.text() == "Arduino Uno"
+    assert widget.tile_value_text(pico.storage_key) == "10"
+    assert widget.tile_value_text(arduino.storage_key) == "20"
+    widget.close()
     application.processEvents()

@@ -2,7 +2,9 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.7.2 adds optional Low-Low, Low, High, and High-High limits to **Channels → Configure Channels...**. Data and Dashboard show deterministic current alarm status, while graph cursor inspection can report the state of the nearest measured value. Limits and states never alter source measurements or recorded raw/structured data.
+Version 0.8.0 supports multiple independent serial devices. Each device owns its connection, reader, parser, counters, terminal stream, graph workspace, and recording files. The Data and Dashboard presentations can show source-aware channels from several devices together.
+
+Recordings use one parent experiment directory and separate `raw.log` and `data.csv` files beneath each participating device directory. All structured files share the same host-side monotonic session origin. Existing single-device sessions remain replayable.
 
 ## Requirements
 

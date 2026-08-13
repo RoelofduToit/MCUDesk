@@ -3,7 +3,7 @@
 import math
 
 from PySide6.QtCore import QMimeData, QPoint, Qt
-from PySide6.QtGui import QDrag, QMouseEvent, QPainter, QPixmap, QResizeEvent
+from PySide6.QtGui import QDrag, QMouseEvent, QPainter, QPixmap, QResizeEvent, QShowEvent
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
 from serialscope.data import AlarmState, ChannelPresentation
 
@@ -24,7 +24,13 @@ def format_dashboard_value(value: int | float) -> str:
 class ChannelTile(QFrame):
     """Display a channel name and its latest structured numeric value."""
 
-    def __init__(self, channel_name: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        channel_name: str,
+        parent: QWidget | None = None,
+        *,
+        source_name: str = "",
+    ) -> None:
         super().__init__(parent)
         self.channel_name = channel_name
         self.setObjectName("dashboardChannelTile")
@@ -60,6 +66,14 @@ class ChannelTile(QFrame):
         self.status_label.setObjectName("dashboardTileStatus")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
+
+        self.source_label = QLabel(source_name)
+        self.source_label.setObjectName("dashboardTileSource")
+        self.source_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.source_label)
+
+    def set_source_name(self, source_name: str) -> None:
+        self.source_label.setText(source_name)
 
     def set_value(self, value: int | float) -> None:
         self.value_label.setText(format_dashboard_value(value))
@@ -154,7 +168,14 @@ class ElidedLabel(QLabel):
         super().resizeEvent(event)
         self._update_elision()
 
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._update_elision()
+
     def _update_elision(self) -> None:
+        if not self.isVisible():
+            super().setText(self._full_text)
+            return
         available = max(1, self.contentsRect().width())
         super().setText(
             self.fontMetrics().elidedText(

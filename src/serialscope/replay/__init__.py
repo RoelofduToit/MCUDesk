@@ -2,6 +2,7 @@
 
 from serialscope.replay.session_loader import (
     ReplaySample,
+    ReplaySource,
     ReplaySession,
     ReplaySessionError,
     load_replay_session,
@@ -9,6 +10,7 @@ from serialscope.replay.session_loader import (
 
 __all__ = [
     "ReplaySample",
+    "ReplaySource",
     "ReplaySession",
     "ReplaySessionError",
     "load_replay_session",

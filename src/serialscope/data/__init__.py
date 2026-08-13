@@ -16,6 +16,7 @@ from serialscope.data.graph_processing import (
     smooth_values,
 )
 from serialscope.data.engineering_units import ENGINEERING_UNITS, is_builtin_unit
+from serialscope.data.channel_key import ChannelKey
 
 __all__ = [
     "ChannelHistory",
@@ -34,4 +35,5 @@ __all__ = [
     "smooth_values",
     "ENGINEERING_UNITS",
     "is_builtin_unit",
+    "ChannelKey",
 ]

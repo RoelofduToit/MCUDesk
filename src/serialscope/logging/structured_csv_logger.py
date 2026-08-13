@@ -49,7 +49,9 @@ class StructuredCsvLogger:
     def delimiter(self) -> str:
         return self._delimiter
 
-    def start(self, path: Path, delimiter: str = ",") -> None:
+    def start(
+        self, path: Path, delimiter: str = ",", *, started_at: float | None = None
+    ) -> None:
         """Create an empty UTF-8 CSV and begin monotonic session timing."""
         if self.is_recording:
             raise StructuredCsvLoggerError("Structured logging is already active.")
@@ -64,7 +66,7 @@ class StructuredCsvLogger:
 
         self._file = log_file
         self._writer = csv.writer(log_file, delimiter=delimiter)
-        self._started_at = self._clock()
+        self._started_at = self._clock() if started_at is None else started_at
         self._columns = ()
         self._ignored_channels = []
         self._row_count = 0

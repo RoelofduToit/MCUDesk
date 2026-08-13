@@ -17,6 +17,24 @@ QWidget {
 QMainWindow, QSplitter {
     background-color: #0c1219;
 }
+QWidget#menuApplicationInformation,
+QLabel#menuAuthorLabel,
+QLabel#menuVersionLabel {
+    background-color: transparent;
+    color: #8fa3b8;
+}
+QToolButton#githubUpdatesButton {
+    color: #9fc9dd;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 3px 6px;
+}
+QToolButton#githubUpdatesButton:hover {
+    color: #d9edf7;
+    background-color: #1b2a36;
+    border-color: #36566a;
+}
 QTabWidget#workspaceTabs::pane {
     background-color: #151e28;
     border: 1px solid #263442;
@@ -140,6 +158,7 @@ QLabel#dashboardTileStatus {
     font-size: 9pt;
     font-weight: 600;
 }
+QLabel#dashboardTileSource { color: #718399; font-size: 8.5pt; }
 QFrame#dashboardChannelTile[alarmState="warning"] {
     background-color: #302a19;
     border-color: #a88637;
@@ -305,6 +324,24 @@ QWidget {
     background-color: #eef2f5;
 }
 QMainWindow, QSplitter { background-color: #e7ecef; }
+QWidget#menuApplicationInformation,
+QLabel#menuAuthorLabel,
+QLabel#menuVersionLabel {
+    background-color: transparent;
+    color: #607486;
+}
+QToolButton#githubUpdatesButton {
+    color: #286985;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 3px 6px;
+}
+QToolButton#githubUpdatesButton:hover {
+    color: #174b65;
+    background-color: #dce9ef;
+    border-color: #8eb0c0;
+}
 QTabWidget#workspaceTabs::pane {
     background-color: #f7f9fb;
     border: 1px solid #c5cfd8;
@@ -401,6 +438,7 @@ QLabel#dashboardTileValue {
 }
 QLabel#dashboardTileUnit { color: #607486; font-size: 11pt; }
 QLabel#dashboardTileStatus { color: #607486; font-size: 9pt; font-weight: 600; }
+QLabel#dashboardTileSource { color: #718399; font-size: 8.5pt; }
 QFrame#dashboardChannelTile[alarmState="warning"] {
     background-color: #fff7dd;
     border-color: #b18a2e;

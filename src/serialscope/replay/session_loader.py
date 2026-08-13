@@ -32,6 +32,7 @@ class ReplaySession:
     metadata: Mapping[str, object]
     channel_names: tuple[str, ...]
     samples: tuple[ReplaySample, ...]
+    sources: tuple["ReplaySource", ...] = ()
 
     @property
     def name(self) -> str:
@@ -59,6 +60,37 @@ class ReplaySession:
         ]
         return tuple(point[0] for point in points), tuple(point[1] for point in points)
 
+    def source(self, source_id: str) -> "ReplaySource":
+        return next(source for source in self.sources if source.source_id == source_id)
+
+
+@dataclass(frozen=True)
+class ReplaySource:
+    source_id: str
+    display_name: str
+    port: str | None
+    baud_rate: int | None
+    metadata: Mapping[str, object]
+    channel_names: tuple[str, ...]
+    samples: tuple[ReplaySample, ...]
+
+    @property
+    def latest_values(self) -> Mapping[str, int | float]:
+        latest: dict[str, int | float] = {}
+        for sample in self.samples:
+            for name, value in sample.values.items():
+                if value is not None:
+                    latest[name] = value
+        return MappingProxyType(latest)
+
+    def points(self, name: str) -> tuple[tuple[float, ...], tuple[float, ...]]:
+        points = [
+            (sample.elapsed_s, float(sample.values[name]))
+            for sample in self.samples
+            if sample.values.get(name) is not None
+        ]
+        return tuple(item[0] for item in points), tuple(item[1] for item in points)
+
 
 _INTEGER = re.compile(r"^[+-]?\d+$")
 _DELIMITERS = {",", ";", "\t"}
@@ -81,26 +113,9 @@ def _number(text: str, row_number: int, column: str) -> int | float | None:
     return parsed
 
 
-def load_replay_session(directory: Path) -> ReplaySession:
-    """Load one complete session directory into memory."""
-    directory = Path(directory)
-    metadata_path = directory / "session.json"
-    data_path = directory / "data.csv"
-    if not metadata_path.is_file():
-        raise ReplaySessionError("The selected folder does not contain session.json.")
+def _load_data(data_path: Path, delimiter: str) -> tuple[tuple[str, ...], tuple[ReplaySample, ...]]:
     if not data_path.is_file():
-        raise ReplaySessionError("The selected folder does not contain data.csv.")
-
-    try:
-        metadata_value = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise ReplaySessionError(
-            "session.json could not be read or is malformed."
-        ) from error
-    if not isinstance(metadata_value, dict):
-        raise ReplaySessionError("session.json must contain a JSON object.")
-    metadata: dict[str, object] = metadata_value
-    delimiter = metadata.get("structured_data_delimiter", ",")
+        raise ReplaySessionError(f"The session does not contain {data_path.name}.")
     if delimiter not in _DELIMITERS:
         raise ReplaySessionError("session.json contains an unsupported data delimiter.")
 
@@ -150,9 +165,67 @@ def load_replay_session(directory: Path) -> ReplaySession:
 
     if not samples:
         raise ReplaySessionError("data.csv contains no recorded samples.")
+    return channels, tuple(samples)
+
+
+def load_replay_session(directory: Path) -> ReplaySession:
+    """Load legacy or source-separated sessions into memory."""
+    directory = Path(directory)
+    metadata_path = directory / "session.json"
+    if not metadata_path.is_file():
+        raise ReplaySessionError("The selected folder does not contain session.json.")
+    try:
+        metadata_value = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ReplaySessionError("session.json could not be read or is malformed.") from error
+    if not isinstance(metadata_value, dict):
+        raise ReplaySessionError("session.json must contain a JSON object.")
+    metadata: dict[str, object] = metadata_value
+    delimiter = metadata.get("structured_data_delimiter", ",")
+    devices = metadata.get("devices")
+    sources: list[ReplaySource] = []
+    if isinstance(devices, list) and devices:
+        for index, value in enumerate(devices, start=1):
+            if not isinstance(value, dict):
+                raise ReplaySessionError("session.json contains invalid device metadata.")
+            source_id = str(value.get("source_id") or f"device_{index}")
+            data_file = str(value.get("data_file") or "")
+            if not data_file:
+                raise ReplaySessionError("A recorded device has no data_file.")
+            source_delimiter = value.get("structured_data_delimiter", delimiter)
+            channels, samples = _load_data(directory / data_file, str(source_delimiter))
+            sources.append(
+                ReplaySource(
+                    source_id,
+                    str(value.get("name") or source_id),
+                    str(value["port"]) if value.get("port") is not None else None,
+                    int(value["baudrate"]) if value.get("baudrate") is not None else None,
+                    MappingProxyType(value),
+                    channels,
+                    samples,
+                )
+            )
+    else:
+        channels, samples = _load_data(directory / "data.csv", str(delimiter))
+        serial_metadata = metadata.get("serial", {})
+        if not isinstance(serial_metadata, dict):
+            serial_metadata = {}
+        sources.append(
+            ReplaySource(
+                "legacy_source",
+                str(serial_metadata.get("device") or "Recorded Device"),
+                str(serial_metadata["device"]) if serial_metadata.get("device") else None,
+                int(serial_metadata["baud_rate"]) if serial_metadata.get("baud_rate") else None,
+                MappingProxyType(metadata),
+                channels,
+                samples,
+            )
+        )
+    primary = sources[0]
     return ReplaySession(
         directory=directory,
         metadata=MappingProxyType(metadata),
-        channel_names=channels,
-        samples=tuple(samples),
+        channel_names=primary.channel_names,
+        samples=primary.samples,
+        sources=tuple(sources),
     )
