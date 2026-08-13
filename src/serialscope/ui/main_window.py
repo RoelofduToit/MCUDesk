@@ -36,6 +36,7 @@ from serialscope.serial import (
 )
 from serialscope.ui.connection_bar import ConnectionBar
 from serialscope.ui.data_widget import DataWidget
+from serialscope.ui.dashboard_widget import DashboardWidget
 from serialscope.ui.graphs_widget import GraphsWidget
 from serialscope.ui.preferences_dialog import PreferencesDialog
 from serialscope.ui.side_panel import SidePanel
@@ -119,10 +120,13 @@ class MainWindow(QMainWindow):
         self.terminal.send_button.clicked.connect(self.send_command)
         self.terminal.command_input.returnPressed.connect(self.send_command)
         self.data_widget = DataWidget()
+        self.dashboard_widget = DashboardWidget(lazy=True)
         self.graphs_widget = GraphsWidget()
         self.workspace_tabs.addTab(self.terminal, "Terminal")
         self.workspace_tabs.addTab(self.data_widget, "Data")
+        self.workspace_tabs.addTab(self.dashboard_widget, "Dashboard")
         self.workspace_tabs.addTab(self.graphs_widget, "Graphs")
+        self.workspace_tabs.tabBar().moveTab(2, 3)
         self.workspace_tabs.setCurrentWidget(self.terminal)
         self.side_panel = SidePanel()
         self.side_panel.logging_button.clicked.connect(self.toggle_logging)
@@ -268,6 +272,7 @@ class MainWindow(QMainWindow):
         self.side_panel.channels_widget.load_replay(session)
         self.data_widget.load_replay(session)
         self.graphs_widget.load_replay(session)
+        self.dashboard_widget.load_replay(session)
         self.workspace_tabs.setCurrentWidget(self.data_widget)
         self.close_session_action.setEnabled(True)
 
@@ -365,6 +370,7 @@ class MainWindow(QMainWindow):
             self.side_panel.channels_widget.update_channels(update)
             self.data_widget.update_channels(update)
             self.graphs_widget.update_channels(update)
+            self.dashboard_widget.update_channels(update)
             if self._recording_session.is_recording:
                 try:
                     self._recording_session.write_structured(update)
@@ -411,6 +417,7 @@ class MainWindow(QMainWindow):
         self.data_widget.reset()
         if reset_graphs:
             self.graphs_widget.reset()
+            self.dashboard_widget.reset()
 
     def _update_counter_labels(self) -> None:
         self.rx_counter.setText(f"RX: {format_byte_count(self._rx_bytes)}")

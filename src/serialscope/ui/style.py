@@ -90,6 +90,43 @@ QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
     border-radius: 4px;
     padding: 6px 9px;
 }
+QScrollArea#dashboardChannelSelector, QWidget#dashboardSelectorContent {
+    color: #c6d2dc;
+    background-color: #0e151d;
+    border: 1px solid #293846;
+    border-radius: 4px;
+    padding: 4px;
+}
+QCheckBox#dashboardChannelCheckBox {
+    padding: 3px 7px;
+    background-color: transparent;
+}
+QCheckBox#dashboardChannelCheckBox:hover {
+    background-color: #1b2a36;
+}
+QFrame#dashboardChannelTile {
+    background-color: #151e28;
+    border: 1px solid #314657;
+    border-radius: 5px;
+}
+QFrame#dashboardChannelTile:hover {
+    border-color: #477088;
+    background-color: #18242f;
+}
+QLabel#dashboardTileName {
+    color: #8fa3b8;
+    font-size: 9pt;
+    font-weight: 600;
+}
+QLabel#dashboardTileValue {
+    color: #e2eef6;
+    font-size: 24pt;
+    font-weight: 600;
+}
+QLabel#dashboardEmptyLabel {
+    color: #718399;
+    font-size: 12pt;
+}
 QLabel#connectionStatusDot {
     color: #7f8c99;
     font-size: 11pt;
@@ -301,6 +338,35 @@ QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
     border-radius: 4px;
     padding: 6px 9px;
 }
+QScrollArea#dashboardChannelSelector, QWidget#dashboardSelectorContent {
+    color: #374b5b;
+    background-color: #ffffff;
+    border: 1px solid #c5cfd8;
+    border-radius: 4px;
+    padding: 4px;
+}
+QCheckBox#dashboardChannelCheckBox { padding: 3px 7px; background-color: transparent; }
+QCheckBox#dashboardChannelCheckBox:hover { background-color: #e2edf2; }
+QFrame#dashboardChannelTile {
+    background-color: #f7f9fb;
+    border: 1px solid #bccbd5;
+    border-radius: 5px;
+}
+QFrame#dashboardChannelTile:hover {
+    border-color: #7fa6b9;
+    background-color: #f0f5f7;
+}
+QLabel#dashboardTileName {
+    color: #607486;
+    font-size: 9pt;
+    font-weight: 600;
+}
+QLabel#dashboardTileValue {
+    color: #1d3442;
+    font-size: 24pt;
+    font-weight: 600;
+}
+QLabel#dashboardEmptyLabel { color: #718399; font-size: 12pt; }
 QLabel#connectionStatusDot { color: #7f8c99; font-size: 11pt; }
 QLabel#connectionStatusDot[connectionState="connected"] { color: #168552; }
 QLabel#connectionStatusDot[connectionState="error"] { color: #c43f4d; }

@@ -98,13 +98,17 @@ def test_theme_applies_without_resetting_live_application_state(
     raw_data = b'{"A":1,"B":2}\n'
     window._handle_received_bytes(raw_data)
     window.graphs_widget.set_channel_selected("A", True)
+    window.dashboard_widget.set_channel_selected("A", True)
     history_before = window.graphs_widget.history.points("A")
+    dashboard_value_before = window.dashboard_widget.tile_value_text("A")
 
     window.apply_theme(theme)
 
     assert window.selected_theme == theme
     assert window.graphs_widget.history.points("A") == history_before
     assert window.graphs_widget.selected_channels == ("A",)
+    assert window.dashboard_widget.selected_channels == ("A",)
+    assert window.dashboard_widget.tile_value_text("A") == dashboard_value_before
     assert window.data_widget.value_text("A") == "1"
     assert window.side_panel.channels_widget.value_text("A") == "1"
     assert window.terminal.output.toPlainText() == raw_data.decode()
@@ -196,7 +200,7 @@ def test_main_window_constructs_ui_shell() -> None:
     application.processEvents()
 
 
-def test_workspace_has_terminal_data_and_graphs_tabs() -> None:
+def test_workspace_has_terminal_data_graphs_and_dashboard_tabs() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])
 
@@ -204,11 +208,12 @@ def test_workspace_has_terminal_data_and_graphs_tabs() -> None:
     assert [
         window.workspace_tabs.tabText(index)
         for index in range(window.workspace_tabs.count())
-    ] == ["Terminal", "Data", "Graphs"]
+    ] == ["Terminal", "Data", "Graphs", "Dashboard"]
     assert window.workspace_tabs.currentWidget() is window.terminal
     assert window.workspace_tabs.indexOf(window.terminal) == 0
     assert window.workspace_tabs.indexOf(window.data_widget) == 1
     assert window.workspace_tabs.indexOf(window.graphs_widget) == 2
+    assert window.workspace_tabs.indexOf(window.dashboard_widget) == 3
 
     window.close()
     application.processEvents()
@@ -228,15 +233,19 @@ def test_switching_workspace_tabs_preserves_live_channel_state() -> None:
 
     window.workspace_tabs.setCurrentWidget(window.graphs_widget)
     reader.bytes_received.emit(b"A,B\n1,2\n")
+    window.dashboard_widget.set_channel_selected("A", True)
     window.workspace_tabs.setCurrentWidget(window.data_widget)
 
     assert window.data_widget.value_text("A") == "1"
     assert window.side_panel.channels_widget.value_text("A") == "1"
     assert window.connection_bar.status_label.text() == "Connected"
     assert window.rx_counter.text() == "RX: 8 B"
+    assert window.dashboard_widget.tile_value_text("A") == "1"
 
-    window.workspace_tabs.setCurrentWidget(window.graphs_widget)
-    assert window.data_widget.value_text("A") == "1"
+    reader.bytes_received.emit(b"3,4\n")
+    window.workspace_tabs.setCurrentWidget(window.dashboard_widget)
+    assert window.data_widget.value_text("A") == "3"
+    assert window.dashboard_widget.tile_value_text("A") == "3"
     assert connection.is_connected
 
     window.close()
@@ -262,6 +271,7 @@ def test_graph_history_survives_tab_changes_and_disconnect_then_resets_on_reconn
     window.connection_bar.connect_button.click()
     readers[0].bytes_received.emit(b"A,B\n1,2\n3,4\n")
     window.graphs_widget.set_channel_selected("A", True)
+    window.dashboard_widget.set_channel_selected("A", True)
 
     window.workspace_tabs.setCurrentWidget(window.terminal)
     assert window.graphs_widget.history.points("A")[1] == (1, 3)
@@ -269,11 +279,14 @@ def test_graph_history_survives_tab_changes_and_disconnect_then_resets_on_reconn
     window.connection_bar.connect_button.click()
     assert window.graphs_widget.history.points("A")[1] == (1, 3)
     assert window.graphs_widget.has_series("A")
+    assert window.dashboard_widget.tile_value_text("A") == "3"
 
     window.connection_bar.connect_button.click()
     assert window.graphs_widget.channel_names == ()
     assert window.graphs_widget.history.points("A") == ((), ())
     assert not window.graphs_widget.has_series("A")
+    assert window.dashboard_widget.channel_names == ()
+    assert window.dashboard_widget.tile_count == 0
 
     window.close()
     application.processEvents()

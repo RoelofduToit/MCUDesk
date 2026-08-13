@@ -59,6 +59,10 @@ def test_replay_populates_data_graphs_metadata_and_can_close(tmp_path: Path) -> 
     assert window.data_widget.value_text("TC1") == "22"
     assert window.side_panel.channels_widget.value_text("RPM") == "1100"
     assert window.graphs_widget.channel_names == ("TC1", "RPM")
+    assert window.dashboard_widget.channel_names == ("TC1", "RPM")
+    assert window.dashboard_widget.selected_channels == ()
+    window.dashboard_widget.set_channel_selected("TC1", True)
+    assert window.dashboard_widget.tile_value_text("TC1") == "22"
     window.graphs_widget.set_channel_selected("TC1", True)
     x_values, y_values = window.graphs_widget._series["TC1"].getData()
     assert x_values.tolist() == pytest.approx([0.0, 120.5, 4000.0])
@@ -69,11 +73,15 @@ def test_replay_populates_data_graphs_metadata_and_can_close(tmp_path: Path) -> 
     window.apply_theme("light")
     assert window.graphs_widget.selected_channels == ("TC1",)
     assert window.graphs_widget._series["TC1"].getData()[1].tolist() == history_before
+    assert window.dashboard_widget.selected_channels == ("TC1",)
+    assert window.dashboard_widget.tile_value_text("TC1") == "22"
 
     window.close_session()
     assert not window.is_replay_mode
     assert window.data_widget.channel_names == ()
     assert window.graphs_widget.channel_names == ()
+    assert window.dashboard_widget.channel_names == ()
+    assert window.dashboard_widget.tile_count == 0
     assert window.connection_bar.isEnabled()
     window.close()
     app.processEvents()

@@ -2,7 +2,7 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.6.2 adds measured-value cursor inspection, visible-range statistics, Reset Zoom, and optional display-only smoothing and Linear/PCHIP interpolation to live and replay graphs. Recorded measurements, parser output, raw logs, and structured session CSV remain unchanged. Use **File → Open Session...** to inspect a completed session without a serial connection.
+Version 0.6.3 adds a responsive Dashboard tab for selected live or replay channels. Large numeric tiles update from the same structured channel events used by Data and Graphs, without introducing another parser or changing recorded data. Graph inspection and display-only processing remain available in the Graphs tab.
 
 ## Requirements
 

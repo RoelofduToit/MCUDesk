@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, and version 0.6 adds offline session replay while preserving the independent live data paths.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, and version 0.6 adds offline session replay, graph inspection, and a simple HMI Dashboard while preserving the independent live data paths.
 
 ## Current structure
 
@@ -26,6 +26,8 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/replay/session_loader.py` validates and loads completed session metadata and structured CSV into immutable, Qt-independent replay data.
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
 - `src/serialscope/ui/data_widget.py` presents the same channel updates in a larger, stable-order table.
+- `src/serialscope/ui/dashboard_widget.py` owns Dashboard channel choices, latest values, scrolling, and responsive tile placement.
+- `src/serialscope/ui/channel_tile.py` presents one channel name and formatted numeric value without owning data acquisition.
 - `src/serialscope/ui/graphs_widget.py` owns graph-channel selection and PyQtGraph presentation.
 - `src/serialscope/ui/elapsed_time_axis.py` formats seconds-valued graph ticks as human-readable elapsed time without SI prefixes.
 - `src/serialscope/ui/preferences_dialog.py` provides the compact confirmed appearance settings UI.
@@ -51,7 +53,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.6.2 boundaries
+## Version 0.6.3 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -105,7 +107,13 @@ Completed session replay is a separate offline data path. The loader reads `sess
 
 `MainWindow` owns the mutually exclusive live/replay presentation state and explicitly confirms before disconnecting an active serial device. An active recording blocks replay entry until the user stops it. File → Close Session clears replay-only values and histories before restoring disconnected live controls. Theme application updates presentation in place and does not reload or mutate replay data. The sidebar is vertically scrollable with no horizontal scrolling so compact-height windows retain access to session controls.
 
-Version 0.6.2 intentionally includes no playback clock, speed controls, seeking, raw-terminal replay, session editing, export, comparison, annotations, full decimation, FFT, formulas, or database indexing.
+The central workspace now contains Terminal, Data, Graphs, and Dashboard tabs, with Terminal still selected initially. `MainWindow` forwards each existing immutable `ChannelUpdate` to Dashboard alongside the established Data and Graphs consumers. Dashboard owns no serial, parser, logger, or replay-loader behavior.
+
+Dashboard channel availability is derived from structured channel names and remains unselected by default. Selection creates one reusable `ChannelTile`; subsequent samples update its value label in place. Deselection removes only that presentation. Responsive grid placement is recalculated only after selection changes or when viewport width crosses a tile-column boundary. A vertical scroll area supports large channel sets without normal horizontal scrolling.
+
+Disconnect leaves the last live Dashboard values visible without generating updates. A successful new connection resets availability, selections, and tiles before accepting the new device's structured state. Replay entry similarly replaces Dashboard state with replay channel names and final recorded values; closing replay clears that state. Dark/Light styling remains centralized and theme changes do not reconstruct tiles or alter selection/value state. Dashboard construction is deferred until it receives structured data or becomes visible, keeping unopened application windows lightweight.
+
+Version 0.6.3 intentionally includes no gauges, engineering units, aliases, alarms, process graphics, drag-and-drop layout, saved dashboards, playback clock, user formulas, or device-control features.
 
 ## Planned technology direction
 
