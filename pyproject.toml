@@ -18,6 +18,9 @@ dependencies = [
 dev = [
     "pytest>=8,<9",
 ]
+packaging = [
+    "pyinstaller>=6.10,<7",
+]
 
 [project.gui-scripts]
 serialscope = "serialscope.app:main"

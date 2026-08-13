@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, and version 0.9.1 hardens lifecycle, persistence, and packaging boundaries.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, version 0.9.1 hardened lifecycle and persistence boundaries, and version 0.9.2 adds the first standalone Linux development bundle.
 
 ## Current structure
 
@@ -105,6 +105,14 @@ Replay file references are resolved beneath the selected session directory. Abso
 `serialscope.__version__` is the sole application-version value. Setuptools reads it dynamically for package metadata, while Qt application metadata, the menu bar, About dialog, and session files import the same value. The installed GUI entry point and `python -m serialscope` do not depend on the current working directory. Qt `QSettings` supplies platform-native user-writable preference storage. SerialScope currently bundles no external runtime resources and has no Device Profile persistence subsystem to migrate or audit.
 
 Acquisition and logging are never throttled for display. Graph rendering is timer-driven and presentation controls are only created for newly discovered channels. Data and Dashboard currently update numeric labels for every structured update; a future UI coalescing layer may reduce presentation work at very high rates without dropping logged samples.
+
+## Version 0.9.2 Linux packaging
+
+The maintained PyInstaller spec packages `src/serialscope/__main__.py`; both the bundle and `python -m serialscope` therefore converge on `serialscope.app.main()`. The one-folder output keeps Qt plugins and Python libraries inspectable under `dist/SerialScope/`. PyInstaller's analysis and PySide6 hooks collect Qt libraries and platform plugins; normal import analysis includes SerialScope's PyQtGraph and PySerial usage without importing optional PyQtGraph OpenGL/examples modules.
+
+The bundle contains no README, docs, or repository-relative resources because the running application reads none. User settings remain in Qt's platform-native `QSettings` location, and session/replay locations are chosen through file dialogs. Neither depends on the executable directory or current working directory. No suitable application icon exists yet, so the spec intentionally leaves `icon=None`.
+
+PyInstaller is isolated in the `packaging` optional dependency group and is not a runtime dependency. Generated `build/` and `dist/` content remains ignored, while `packaging/serialscope.spec` is intentionally tracked. A private `--packaging-smoke-test` argument constructs the normal main window and exits automatically, enabling a non-interactive offscreen bundle check without creating a second startup path.
 
 ## Legacy single-device foundations through Version 0.7.2
 

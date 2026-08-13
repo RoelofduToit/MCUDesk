@@ -17,6 +17,7 @@ build/
 dist/
 *.egg-info/
 *.spec
+!packaging/serialscope.spec
 
 # Logs and recorded data
 logs/
