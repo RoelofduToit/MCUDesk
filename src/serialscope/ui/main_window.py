@@ -655,9 +655,7 @@ class MainWindow(QMainWindow):
                 else:
                     self._recording_session.write(data)
             except RecordingSessionError as error:
-                self._stop_recording("logging_error", show_error=False)
-                self.side_panel.set_connected(self._serial_connection.is_connected)
-                self._show_logging_error(str(error))
+                self._handle_recording_source_failure(source_id, error)
             else:
                 self._update_recording_presentation()
         if parse_legacy:
@@ -692,8 +690,27 @@ class MainWindow(QMainWindow):
                 else:
                     self._recording_session.write_structured(update)
             except RecordingSessionError as error:
+                self._handle_recording_source_failure(source_id, error)
+
+    def _handle_recording_source_failure(
+        self, source_id: str, error: RecordingSessionError
+    ) -> None:
+        """Stop only the logger that failed, preserving healthy peer sources."""
+        if isinstance(self._recording_session, MultiSourceRecordingSession):
+            try:
+                self._recording_session.stop_source(source_id, "logging_error")
+            except RecordingSessionError:
+                # The original write error is the most actionable message; the
+                # logger has already released its resources before this point.
+                pass
+            if not self._recording_session.active_source_ids:
                 self._stop_recording("logging_error", show_error=False)
-                self._show_logging_error(str(error))
+            else:
+                self._update_recording_presentation()
+        else:
+            self._stop_recording("logging_error", show_error=False)
+        self.side_panel.set_connected(bool(self._source_manager.connected_sources))
+        self._show_logging_error(str(error))
 
     def _handle_reader_failure(self, message: str) -> None:
         self._handle_source_failure(self._selected_source_id, message)
@@ -915,10 +932,21 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Serial connection error", message)
 
     def _show_logging_error(self, message: str) -> None:
-        QMessageBox.critical(self, "Raw logging error", message)
+        QMessageBox.critical(self, "Recording error", message)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Release an open serial port before the window is destroyed."""
+        if self._recording_session.is_recording:
+            response = QMessageBox.question(
+                self,
+                "Recording in progress",
+                "A recording is active. Stop recording and exit?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if response != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
         self._stop_recording("application_closed", show_error=False)
         self._source_manager.disconnect_all()
         for graph in self.graphs_widget._widgets.values():

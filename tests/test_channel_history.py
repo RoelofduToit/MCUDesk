@@ -69,3 +69,16 @@ def test_reset_clears_history_and_elapsed_origin() -> None:
 
     assert history.points("A") == ((), ())
     assert history.points("B") == ((0.0,), (2,))
+
+
+def test_high_rate_history_has_an_absolute_memory_bound() -> None:
+    clock = MutableClock()
+    history = ChannelHistory(clock=clock, max_points_per_channel=1_000)
+
+    for value in range(5_000):
+        history.add_update(ChannelUpdate(("A",), (value,)))
+
+    times, values = history.points("A")
+    assert len(times) == len(values) == 1_000
+    assert values[0] == 4_000
+    assert values[-1] == 4_999

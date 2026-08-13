@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 import platform
-import shutil
 import time
 from collections.abc import Callable, Mapping
 
@@ -19,6 +17,7 @@ from serialscope.logging.structured_csv_logger import (
     StructuredCsvLoggerError,
 )
 from serialscope.parsing import ChannelUpdate
+from serialscope.storage import atomic_write_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,21 +132,24 @@ class MultiSourceRecordingSession:
                 source_directory.mkdir()
                 raw = self._raw_factory()
                 structured = self._structured_factory()
+                loggers[config.source_id] = _SourceLoggers(
+                    config, candidate, raw, structured
+                )
                 raw.start(source_directory / "raw.log")
                 structured.start(
                     source_directory / "data.csv",
                     delimiter=delimiter,
                     started_at=started_monotonic,
                 )
-                loggers[config.source_id] = _SourceLoggers(
-                    config, candidate, raw, structured
-                )
         except (OSError, RawLoggerError, StructuredCsvLoggerError) as error:
             for item in loggers.values():
                 try:
                     item.raw.stop()
+                except RawLoggerError:
+                    pass
+                try:
                     item.structured.stop()
-                except (RawLoggerError, StructuredCsvLoggerError):
+                except StructuredCsvLoggerError:
                     pass
             raise RecordingSessionError(f"Could not start recording session: {error}") from error
 
@@ -174,7 +176,21 @@ class MultiSourceRecordingSession:
             "elapsed_seconds": None,
             "end_reason": None,
         }
-        self._write_metadata()
+        try:
+            self._write_metadata()
+        except RecordingSessionError:
+            for item in self._sources.values():
+                try:
+                    item.raw.stop()
+                except RawLoggerError:
+                    pass
+                try:
+                    item.structured.stop()
+                except StructuredCsvLoggerError:
+                    pass
+                item.active = False
+            self._clear_active_state()
+            raise
         return directory
 
     def write(self, source_id: str, data: bytes) -> int:
@@ -188,7 +204,9 @@ class MultiSourceRecordingSession:
                 f"Source {source_id} is not part of this recording."
             ) from error
         except RawLoggerError as error:
-            raise RecordingSessionError(str(error)) from error
+            raise RecordingSessionError(
+                f"Logging failed for {item.config.display_name}: {error}"
+            ) from error
 
     def write_structured(self, source_id: str, update: ChannelUpdate) -> None:
         try:
@@ -201,7 +219,9 @@ class MultiSourceRecordingSession:
                 f"Source {source_id} is not part of this recording."
             ) from error
         except StructuredCsvLoggerError as error:
-            raise RecordingSessionError(str(error)) from error
+            raise RecordingSessionError(
+                f"Logging failed for {item.config.display_name}: {error}"
+            ) from error
 
     def stop(
         self,
@@ -241,26 +261,26 @@ class MultiSourceRecordingSession:
                 "devices": devices,
             }
         )
-        # Transitional single-source mirrors keep pre-0.8 tooling usable. They
-        # are never created for multi-device sessions and are not combined data.
+        # Preserve the pre-0.8 root-level single-device view without copying an
+        # overnight log. Hard links share the same on-disk file content.
         if len(self._sources) == 1 and self._directory is not None:
             item = next(iter(self._sources.values()))
             try:
-                shutil.copyfile(
-                    self._directory / item.directory_name / "raw.log",
-                    self._directory / "raw.log",
+                (self._directory / "raw.log").hardlink_to(
+                    self._directory / item.directory_name / "raw.log"
                 )
-                shutil.copyfile(
-                    self._directory / item.directory_name / "data.csv",
-                    self._directory / "data.csv",
+                (self._directory / "data.csv").hardlink_to(
+                    self._directory / item.directory_name / "data.csv"
                 )
                 self._metadata["legacy_single_source_files"] = True
-            except OSError as error:
-                errors.append(error)
-        self._write_metadata()
-        self._started_monotonic = None
-        self._started_local = None
-        self._started_at = None
+            except OSError:
+                self._metadata["legacy_single_source_files"] = False
+        try:
+            self._write_metadata()
+        except RecordingSessionError as error:
+            errors.append(error)
+        finally:
+            self._clear_active_state()
         if errors:
             raise RecordingSessionError(str(errors[0])) from errors[0]
 
@@ -283,7 +303,10 @@ class MultiSourceRecordingSession:
         self._metadata["devices"] = [
             self._device_metadata(source) for source in self._sources.values()
         ]
-        self._write_metadata()
+        try:
+            self._write_metadata()
+        except RecordingSessionError as error:
+            errors.append(error)
         if errors:
             raise RecordingSessionError(str(errors[0])) from errors[0]
 
@@ -336,12 +359,7 @@ class MultiSourceRecordingSession:
     def _write_metadata(self) -> None:
         if self._directory is None:
             raise RecordingSessionError("The session directory is unavailable.")
-        temporary = self._directory / ".session.json.tmp"
         try:
-            temporary.write_text(
-                json.dumps(self._metadata, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
-            temporary.replace(self._directory / "session.json")
+            atomic_write_json(self._directory / "session.json", self._metadata)
         except (OSError, TypeError, ValueError) as error:
             raise RecordingSessionError(f"Could not write session metadata: {error}") from error

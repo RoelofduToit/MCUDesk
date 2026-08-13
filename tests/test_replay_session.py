@@ -93,3 +93,66 @@ def test_unknown_metadata_and_old_version_are_tolerated(tmp_path: Path) -> None:
         )
     )
     assert session.metadata["future_field"] == {"x": 1}
+
+
+@pytest.mark.parametrize("data_file", ["../outside.csv", "/tmp/outside.csv"])
+def test_multi_device_data_file_cannot_escape_session(
+    tmp_path: Path, data_file: str
+) -> None:
+    directory = tmp_path / "session"
+    directory.mkdir()
+    metadata = {
+        "session_name": "Unsafe",
+        "devices": [
+            {
+                "source_id": "pico",
+                "name": "Pico",
+                "data_file": data_file,
+            }
+        ],
+    }
+    (directory / "session.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    with pytest.raises(ReplaySessionError, match="outside the session"):
+        load_replay_session(directory)
+
+
+def test_large_multi_device_replay_preserves_identity_and_metadata(tmp_path: Path) -> None:
+    directory = tmp_path / "large"
+    directory.mkdir()
+    devices = []
+    channels = [f"CH{index}" for index in range(9)]
+    for source_id, name in (("pico", "Pi Pico"), ("uno", "Arduino Uno")):
+        source_directory = directory / source_id
+        source_directory.mkdir()
+        data_file = source_directory / "data.csv"
+        with data_file.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(("elapsed_s", *channels))
+            for sample in range(5_000):
+                writer.writerow((sample / 10, *(sample + offset for offset in range(9))))
+        metadata = {
+            "source_id": source_id,
+            "name": name,
+            "data_file": f"{source_id}/data.csv",
+            "channels": {
+                "CH0": {
+                    "alias": f"{name} temperature",
+                    "unit": "°C",
+                    "alarms": {"high": 100.0},
+                }
+            },
+        }
+        devices.append(metadata)
+    (directory / "session.json").write_text(
+        json.dumps({"session_name": "Large", "devices": devices}),
+        encoding="utf-8",
+    )
+
+    replay = load_replay_session(directory)
+
+    assert tuple(source.source_id for source in replay.sources) == ("pico", "uno")
+    assert all(len(source.samples) == 5_000 for source in replay.sources)
+    assert replay.source("pico").channel_names == tuple(channels)
+    assert replay.source("uno").latest_values["CH8"] == 5_007
+    assert replay.source("pico").metadata["channels"]["CH0"]["unit"] == "°C"

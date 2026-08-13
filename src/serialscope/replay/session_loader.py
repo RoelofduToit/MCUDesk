@@ -96,6 +96,18 @@ _INTEGER = re.compile(r"^[+-]?\d+$")
 _DELIMITERS = {",", ";", "\t"}
 
 
+def _session_file(directory: Path, relative_name: str) -> Path:
+    """Resolve a metadata file reference without allowing session escape."""
+    relative = Path(relative_name)
+    if relative.is_absolute():
+        raise ReplaySessionError("A recorded data file path is outside the session.")
+    base = directory.resolve()
+    candidate = (base / relative).resolve()
+    if not candidate.is_relative_to(base):
+        raise ReplaySessionError("A recorded data file path is outside the session.")
+    return candidate
+
+
 def _number(text: str, row_number: int, column: str) -> int | float | None:
     value = text.strip()
     if not value:
@@ -185,15 +197,21 @@ def load_replay_session(directory: Path) -> ReplaySession:
     devices = metadata.get("devices")
     sources: list[ReplaySource] = []
     if isinstance(devices, list) and devices:
+        source_ids: set[str] = set()
         for index, value in enumerate(devices, start=1):
             if not isinstance(value, dict):
                 raise ReplaySessionError("session.json contains invalid device metadata.")
             source_id = str(value.get("source_id") or f"device_{index}")
+            if source_id in source_ids:
+                raise ReplaySessionError("session.json contains duplicate source IDs.")
+            source_ids.add(source_id)
             data_file = str(value.get("data_file") or "")
             if not data_file:
                 raise ReplaySessionError("A recorded device has no data_file.")
             source_delimiter = value.get("structured_data_delimiter", delimiter)
-            channels, samples = _load_data(directory / data_file, str(source_delimiter))
+            channels, samples = _load_data(
+                _session_file(directory, data_file), str(source_delimiter)
+            )
             sources.append(
                 ReplaySource(
                     source_id,

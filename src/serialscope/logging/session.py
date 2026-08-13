@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 import platform
 import re
@@ -16,6 +15,7 @@ from serialscope.logging.structured_csv_logger import (
     StructuredCsvLoggerError,
 )
 from serialscope.parsing import ChannelUpdate
+from serialscope.storage import atomic_write_json
 
 
 class RecordingSessionError(Exception):
@@ -297,14 +297,8 @@ class RecordingSession:
     def _write_metadata(self) -> None:
         if self._directory is None:
             raise RecordingSessionError("The session directory is unavailable.")
-        metadata_path = self._directory / "session.json"
-        temporary_path = self._directory / ".session.json.tmp"
         try:
-            temporary_path.write_text(
-                json.dumps(self._metadata, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
-            temporary_path.replace(metadata_path)
+            atomic_write_json(self._directory / "session.json", self._metadata)
         except (OSError, ValueError, TypeError) as error:
             raise RecordingSessionError(
                 f"Could not write session metadata: {error}"

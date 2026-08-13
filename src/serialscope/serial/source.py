@@ -141,6 +141,10 @@ class SerialSourceManager(QObject):
 
     def connect(self, source_id: str, port: str, baud_rate: int) -> None:
         source = self.get(source_id)
+        if source.is_connected or source.reader is not None:
+            raise SerialConnectionError(
+                f"{source.display_name} is already connected."
+            )
         owner = next(
             (
                 item
@@ -154,21 +158,38 @@ class SerialSourceManager(QObject):
                 f"{port} is already connected as {owner.display_name}."
             )
         source.connection.connect(port, baud_rate)
+        try:
+            reader = self._reader_factory(source.connection)
+            source.reader = reader
+            reader.bytes_received.connect(
+                lambda data, identity=source_id, owner=reader: self._receive(
+                    identity, owner, data
+                )
+            )
+            reader.failed.connect(
+                lambda message, identity=source_id, owner=reader: self._reader_failed(
+                    identity, owner, message
+                )
+            )
+            reader.start()
+        except Exception as error:
+            source.reader = None
+            try:
+                source.connection.disconnect()
+            except SerialConnectionError:
+                pass
+            if isinstance(error, SerialConnectionError):
+                raise
+            raise SerialConnectionError(
+                f"Could not start the reader for {source.display_name}: {error}"
+            ) from error
+
         source.port = port
         source.baud_rate = baud_rate
         source.rx_bytes = 0
         source.tx_bytes = 0
         source.latest_values.clear()
         source.parser.reset()
-        reader = self._reader_factory(source.connection)
-        source.reader = reader
-        reader.bytes_received.connect(
-            lambda data, identity=source_id: self._receive(identity, data)
-        )
-        reader.failed.connect(
-            lambda message, identity=source_id: self._reader_failed(identity, message)
-        )
-        reader.start()
         self.source_state_changed.emit(source_id, "connected")
 
     def disconnect(self, source_id: str) -> None:
@@ -193,22 +214,28 @@ class SerialSourceManager(QObject):
         source.tx_bytes += written
         return written
 
-    def _receive(self, source_id: str, data: bytes) -> None:
+    def _receive(self, source_id: str, reader: SerialReader, data: bytes) -> None:
         source = self.get(source_id)
+        if source.reader is not reader or not source.is_connected:
+            return
         source.rx_bytes += len(data)
         self.bytes_received.emit(source_id, data)
         for update in source.parser.feed(data):
             source.latest_values.update(zip(update.names, update.values, strict=True))
             self.structured_update.emit(source_id, update)
 
-    def _reader_failed(self, source_id: str, message: str) -> None:
+    def _reader_failed(
+        self, source_id: str, reader: SerialReader, message: str
+    ) -> None:
         source = self.get(source_id)
-        reader, source.reader = source.reader, None
-        if reader is not None:
-            reader.stop()
+        if source.reader is not reader:
+            return
+        source.reader = None
+        reader.stop()
         try:
             source.connection.disconnect()
         except SerialConnectionError:
             pass
+        source.parser.reset()
         self.source_state_changed.emit(source_id, "error")
         self.source_failed.emit(source_id, message)

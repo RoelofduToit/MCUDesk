@@ -4,6 +4,7 @@ import json
 import math
 
 from serialscope.parsing.csv_parser import ChannelUpdate, NumericValue
+from serialscope.parsing.line_buffer import DEFAULT_MAX_LINE_BYTES, BoundedLineBuffer
 
 
 def _reject_nonstandard_number(value: str) -> None:
@@ -13,24 +14,15 @@ def _reject_nonstandard_number(value: str) -> None:
 class JsonChannelParser:
     """Expose top-level numeric JSON object values as channel updates."""
 
-    def __init__(self) -> None:
-        self._buffer = bytearray()
+    def __init__(self, max_line_bytes: int = DEFAULT_MAX_LINE_BYTES) -> None:
+        self._lines = BoundedLineBuffer(max_line_bytes)
 
     def reset(self) -> None:
-        self._buffer.clear()
+        self._lines.reset()
 
     def feed(self, data: bytes) -> list[ChannelUpdate]:
-        self._buffer.extend(data)
         updates: list[ChannelUpdate] = []
-
-        while True:
-            newline_index = self._buffer.find(b"\n")
-            if newline_index < 0:
-                break
-            raw_line = bytes(self._buffer[:newline_index])
-            del self._buffer[: newline_index + 1]
-            if raw_line.endswith(b"\r"):
-                raw_line = raw_line[:-1]
+        for raw_line in self._lines.feed(data):
             update = self._parse_line(raw_line)
             if update is not None:
                 updates.append(update)

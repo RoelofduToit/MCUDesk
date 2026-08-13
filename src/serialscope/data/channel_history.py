@@ -14,10 +14,14 @@ class ChannelHistory:
         self,
         window_seconds: float = 3_600.0,
         clock: Callable[[], float] = time.monotonic,
+        max_points_per_channel: int = 200_000,
     ) -> None:
         if window_seconds <= 0:
             raise ValueError("History window must be positive.")
+        if max_points_per_channel < 1:
+            raise ValueError("History point limit must be positive.")
         self._window_seconds = window_seconds
+        self._max_points_per_channel = max_points_per_channel
         self._clock = clock
         self._origin: float | None = None
         self._samples: dict[str, deque[tuple[float, int | float]]] = {}
@@ -32,7 +36,9 @@ class ChannelHistory:
         if self._origin is None:
             self._origin = timestamp
         for name, value in zip(update.names, update.values, strict=True):
-            self._samples.setdefault(name, deque()).append((timestamp, value))
+            self._samples.setdefault(
+                name, deque(maxlen=self._max_points_per_channel)
+            ).append((timestamp, value))
         self._prune(timestamp)
 
     def points(self, name: str) -> tuple[tuple[float, ...], tuple[int | float, ...]]:

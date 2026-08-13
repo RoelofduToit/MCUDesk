@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, and version 0.8 introduces independent multi-device acquisition.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, and version 0.9.1 hardens lifecycle, persistence, and packaging boundaries.
 
 ## Current structure
 
@@ -53,7 +53,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Keep `main.py` small; it only starts the application.
 - Keep business logic out of Qt widgets and other GUI code.
 - Keep modules cohesive and interfaces between layers explicit.
-- Never perform blocking serial I/O on the GUI thread. A future serial subsystem must use an appropriate worker-thread or asynchronous boundary and communicate with the UI safely.
+- Never perform blocking serial reads on the GUI thread. Serial reader workers use a bounded read timeout and communicate with the UI using Qt signals.
 - Use `pathlib.Path` for filesystem paths.
 - Preserve compatibility with Windows and Linux; do not rely on platform-specific paths or shell behavior.
 - Add dependencies only when a current requirement justifies them.
@@ -87,6 +87,24 @@ Raw bytes never cross source boundaries. Structured rows use each device's actua
 Replay recognizes the `devices` list and loads each referenced structured file into an independent `ReplaySource`. Graph workspaces remain separated while Data and Dashboard can present all sources. The loader treats the earlier root-level `data.csv` format as one conceptual `legacy_source`, preserving backward compatibility without feeding replay through live parsers or serial transport.
 
 Version 0.8.0 intentionally excludes combined graphs/CSV, device-clock synchronization, mid-recording participants, broadcast TX, automatic device matching, network sources, and protocol-specific transports.
+
+## Version 0.9.1 reliability boundaries
+
+Reader callbacks carry the identity of the exact `SerialReader` that emitted them. `SerialSourceManager` ignores queued bytes or failures from an obsolete reader after disconnect/reconnect, preventing an old worker from disconnecting a new session or duplicating updates. Connect rolls back the open serial port if reader construction or startup fails. Disconnect and read failure reset the affected parser; last displayed engineering values remain available, while a reconnect starts with a clean partial-line/parser state. One failed source does not stop peer workers.
+
+CSV, JSON-line, and key/value parsers share a bounded incomplete-line buffer. A line larger than 1 MiB is discarded through its next newline, after which normal parsing resumes. Raw bytes are still counted, displayed through the terminal presentation path, and written unchanged when that source is recording. This protects parser memory from binary garbage or devices that never terminate a line.
+
+Live `ChannelHistory` remains pruned to approximately one hour by monotonic time and also applies a 200,000-point per-channel emergency ceiling. The secondary ceiling prevents pathological input rates or a stalled clock from growing RAM indefinitely. It does not change timestamps or discard recording data. Replay continues to use immutable complete loaded samples and is not subject to the live-history ceiling.
+
+Raw and structured loggers stream directly to buffered files and retain only counters, schema, and small metadata in memory. Multi-device logger startup is transactional with respect to open handles: any source startup or initial metadata failure closes every logger already opened. A fatal write failure finalizes only the affected device logger; healthy devices continue their parent experiment. Final metadata records the individual end reason. For a single v0.8-format source, legacy root-level files are hard links where supported, avoiding a second full copy of an overnight log.
+
+Small session metadata documents are written to a sibling temporary file, flushed and `fsync`-ed, then atomically replaced. Finalization clears active lifecycle state even if metadata replacement itself fails. A confirmed application close finalizes recording with `application_closed`, stops all readers, closes serial ports, and stops graph refresh timers. The user may cancel close while a recording is active.
+
+Replay file references are resolved beneath the selected session directory. Absolute paths, parent traversal, symlink escape, and duplicate source identifiers are rejected with a concise replay error. Large replay recordings remain loaded in memory for complete inspection; they are intentionally separate from rolling live history. Extremely large replay files may therefore still require a future indexed/on-disk model.
+
+`serialscope.__version__` is the sole application-version value. Setuptools reads it dynamically for package metadata, while Qt application metadata, the menu bar, About dialog, and session files import the same value. The installed GUI entry point and `python -m serialscope` do not depend on the current working directory. Qt `QSettings` supplies platform-native user-writable preference storage. SerialScope currently bundles no external runtime resources and has no Device Profile persistence subsystem to migrate or audit.
+
+Acquisition and logging are never throttled for display. Graph rendering is timer-driven and presentation controls are only created for newly discovered channels. Data and Dashboard currently update numeric labels for every structured update; a future UI coalescing layer may reduce presentation work at very high rates without dropping logged samples.
 
 ## Legacy single-device foundations through Version 0.7.2
 

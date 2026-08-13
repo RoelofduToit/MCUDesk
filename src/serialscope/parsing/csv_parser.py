@@ -6,6 +6,11 @@ import io
 import math
 import re
 
+from serialscope.parsing.line_buffer import (
+    DEFAULT_MAX_LINE_BYTES,
+    BoundedLineBuffer,
+)
+
 
 NumericValue = int | float
 _INTEGER_PATTERN = re.compile(r"^[+-]?\d+$")
@@ -27,10 +32,14 @@ class ChannelUpdate:
 class CsvChannelParser:
     """Parse complete CSV lines from arbitrarily chunked raw bytes."""
 
-    def __init__(self, headerless_confirmation_rows: int = 3) -> None:
+    def __init__(
+        self,
+        headerless_confirmation_rows: int = 3,
+        max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
+    ) -> None:
         if headerless_confirmation_rows < 1:
             raise ValueError("headerless confirmation rows must be positive")
-        self._buffer = bytearray()
+        self._lines = BoundedLineBuffer(max_line_bytes)
         self._header: tuple[str, ...] | None = None
         self._header_is_generic = False
         self._headerless_confirmation_rows = headerless_confirmation_rows
@@ -44,7 +53,7 @@ class CsvChannelParser:
 
     def reset(self) -> None:
         """Discard buffered bytes and detected channel names."""
-        self._buffer.clear()
+        self._lines.reset()
         self._header = None
         self._header_is_generic = False
         self._reset_candidate()
@@ -52,17 +61,8 @@ class CsvChannelParser:
 
     def feed(self, data: bytes) -> list[ChannelUpdate]:
         """Consume new bytes and return updates from complete valid rows."""
-        self._buffer.extend(data)
         updates: list[ChannelUpdate] = []
-
-        while True:
-            newline_index = self._buffer.find(b"\n")
-            if newline_index < 0:
-                break
-            raw_line = bytes(self._buffer[:newline_index])
-            del self._buffer[: newline_index + 1]
-            if raw_line.endswith(b"\r"):
-                raw_line = raw_line[:-1]
+        for raw_line in self._lines.feed(data):
             update = self._parse_line(raw_line)
             if update is not None:
                 updates.append(update)

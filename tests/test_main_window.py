@@ -979,6 +979,10 @@ def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> 
         "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
         lambda *_args: str(tmp_path),
     )
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QMessageBox.question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
     serial_port = Mock(is_open=True, port="COM4")
     connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
     reader = FakeReader(connection)
@@ -1008,6 +1012,36 @@ def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> 
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert reader.stopped
     assert not connection.is_connected
+
+
+def test_application_close_can_be_cancelled_while_recording(
+    monkeypatch, tmp_path: Path
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    session = RecordingSession()
+    session.start(
+        tmp_path,
+        SessionConfig("Keep running", "COM4", 115200, "LF"),
+    )
+    responses = iter(
+        (QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+    )
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QMessageBox.question",
+        lambda *_args, **_kwargs: next(responses),
+    )
+    window = MainWindow(port_scanner=lambda: [], recording_session=session)
+    window.show()
+
+    assert not window.close()
+    assert session.is_recording
+    assert window.isVisible()
+
+    assert window.close()
+    application.processEvents()
+    assert not session.is_recording
+    metadata = json.loads((session.directory / "session.json").read_text("utf-8"))
+    assert metadata["end_reason"] == "application_closed"
 
 
 def test_logging_write_failure_keeps_serial_and_terminal_usable(

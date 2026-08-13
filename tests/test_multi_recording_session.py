@@ -2,7 +2,17 @@ from datetime import datetime, timezone
 import csv
 import json
 
-from serialscope.logging import MultiSourceRecordingSession, RecordingSourceConfig
+import pytest
+
+from serialscope.logging import (
+    MultiSourceRecordingSession,
+    RawLogger,
+    RawLoggerError,
+    RecordingSessionError,
+    RecordingSourceConfig,
+    StructuredCsvLogger,
+)
+from serialscope.logging.structured_csv_logger import StructuredCsvLoggerError
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import load_replay_session
 
@@ -53,3 +63,84 @@ def test_multi_source_recording_is_separate_with_common_origin(tmp_path) -> None
     assert tuple(source.source_id for source in replay.sources) == ("pico", "arduino")
     assert replay.source("pico").latest_values["TC1"] == 10
     assert replay.source("arduino").latest_values["TC1"] == 20
+
+
+def test_partial_logger_start_failure_closes_already_open_files(tmp_path) -> None:
+    raw_loggers: list[RawLogger] = []
+
+    def raw_factory() -> RawLogger:
+        logger = RawLogger()
+        raw_loggers.append(logger)
+        return logger
+
+    class FailingStructuredLogger(StructuredCsvLogger):
+        def start(self, *_args, **_kwargs) -> None:
+            raise StructuredCsvLoggerError("data.csv is read-only")
+
+    session = MultiSourceRecordingSession(
+        raw_logger_factory=raw_factory,
+        structured_logger_factory=FailingStructuredLogger,
+    )
+
+    with pytest.raises(RecordingSessionError, match="read-only"):
+        session.start(
+            tmp_path,
+            "Failure test",
+            (RecordingSourceConfig("pico", "Pico", "COM4", 115200),),
+        )
+
+    assert raw_loggers and not raw_loggers[0].is_recording
+    assert not session.is_recording
+
+
+def test_metadata_start_failure_closes_all_source_loggers(
+    tmp_path, monkeypatch
+) -> None:
+    session = MultiSourceRecordingSession()
+    monkeypatch.setattr(
+        "serialscope.logging.multi_session.atomic_write_json",
+        lambda *_args: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    with pytest.raises(RecordingSessionError, match="disk full"):
+        session.start(
+            tmp_path,
+            "Metadata failure",
+            (
+                RecordingSourceConfig("pico", "Pico", "COM4", 115200),
+                RecordingSourceConfig("uno", "Uno", "COM5", 9600),
+            ),
+        )
+
+    assert not session.is_recording
+    assert session.active_source_ids == ()
+
+
+def test_failed_device_logger_can_finalize_while_peer_continues(tmp_path) -> None:
+    class FailingRawLogger(RawLogger):
+        def write(self, _data: bytes) -> int:
+            raise RawLoggerError("simulated disk failure")
+
+    raw_loggers = iter((FailingRawLogger(), RawLogger()))
+    session = MultiSourceRecordingSession(raw_logger_factory=lambda: next(raw_loggers))
+    directory = session.start(
+        tmp_path,
+        "Two device run",
+        (
+            RecordingSourceConfig("pico", "Pico", "COM4", 115200),
+            RecordingSourceConfig("uno", "Uno", "COM5", 9600),
+        ),
+    )
+
+    with pytest.raises(RecordingSessionError, match="simulated disk failure"):
+        session.write("pico", b"lost")
+    session.stop_source("pico", "logging_error")
+    assert session.active_source_ids == ("uno",)
+    assert session.write("uno", b"preserved") == 9
+    session.stop("normal", {"pico": 0, "uno": 9})
+
+    metadata = json.loads((directory / "session.json").read_text("utf-8"))
+    devices = {item["source_id"]: item for item in metadata["devices"]}
+    assert devices["pico"]["end_reason"] == "logging_error"
+    assert devices["uno"]["end_reason"] == "normal"
+    assert (directory / "Uno" / "raw.log").read_bytes() == b"preserved"
