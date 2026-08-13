@@ -584,6 +584,7 @@ class MainWindow(QMainWindow):
             self._serial_connection.disconnect()
         except SerialConnectionError:
             pass
+        self.graphs_widget._refresh_timer.stop()
         event.accept()
 
     def _build_status_bar(self) -> None:

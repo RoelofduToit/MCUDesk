@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, and version 0.7 adds presentation-only channel aliases and engineering units.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, and version 0.7 adds presentation-only channel metadata and deterministic alarms.
 
 ## Current structure
 
@@ -23,6 +23,9 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/parsing/stream_parser.py` deterministically selects and locks a parser for the current connection.
 - `src/serialscope/data/channel_history.py` retains Qt-independent, monotonic, bounded numeric history for plotting.
 - `src/serialscope/data/channel_metadata.py` retains optional aliases and units keyed by authoritative source channel names.
+- `src/serialscope/data/dashboard_layout.py` owns non-overlapping source-keyed logical grid positions, free-cell assignment, moves, and swaps.
+- `src/serialscope/data/engineering_units.py` defines the reusable categorized built-in unit catalogue without conversion behavior.
+- `src/serialscope/data/alarm.py` validates optional limits and derives one current alarm state from a measured numeric value.
 - `src/serialscope/data/graph_processing.py` performs pure display smoothing/interpolation and measured-data inspection/statistics without mutating graph history.
 - `src/serialscope/replay/session_loader.py` validates and loads completed session metadata and structured CSV into immutable, Qt-independent replay data.
 - `src/serialscope/ui/channels_widget.py` presents detected channel values in a compact scrollable view.
@@ -30,6 +33,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/ui/dashboard_widget.py` owns Dashboard channel choices, latest values, scrolling, and responsive tile placement.
 - `src/serialscope/ui/channel_tile.py` presents one channel name and formatted numeric value without owning data acquisition.
 - `src/serialscope/ui/channel_settings_dialog.py` edits aliases and free-text units while keeping source names read-only.
+- `src/serialscope/ui/unit_selector.py` presents nested unit-category menus, checked built-ins, No unit, and unrestricted custom-unit entry.
 - `src/serialscope/ui/graphs_widget.py` owns graph-channel selection and PyQtGraph presentation.
 - `src/serialscope/ui/elapsed_time_axis.py` formats seconds-valued graph ticks as human-readable elapsed time without SI prefixes.
 - `src/serialscope/ui/preferences_dialog.py` provides the compact confirmed appearance settings UI.
@@ -55,7 +59,7 @@ Future modules should be introduced only when their responsibilities are needed.
 - Add dependencies only when a current requirement justifies them.
 - Keep serial transport, parsing, logging, profiles, plotting, and persistence as separate concerns when they are introduced.
 
-## Version 0.7.1 boundaries
+## Version 0.7.2 boundaries
 
 The application performs a synchronous serial-port enumeration at startup and when Refresh is clicked. `SerialPortInfo` values cross the discovery/UI boundary, and the actual device identifier is stored as combo-box item data rather than recovered from display text. Enumeration is kept synchronous because normal port discovery is brief; this decision can be revisited if measurements demonstrate a need.
 
@@ -111,7 +115,11 @@ Completed session replay is a separate offline data path. The loader reads `sess
 
 The central workspace now contains Terminal, Data, Graphs, and Dashboard tabs, with Terminal still selected initially. `MainWindow` forwards each existing immutable `ChannelUpdate` to Dashboard alongside the established Data and Graphs consumers. Dashboard owns no serial, parser, logger, or replay-loader behavior.
 
-Dashboard channel availability is derived from structured channel names and remains unselected by default. Selection creates one reusable `ChannelTile`; subsequent samples update its value label in place. Deselection removes only that presentation. Responsive grid placement is recalculated only after selection changes or when viewport width crosses a tile-column boundary. A vertical scroll area supports large channel sets without normal horizontal scrolling.
+Dashboard channel availability is derived from structured channel names and remains unselected by default. Selection creates one reusable `ChannelTile`; subsequent samples update its value label in place. Deselection removes only that presentation and frees its logical cell without compacting other tiles. A scroll area supports large or deliberately sparse grids.
+
+Dashboard positioning is represented by `DashboardLayout` as source channel → `GridPosition(row, column)`, never as pixel coordinates. New selections receive the first free cell; deselection frees only that cell and does not compact other tiles. Drag MIME data carries the authoritative source name, and a drop is converted to a logical cell. Empty destinations preserve gaps; occupied destinations deterministically swap tiles. Qt geometry is regenerated from the model, keeping measurements, aliases, units, alarm status, and live updates independent of drag operations.
+
+Tiles are constrained to a 1:1 aspect ratio. Resize changes only the square pixel size within minimum/preferred bounds and never rewrites logical positions. The normal four-column grid fits typical workspace widths without horizontal scrolling; exceptionally narrow viewports retain the logical layout using horizontal overflow rather than silently reordering it, while tall layouts remain vertically scrollable. The model exposes a serializable snapshot for future session/profile persistence, but v0.7.2 does not persist named Dashboard layouts.
 
 Disconnect leaves the last live Dashboard values visible without generating updates. A successful new connection resets availability, selections, and tiles before accepting the new device's structured state. Replay entry similarly replaces Dashboard state with replay channel names and final recorded values; closing replay clears that state. Dark/Light styling remains centralized and theme changes do not reconstruct tiles or alter selection/value state. Dashboard construction is deferred until it receives structured data or becomes visible, keeping unopened application windows lightweight.
 
@@ -119,9 +127,17 @@ Every structured channel retains its parser/device-provided source name as its a
 
 Channels → Configure Channels opens a table whose source-name column is read-only. Applying changes updates existing Data rows, graph selectors/legend/cursor/statistics text, and Dashboard selectors/tiles in place. Graph history and selected series, Dashboard selections, numeric values, serial state, parsing, and recording remain intact. Units are presentation text only: SerialScope performs no inference, conversion, calibration, or scaling.
 
+The Unit column uses one reusable categorized catalogue covering common temperature, pressure, flow, mass, rotation/frequency, electrical, length, velocity, time, concentration/fraction, and energy units. Menus store and return the actual displayed string rather than an index or category identifier. Other → Custom accepts arbitrary Unicode engineering notation, and unknown values restored from session metadata remain custom instead of being replaced. Selecting a different unit never converts or otherwise changes a measurement.
+
 `RecordingSession` copies the registry's non-empty presentation metadata into the small `channels` object in `session.json`, and can refresh that object when metadata changes during an active recording. `StructuredCsvLogger` continues receiving unchanged `ChannelUpdate` objects, so `data.csv` headers always use original source names. Raw serial bytes and `raw.log` remain completely independent. Replay accepts older sessions without `channels`, and when metadata exists MainWindow applies it to Data, Graphs, and Dashboard while the replay model remains source-keyed.
 
-Version 0.7.1 intentionally includes no automatic unit detection, unit conversion, calibration, alarms, device profiles, saved dashboard layouts, user formulas, or device-control features.
+`AlarmLimits` is immutable presentation/configuration metadata with optional Low-Low, Low, High, and High-High values. Configured values must be finite and strictly increase in that order, even when only a subset is present. Evaluation is a pure function of one measured value and its limits: inclusive outer limits produce LOW-LOW/HIGH-HIGH before inclusive inner limits produce LOW/HIGH; finite values outside configured limits are NORMAL, while missing or non-finite values are UNKNOWN. The evaluator is independent of widgets so future hysteresis can be added without rewriting presentation code.
+
+Channel Settings extends the existing source-keyed row with the four optional limits. Data and Dashboard retain latest numeric values and ask the shared evaluator for status after either a measurement or metadata change. Dashboard tiles expose explicit status text plus centralized `normal`, `warning`, and `alarm` theme properties; color is supplementary rather than the only signal. Data adds a Status column. Graph cursor inspection evaluates its nearest actual measured sample, while trace colors, histories, statistics, interpolation, and smoothing remain unchanged.
+
+Configured limits serialize beneath each channel's `alarms` object in `session.json`. Replay restores them and evaluates the final/latest displayed values; older sessions and malformed legacy alarm blocks safely fall back to no limits. Alarm state itself is derived and is not written as a measurement. Raw RX, `raw.log`, parser values/names, graph source history, and `data.csv` headers/numbers remain untouched.
+
+Version 0.7.2 intentionally includes no hysteresis, acknowledgement, alarm history, sounds, notifications, control actions, graph alarm bands, calibration, or device profiles.
 
 ## Planned technology direction
 

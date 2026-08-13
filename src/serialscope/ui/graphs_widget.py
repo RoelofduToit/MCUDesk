@@ -25,6 +25,7 @@ from serialscope.data import (
     calculate_statistics,
     nearest_measurement,
     process_display_points,
+    evaluate_alarm,
 )
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
@@ -531,9 +532,10 @@ class GraphsWidget(QWidget):
         for name, (timestamp, value) in self.inspect_at(elapsed_time).items():
             presentation = self._metadata.get(name)
             unit = f" {presentation.unit}" if presentation.unit else ""
+            state = evaluate_alarm(value, presentation.alarms)
             lines.append(
                 f"{presentation.display_name}: {value:g}{unit}  "
-                f"(measured at {timestamp:.2f} s)"
+                f"[{state.value}]  (measured at {timestamp:.2f} s)"
             )
         return "   |   ".join(lines)
 

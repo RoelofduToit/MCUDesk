@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 from serialscope.replay import load_replay_session
 from serialscope.ui.main_window import MainWindow
+from serialscope.data import GridPosition
 
 
 class ConnectedService:
@@ -32,7 +33,11 @@ def make_session(path: Path) -> Path:
                 "elapsed_seconds": 4000,
                 "structured_row_count": 3,
                 "channels": {
-                    "TC1": {"alias": "Reactor Temperature", "unit": "°C"}
+                    "TC1": {
+                        "alias": "Reactor Temperature",
+                        "unit": "°C",
+                        "alarms": {"high": 21, "high_high": 30},
+                    }
                 },
             }
         ),
@@ -65,11 +70,15 @@ def test_replay_populates_data_graphs_metadata_and_can_close(tmp_path: Path) -> 
     assert window.dashboard_widget.channel_names == ("TC1", "RPM")
     assert window.dashboard_widget.selected_channels == ()
     window.dashboard_widget.set_channel_selected("TC1", True)
+    window.dashboard_widget.set_channel_selected("RPM", True)
+    window.dashboard_widget.move_tile("TC1", GridPosition(2, 3))
     assert window.dashboard_widget.tile_value_text("TC1") == "22"
     assert window.dashboard_widget._tiles["TC1"].name_label.text() == "Reactor Temperature"
     assert window.dashboard_widget._tiles["TC1"].unit_label.text() == "°C"
     assert window.data_widget.table.item(0, 0).text() == "Reactor Temperature"
     assert window.data_widget.table.item(0, 2).text() == "°C"
+    assert window.data_widget.status_text("TC1") == "HIGH"
+    assert window.dashboard_widget._tiles["TC1"].status_label.text() == "HIGH"
     window.graphs_widget.set_channel_selected("TC1", True)
     x_values, y_values = window.graphs_widget._series["TC1"].getData()
     assert x_values.tolist() == pytest.approx([0.0, 120.5, 4000.0])
@@ -81,8 +90,9 @@ def test_replay_populates_data_graphs_metadata_and_can_close(tmp_path: Path) -> 
     assert window.graphs_widget.selected_channels == ("TC1",)
     assert window.graphs_widget._series["TC1"].getData()[1].tolist() == history_before
     assert window.graphs_widget._series["TC1"].name() == "Reactor Temperature"
-    assert window.dashboard_widget.selected_channels == ("TC1",)
+    assert window.dashboard_widget.selected_channels == ("TC1", "RPM")
     assert window.dashboard_widget.tile_value_text("TC1") == "22"
+    assert window.dashboard_widget.tile_position("TC1") == GridPosition(2, 3)
 
     window.close_session()
     assert not window.is_replay_mode
@@ -125,6 +135,23 @@ def test_sidebar_scrolls_vertically_only() -> None:
 def test_loader_data_is_independent_of_live_parser(tmp_path: Path) -> None:
     session = load_replay_session(make_session(tmp_path / "session"))
     assert session.samples[-1].elapsed_s == 4000.0
+
+
+def test_replay_preserves_unknown_custom_unit(tmp_path: Path) -> None:
+    app = QApplication.instance() or QApplication([])
+    directory = make_session(tmp_path / "session")
+    metadata = json.loads((directory / "session.json").read_text(encoding="utf-8"))
+    metadata["channels"]["TC1"]["unit"] = "kgmol/h"
+    (directory / "session.json").write_text(json.dumps(metadata), encoding="utf-8")
+    window = MainWindow(port_scanner=lambda: [])
+
+    assert window.load_session(directory)
+    window.dashboard_widget.set_channel_selected("TC1", True)
+    assert window.data_widget.table.item(0, 2).text() == "kgmol/h"
+    assert window.dashboard_widget._tiles["TC1"].unit_label.text() == "kgmol/h"
+    assert window._channel_metadata.get("TC1").unit == "kgmol/h"
+    window.close()
+    app.processEvents()
 
 
 def test_open_session_declined_disconnect_keeps_live_connection(monkeypatch) -> None:

@@ -30,3 +30,9 @@ def test_file_actions_keep_functionality_across_theme_switches() -> None:
 
     window.close()
     application.processEvents()
+
+
+@pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])
+def test_theme_has_semantic_warning_and_alarm_tile_states(stylesheet: str) -> None:
+    assert 'alarmState="warning"' in stylesheet
+    assert 'alarmState="alarm"' in stylesheet

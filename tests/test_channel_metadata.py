@@ -1,4 +1,4 @@
-from serialscope.data import ChannelMetadataRegistry
+from serialscope.data import AlarmLimits, ChannelMetadataRegistry
 
 
 def test_source_identity_alias_and_unit_lifecycle() -> None:
@@ -34,3 +34,17 @@ def test_replace_ignores_unknown_and_supports_old_empty_metadata() -> None:
     registry.replace({"UNKNOWN": {"alias": "No"}}, ("A", "B"))
     assert registry.source_names == ("A", "B")
     assert registry.get("A").display_name == "A"
+
+
+def test_alarm_metadata_round_trips_without_changing_alias_or_unit() -> None:
+    registry = ChannelMetadataRegistry()
+    limits = AlarmLimits(low_low=80, low=90, high=110, high_high=120)
+    registry.set("TC1", "Temperature", "°C", limits)
+    snapshot = registry.snapshot()
+
+    restored = ChannelMetadataRegistry()
+    restored.replace(snapshot, ("TC1",))
+
+    assert restored.get("TC1").alias == "Temperature"
+    assert restored.get("TC1").unit == "°C"
+    assert restored.get("TC1").alarms == limits

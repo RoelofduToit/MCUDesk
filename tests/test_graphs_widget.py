@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QApplication
 from serialscope.parsing import ChannelUpdate
 from serialscope.ui.graphs_widget import GraphsWidget, visible_x_range
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, LIGHT_GRAPH_PALETTE
-from serialscope.data import ChannelMetadataRegistry
+from serialscope.data import AlarmLimits, ChannelMetadataRegistry
 
 
 @pytest.mark.parametrize(
@@ -47,6 +47,23 @@ def test_detected_channels_appear_once_and_are_unselected() -> None:
     assert widget.channel_names == ("TC1", "TC2")
     assert widget.selected_channels == ()
     assert not widget.has_series("TC1")
+    widget.close()
+    application.processEvents()
+
+
+def test_cursor_shows_alarm_state_without_changing_graph_source() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(("TC1",), (118.4,)))
+    widget.set_channel_selected("TC1", True)
+    registry = ChannelMetadataRegistry()
+    registry.set("TC1", "Temperature", "°C", AlarmLimits(high=110))
+    history_before = widget.history.points("TC1")
+
+    widget.set_channel_metadata(registry)
+
+    assert "Temperature: 118.4 °C  [HIGH]" in widget.cursor_text_at(0.0)
+    assert widget.history.points("TC1") == history_before
     widget.close()
     application.processEvents()
 

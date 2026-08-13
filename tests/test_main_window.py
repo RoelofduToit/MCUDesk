@@ -27,6 +27,7 @@ from serialscope.logging import RecordingSession, RecordingSessionError, Session
 from serialscope.settings import ApplicationSettings
 from serialscope.serial import SerialConnection, SerialPortInfo
 from serialscope.ui.main_window import MainWindow, format_byte_count
+from serialscope.data import AlarmLimits, GridPosition
 
 
 class FakeSignal:
@@ -99,6 +100,9 @@ def test_theme_applies_without_resetting_live_application_state(
     window._handle_received_bytes(raw_data)
     window.graphs_widget.set_channel_selected("A", True)
     window.dashboard_widget.set_channel_selected("A", True)
+    window.dashboard_widget.move_tile("A", GridPosition(2, 3))
+    window._channel_metadata.set("A", "Signal A", "V", AlarmLimits(high=0.5))
+    window._apply_channel_metadata()
     history_before = window.graphs_widget.history.points("A")
     dashboard_value_before = window.dashboard_widget.tile_value_text("A")
 
@@ -109,6 +113,9 @@ def test_theme_applies_without_resetting_live_application_state(
     assert window.graphs_widget.selected_channels == ("A",)
     assert window.dashboard_widget.selected_channels == ("A",)
     assert window.dashboard_widget.tile_value_text("A") == dashboard_value_before
+    assert window._channel_metadata.get("A").alarms == AlarmLimits(high=0.5)
+    assert window.dashboard_widget._tiles["A"].status_label.text() == "HIGH"
+    assert window.dashboard_widget.tile_position("A") == GridPosition(2, 3)
     assert window.data_widget.value_text("A") == "1"
     assert window.side_panel.channels_widget.value_text("A") == "1"
     assert window.terminal.output.toPlainText() == raw_data.decode()
@@ -123,15 +130,6 @@ def test_preferences_action_is_available() -> None:
     window = MainWindow(port_scanner=lambda: [])
 
     assert window.preferences_action.text() == "Preferences"
-
-    window.close()
-    application.processEvents()
-
-
-def test_channel_configuration_action_is_available() -> None:
-    application = QApplication.instance() or QApplication([])
-    window = MainWindow(port_scanner=lambda: [])
-
     assert window.configure_channels_action.text() == "Configure Channels..."
 
     window.close()

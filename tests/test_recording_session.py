@@ -200,3 +200,52 @@ def test_channel_metadata_is_stored_but_csv_keeps_source_names(tmp_path: Path) -
     assert (directory / "data.csv").read_text(encoding="utf-8").startswith(
         "elapsed_s,TC1\n"
     )
+
+
+def test_alarm_limits_are_metadata_only_and_raw_data_is_exact(tmp_path: Path) -> None:
+    session = RecordingSession()
+    config = SessionConfig(
+        session_name="Alarm limits",
+        device="COM4",
+        baud_rate=115200,
+        line_ending="LF",
+        channels={
+            "TC1": {
+                "alias": "Temperature",
+                "unit": "°C",
+                "alarms": {"low": 90, "high": 110, "high_high": 120},
+            }
+        },
+    )
+    directory = session.start(tmp_path, config)
+    raw = b"TC1\n125.2\n"
+    session.write(raw)
+    session.write_structured(ChannelUpdate(("TC1",), (125.2,)))
+    session.stop("normal", len(raw))
+
+    metadata = json.loads((directory / "session.json").read_text("utf-8"))
+    assert metadata["channels"]["TC1"]["alarms"] == {
+        "low": 90.0,
+        "high": 110.0,
+        "high_high": 120.0,
+    }
+    assert (directory / "raw.log").read_bytes() == raw
+    assert "TC1" in (directory / "data.csv").read_text(encoding="utf-8").splitlines()[0]
+    assert "Temperature" not in (directory / "data.csv").read_text(encoding="utf-8")
+
+
+def test_custom_unit_is_stored_as_readable_string(tmp_path: Path) -> None:
+    session = RecordingSession()
+    directory = session.start(
+        tmp_path,
+        SessionConfig(
+            session_name="Custom unit",
+            device="COM4",
+            baud_rate=9600,
+            line_ending="LF",
+            channels={"FLOW": {"alias": "Flow", "unit": "Nm³/h"}},
+        ),
+    )
+    session.stop("normal", 0)
+    metadata = json.loads((directory / "session.json").read_text("utf-8"))
+    assert metadata["channels"]["FLOW"]["unit"] == "Nm³/h"

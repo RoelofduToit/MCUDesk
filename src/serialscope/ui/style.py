@@ -113,10 +113,18 @@ QFrame#dashboardChannelTile:hover {
     border-color: #477088;
     background-color: #18242f;
 }
+QFrame#dashboardChannelTile[dragState="active"] {
+    border: 2px solid #6fa6c2;
+}
+QFrame#dashboardDropIndicator {
+    background-color: #101d27;
+    border: 2px dashed #6fa6c2;
+    border-radius: 5px;
+}
 QLabel#dashboardTileName {
     color: #8fa3b8;
-    font-size: 9pt;
-    font-weight: 600;
+    font-size: 11pt;
+    font-weight: 500;
 }
 QLabel#dashboardTileValue {
     color: #e2eef6;
@@ -127,6 +135,21 @@ QLabel#dashboardTileUnit {
     color: #8fa3b8;
     font-size: 11pt;
 }
+QLabel#dashboardTileStatus {
+    color: #8fa3b8;
+    font-size: 9pt;
+    font-weight: 600;
+}
+QFrame#dashboardChannelTile[alarmState="warning"] {
+    background-color: #302a19;
+    border-color: #a88637;
+}
+QFrame#dashboardChannelTile[alarmState="alarm"] {
+    background-color: #351f23;
+    border-color: #bc5660;
+}
+QLabel#dashboardTileStatus[alarmState="warning"] { color: #e0b95c; }
+QLabel#dashboardTileStatus[alarmState="alarm"] { color: #ef8991; }
 QLabel#dashboardEmptyLabel {
     color: #718399;
     font-size: 12pt;
@@ -177,7 +200,7 @@ QComboBox QAbstractItemView {
     border: 1px solid #314354;
     selection-background-color: #2479a9;
 }
-QPushButton {
+QPushButton, QToolButton#engineeringUnitSelector {
     min-height: 32px;
     padding: 1px 14px;
     background-color: #223140;
@@ -185,7 +208,7 @@ QPushButton {
     border-radius: 4px;
     font-weight: 600;
 }
-QPushButton:hover {
+QPushButton:hover, QToolButton#engineeringUnitSelector:hover {
     background-color: #2a3d4f;
     border-color: #49677f;
 }
@@ -360,10 +383,16 @@ QFrame#dashboardChannelTile:hover {
     border-color: #7fa6b9;
     background-color: #f0f5f7;
 }
+QFrame#dashboardChannelTile[dragState="active"] { border: 2px solid #4f829b; }
+QFrame#dashboardDropIndicator {
+    background-color: #e8f1f5;
+    border: 2px dashed #4f829b;
+    border-radius: 5px;
+}
 QLabel#dashboardTileName {
     color: #607486;
-    font-size: 9pt;
-    font-weight: 600;
+    font-size: 11pt;
+    font-weight: 500;
 }
 QLabel#dashboardTileValue {
     color: #1d3442;
@@ -371,6 +400,17 @@ QLabel#dashboardTileValue {
     font-weight: 600;
 }
 QLabel#dashboardTileUnit { color: #607486; font-size: 11pt; }
+QLabel#dashboardTileStatus { color: #607486; font-size: 9pt; font-weight: 600; }
+QFrame#dashboardChannelTile[alarmState="warning"] {
+    background-color: #fff7dd;
+    border-color: #b18a2e;
+}
+QFrame#dashboardChannelTile[alarmState="alarm"] {
+    background-color: #fae7e9;
+    border-color: #b94b57;
+}
+QLabel#dashboardTileStatus[alarmState="warning"] { color: #765712; }
+QLabel#dashboardTileStatus[alarmState="alarm"] { color: #9b2935; }
 QLabel#dashboardEmptyLabel { color: #718399; font-size: 12pt; }
 QLabel#connectionStatusDot { color: #7f8c99; font-size: 11pt; }
 QLabel#connectionStatusDot[connectionState="connected"] { color: #168552; }
@@ -394,7 +434,7 @@ QComboBox QAbstractItemView {
     border: 1px solid #b8c5cf;
     selection-background-color: #79b8d8;
 }
-QPushButton {
+QPushButton, QToolButton#engineeringUnitSelector {
     min-height: 32px;
     padding: 1px 14px;
     background-color: #e1e7eb;
@@ -402,7 +442,7 @@ QPushButton {
     border-radius: 4px;
     font-weight: 600;
 }
-QPushButton:hover { background-color: #d5dde3; }
+QPushButton:hover, QToolButton#engineeringUnitSelector:hover { background-color: #d5dde3; }
 QPushButton#connectButton, QPushButton#sendButton {
     color: #ffffff;
     background-color: #1978a8;

@@ -34,7 +34,7 @@ class SessionConfig:
     parity: str = "none"
     stop_bits: int = 1
     structured_data_delimiter: str = ","
-    channels: Mapping[str, Mapping[str, str]] | None = None
+    channels: Mapping[str, Mapping[str, object]] | None = None
 
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
@@ -153,13 +153,7 @@ class RecordingSession:
             "structured_row_count": 0,
             "structured_columns": [],
             "structured_ignored_channels": [],
-            "channels": {
-                name: {
-                    "alias": str(values.get("alias", "")).strip(),
-                    "unit": str(values.get("unit", "")).strip(),
-                }
-                for name, values in (config.channels or {}).items()
-            },
+            "channels": self._normalize_channel_metadata(config.channels or {}),
             "status": "recording",
             "recording_end_local": None,
             "recording_end_utc": None,
@@ -184,19 +178,34 @@ class RecordingSession:
         return directory
 
     def set_channel_metadata(
-        self, channels: Mapping[str, Mapping[str, str]]
+        self, channels: Mapping[str, Mapping[str, object]]
     ) -> None:
         """Update presentation metadata without touching structured source data."""
         if not self.is_recording:
             return
-        self._metadata["channels"] = {
-            name: {
+        self._metadata["channels"] = self._normalize_channel_metadata(channels)
+        self._write_metadata()
+
+    @staticmethod
+    def _normalize_channel_metadata(
+        channels: Mapping[str, Mapping[str, object]],
+    ) -> dict[str, dict[str, object]]:
+        normalized: dict[str, dict[str, object]] = {}
+        for name, values in channels.items():
+            channel: dict[str, object] = {
                 "alias": str(values.get("alias", "")).strip(),
                 "unit": str(values.get("unit", "")).strip(),
             }
-            for name, values in channels.items()
-        }
-        self._write_metadata()
+            alarms = values.get("alarms")
+            if isinstance(alarms, Mapping):
+                channel["alarms"] = {
+                    key: float(value)
+                    for key, value in alarms.items()
+                    if key in {"low_low", "low", "high", "high_high"}
+                    and value is not None
+                }
+            normalized[name] = channel
+        return normalized
 
     def write(self, data: bytes) -> int:
         """Forward an exact byte chunk to the raw-only logger."""
