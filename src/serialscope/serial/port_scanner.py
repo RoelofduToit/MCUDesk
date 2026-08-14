@@ -18,6 +18,9 @@ class SerialPortInfo:
     vid: int | None = None
     pid: int | None = None
     serial_number: str | None = None
+    product: str | None = None
+    location: str | None = None
+    hwid: str | None = None
 
     @property
     def display_name(self) -> str:
@@ -86,4 +89,7 @@ def _to_port_info(port: ListPortInfo) -> SerialPortInfo:
         vid=port.vid,
         pid=port.pid,
         serial_number=port.serial_number,
+        product=getattr(port, "product", None),
+        location=getattr(port, "location", None),
+        hwid=getattr(port, "hwid", None),
     )

@@ -4,13 +4,14 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, version 0.9.1 hardened lifecycle and persistence boundaries, version 0.9.2 added the first standalone Linux development bundle, and version 0.9.3 adds parent-session operator events and clearer multi-select channel controls.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, version 0.9 hardened lifecycle, packaging, and experiment events, and version 0.10 adds persistent per-device profiles.
 
 ## Current structure
 
 - `main.py` is a minimal source-checkout launcher.
 - `src/serialscope/app.py` owns the Qt application lifecycle.
 - `src/serialscope/settings.py` validates and persists small user preferences through `QSettings`.
+- `src/serialscope/profiles/` owns Device Profile models, deterministic port matching, and versioned atomic JSON persistence.
 - `src/serialscope/serial/port_scanner.py` discovers ports through PySerial and returns Qt-independent structured metadata.
 - `src/serialscope/serial/connection.py` owns the live PySerial object and its open/close lifecycle.
 - `src/serialscope/serial/reader.py` runs bounded serial reads in a dedicated `QThread` and emits raw byte chunks.
@@ -102,6 +103,18 @@ All device graphs receive the same tuple of parent `EventMarker` objects and ren
 
 Graph and Dashboard selection retain native `QCheckBox` multi-selection, keyboard, and accessibility behavior. Centralized Light/Dark QSS gives their indicators a compact circular filled/empty appearance with explicit hover, selected, disabled, and focus states. The selectors remain source-aware and do not alter graph or Dashboard data models.
 
+## Version 0.10.0 Device Profiles
+
+`DeviceProfile` is persistent reusable configuration for exactly one device, while `SerialSource` remains a runtime acquisition object and `SerialPortInfo` remains one currently discoverable operating-system endpoint. A profile has a UUID independent of its unique, trimmed display name. It stores the currently supported 8-N-1/no-flow-control serial format, baud rate, per-source TX line ending, the current `auto` parser mode, optional hardware identity hints, a last-port fallback, and channel alias/unit/alarm metadata keyed by authoritative source channel names.
+
+`ProfileStore` keeps schema version 1 in `device_profiles.json` beneath Qt's cross-platform `AppConfigLocation`. It creates the configuration directory when needed and uses the same temporary-file, flush, `fsync`, and atomic-replace helper as session metadata. Unknown optional fields are tolerated. An invalid document or unsupported schema starts SerialScope with zero available profiles, reports a concise warning, preserves the original file, and disables profile mutation rather than overwriting recoverable user data. Global theme/delimiter `QSettings` remain a separate responsibility.
+
+Device matching is deterministic. A stored USB serial number, constrained by VID/PID when present, is exact even if the Linux device path changes. Without a serial number, one matching VID/PID plus available product/manufacturer hints is likely; multiple equal matches are ambiguous and leave the port unselected until the operator chooses. The remembered port is considered only when no stable hardware identity exists. Selecting a profile may select one deterministic match and restore configuration, but it never opens the port. Manual port override never rewrites identity unless the user explicitly updates the profile.
+
+The connection bar exposes a compact `Custom`/profile selector and one actions menu. Custom preserves the original profile-free workflow. Runtime profile association is stored independently for each source and is hidden behind the existing single-device progressive disclosure. Applying or modifying profiles is disabled for an open selected source, during recording, and in replay mode. Profile application restores saved metadata, retains entries for temporarily missing firmware channels without creating live values, and gives newly observed channels default metadata.
+
+At recording start, `session.json` may snapshot informational profile ID/name values per participating source along with the effective serial and channel configuration. Replay never reads the mutable profile store and remains fully governed by its session snapshot if a profile is renamed, changed, deleted, corrupt, or unavailable. Device Profiles never own session events and do not alter `events.csv`, `raw.log`, parser keys, or authoritative `data.csv` channel names.
+
 ## Version 0.9.1 reliability boundaries
 
 Reader callbacks carry the identity of the exact `SerialReader` that emitted them. `SerialSourceManager` ignores queued bytes or failures from an obsolete reader after disconnect/reconnect, preventing an old worker from disconnecting a new session or duplicating updates. Connect rolls back the open serial port if reader construction or startup fails. Disconnect and read failure reset the affected parser; last displayed engineering values remain available, while a reconnect starts with a clean partial-line/parser state. One failed source does not stop peer workers.
@@ -116,7 +129,7 @@ Small session metadata documents are written to a sibling temporary file, flushe
 
 Replay file references are resolved beneath the selected session directory. Absolute paths, parent traversal, symlink escape, and duplicate source identifiers are rejected with a concise replay error. Large replay recordings remain loaded in memory for complete inspection; they are intentionally separate from rolling live history. Extremely large replay files may therefore still require a future indexed/on-disk model.
 
-`serialscope.__version__` is the sole application-version value. Setuptools reads it dynamically for package metadata, while Qt application metadata, the menu bar, About dialog, and session files import the same value. The installed GUI entry point and `python -m serialscope` do not depend on the current working directory. Qt `QSettings` supplies platform-native user-writable preference storage. SerialScope currently bundles no external runtime resources and has no Device Profile persistence subsystem to migrate or audit.
+`serialscope.__version__` is the sole application-version value. Setuptools reads it dynamically for package metadata, while Qt application metadata, the menu bar, About dialog, and session files import the same value. The installed GUI entry point and `python -m serialscope` do not depend on the current working directory. Qt `QSettings` supplies platform-native user-writable preference storage. SerialScope currently bundles no external runtime resources.
 
 Acquisition and logging are never throttled for display. Graph rendering is timer-driven and presentation controls are only created for newly discovered channels. Data and Dashboard currently update numeric labels for every structured update; a future UI coalescing layer may reduce presentation work at very high rates without dropping logged samples.
 

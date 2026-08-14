@@ -45,9 +45,17 @@ class ChannelMetadataRegistry:
             source_name, alias.strip(), unit.strip(), alarms or AlarmLimits()
         )
 
-    def replace(self, metadata: Mapping[str, object], source_names: tuple[str, ...]) -> None:
+    def replace(
+        self,
+        metadata: Mapping[str, object],
+        source_names: tuple[str, ...],
+        *,
+        retain_missing: bool = False,
+    ) -> None:
         self._channels.clear()
-        self.ensure(source_names)
+        self.ensure(
+            tuple(dict.fromkeys((*source_names, *(metadata if retain_missing else ()))))
+        )
         for source_name, value in metadata.items():
             if source_name not in self._channels or not isinstance(value, Mapping):
                 continue

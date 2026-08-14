@@ -11,6 +11,9 @@ def _port(device: str, **metadata: object) -> SimpleNamespace:
         "vid": None,
         "pid": None,
         "serial_number": None,
+        "product": None,
+        "location": None,
+        "hwid": None,
     }
     values.update(metadata)
     return SimpleNamespace(**values)
@@ -60,6 +63,9 @@ def test_discover_serial_ports_preserves_available_metadata(monkeypatch) -> None
                 vid=0x2341,
                 pid=0x0043,
                 serial_number="ABC123",
+                product="USB Adapter",
+                location="1-2.3",
+                hwid="USB VID:PID=2341:0043",
             )
         ],
     )
@@ -71,6 +77,9 @@ def test_discover_serial_ports_preserves_available_metadata(monkeypatch) -> None
     assert port.vid == 0x2341
     assert port.pid == 0x0043
     assert port.serial_number == "ABC123"
+    assert port.product == "USB Adapter"
+    assert port.location == "1-2.3"
+    assert port.hwid == "USB VID:PID=2341:0043"
 
 
 def test_anonymous_ttys_port_is_hidden_but_remains_discovered(monkeypatch) -> None:

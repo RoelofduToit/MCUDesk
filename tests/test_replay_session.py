@@ -95,6 +95,23 @@ def test_unknown_metadata_and_old_version_are_tolerated(tmp_path: Path) -> None:
     assert session.metadata["future_field"] == {"x": 1}
 
 
+def test_replay_uses_session_snapshot_without_profile_storage(tmp_path: Path) -> None:
+    session = load_replay_session(
+        write_session(
+            tmp_path / "session",
+            metadata_extra={
+                "device_profile": {
+                    "profile_id": "deleted-profile",
+                    "profile_name": "Renamed later",
+                },
+                "channels": {"Temperature": {"alias": "Reactor", "unit": "°C"}},
+            },
+        )
+    )
+    assert session.latest_values["Temperature"] == 20.5
+    assert session.metadata["channels"]["Temperature"]["alias"] == "Reactor"
+
+
 @pytest.mark.parametrize("data_file", ["../outside.csv", "/tmp/outside.csv"])
 def test_multi_device_data_file_cannot_escape_session(
     tmp_path: Path, data_file: str

@@ -66,6 +66,40 @@ def test_main_window_has_application_title() -> None:
     application.processEvents()
 
 
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_connection_status_is_prominent_and_explicit_in_both_themes(
+    theme: str,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(port_scanner=lambda: [])
+    window.apply_theme(theme)
+
+    assert window.connection_bar.status_label.text() == "DISCONNECTED"
+    assert (
+        window.connection_bar.status_indicator.property("connectionState")
+        == "disconnected"
+    )
+    assert "disconnected" in window.connection_bar.status_indicator.toolTip().lower()
+    assert (
+        window.connection_bar.status_label.minimumWidth()
+        >= window.connection_bar.status_label.fontMetrics().horizontalAdvance(
+            "CONNECTION ERROR"
+        )
+    )
+    window.connection_bar.set_connection_state("connected")
+    assert window.connection_bar.status_label.text() == "CONNECTED"
+    assert (
+        window.connection_bar.status_indicator.property("connectionState")
+        == "connected"
+    )
+    window.connection_bar.set_connection_state("error")
+    assert window.connection_bar.status_label.text() == "CONNECTION ERROR"
+    assert window.connection_bar.status_indicator.property("connectionState") == "error"
+
+    window.close()
+    application.processEvents()
+
+
 def test_main_window_restores_and_persists_delimiter_preference(tmp_path: Path) -> None:
     application = QApplication.instance() or QApplication([])
     settings_path = tmp_path / "settings.ini"
@@ -246,7 +280,7 @@ def test_switching_workspace_tabs_preserves_live_channel_state() -> None:
 
     assert window.data_widget.value_text("A") == "1"
     assert window.side_panel.channels_widget.value_text("A") == "1"
-    assert window.connection_bar.status_label.text() == "Connected"
+    assert window.connection_bar.status_label.text() == "CONNECTED"
     assert window.rx_counter.text() == "RX: 8 B"
     assert window.dashboard_widget.tile_value_text("A") == "1"
 
@@ -486,7 +520,7 @@ def test_ui_controls_follow_connection_lifecycle() -> None:
 
     window.connection_bar.connect_button.click()
 
-    assert window.connection_bar.status_label.text() == "Connected"
+    assert window.connection_bar.status_label.text() == "CONNECTED"
     assert window.connection_bar.connect_button.text() == "Disconnect"
     assert not window.connection_bar.port_combo.isEnabled()
     assert not window.connection_bar.baud_combo.isEnabled()
@@ -495,7 +529,7 @@ def test_ui_controls_follow_connection_lifecycle() -> None:
 
     window.connection_bar.connect_button.click()
 
-    assert window.connection_bar.status_label.text() == "Disconnected"
+    assert window.connection_bar.status_label.text() == "DISCONNECTED"
     assert window.connection_bar.connect_button.text() == "Connect"
     assert window.connection_bar.port_combo.isEnabled()
     assert window.connection_bar.baud_combo.isEnabled()
@@ -526,7 +560,7 @@ def test_connection_failure_restores_safe_ui_state(monkeypatch) -> None:
     window.connection_bar.connect_button.click()
 
     assert not connection.is_connected
-    assert window.connection_bar.status_label.text() == "Connection error"
+    assert window.connection_bar.status_label.text() == "CONNECTION ERROR"
     assert window.connection_bar.connect_button.text() == "Connect"
     assert window.connection_bar.port_combo.isEnabled()
     assert window.connection_bar.baud_combo.isEnabled()
@@ -633,7 +667,7 @@ def test_reader_failure_safely_disconnects_and_reports_error(monkeypatch) -> Non
 
     assert readers[0].stopped
     assert not connection.is_connected
-    assert window.connection_bar.status_label.text() == "Connection error"
+    assert window.connection_bar.status_label.text() == "CONNECTION ERROR"
     assert window.connection_bar.connect_button.text() == "Connect"
     assert errors == ["Serial connection to COM4 was lost: device removed"]
 
@@ -824,7 +858,7 @@ def test_write_failure_preserves_command_and_safely_disconnects(monkeypatch) -> 
     assert window.tx_counter.text() == "TX: 0 B"
     assert reader.stopped
     assert not connection.is_connected
-    assert window.connection_bar.status_label.text() == "Connection error"
+    assert window.connection_bar.status_label.text() == "CONNECTION ERROR"
     assert not window.terminal.send_button.isEnabled()
     assert errors == ["Could not write to COM4: device removed"]
 

@@ -8,11 +8,9 @@ from PySide6.QtCore import QEvent, QObject, QTimer, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QScrollArea,
     QSpinBox,
     QDoubleSpinBox,
     QVBoxLayout,
@@ -31,6 +29,7 @@ from serialscope.data import (
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
 from serialscope.ui.elapsed_time_axis import ElapsedTimeAxis
+from serialscope.ui.channel_selector import ChannelSelector, ChannelToggle
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, GraphPalette
 
 
@@ -64,7 +63,6 @@ class GraphsWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("graphsWidget")
         self.history = ChannelHistory(clock=clock)
-        self._selectors: dict[str, QCheckBox] = {}
         self._series: dict[str, pg.PlotDataItem] = {}
         self._measured_series: dict[str, pg.PlotDataItem] = {}
         self._paused = False
@@ -82,17 +80,10 @@ class GraphsWidget(QWidget):
         channel_label.setObjectName("graphChannelsLabel")
         layout.addWidget(channel_label)
 
-        self.selector_scroll = QScrollArea()
-        self.selector_scroll.setObjectName("graphChannelSelector")
-        self.selector_scroll.setWidgetResizable(True)
-        self.selector_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.selector_scroll.setMaximumHeight(84)
-        selector_content = QWidget()
-        self._selector_layout = QHBoxLayout(selector_content)
-        self._selector_layout.setContentsMargins(0, 0, 0, 0)
-        self._selector_layout.setSpacing(14)
-        self._selector_layout.addStretch()
-        self.selector_scroll.setWidget(selector_content)
+        self.channel_selector = ChannelSelector()
+        self.channel_selector.selection_changed.connect(self._set_channel_selected)
+        self.selector_scroll = self.channel_selector
+        self._selectors: dict[str, ChannelToggle] = self.channel_selector.toggles
         layout.addWidget(self.selector_scroll)
 
         controls = QWidget()
@@ -303,7 +294,7 @@ class GraphsWidget(QWidget):
             self._event_lines.append(line)
 
     def set_channel_selected(self, name: str, selected: bool) -> None:
-        self._selectors[name].setChecked(selected)
+        self.channel_selector.set_channel_checked(name, selected)
 
     def has_series(self, name: str) -> bool:
         return name in self._series
@@ -314,8 +305,11 @@ class GraphsWidget(QWidget):
         legend = self.plot_widget.plotItem.legend
         for source_name, checkbox in self._selectors.items():
             presentation = registry.get(source_name)
-            checkbox.setText(presentation.display_name)
-            checkbox.setToolTip(f"Source: {source_name}")
+            self.channel_selector.set_channel_text(
+                source_name,
+                presentation.display_name,
+                tooltip=f"Source: {source_name}",
+            )
             series = self._series.get(source_name)
             if series is not None:
                 series.opts["name"] = presentation.display_name
@@ -419,10 +413,7 @@ class GraphsWidget(QWidget):
 
     def reset(self) -> None:
         """Clear selector, series, and history for a new connection."""
-        for checkbox in self._selectors.values():
-            self._selector_layout.removeWidget(checkbox)
-            checkbox.deleteLater()
-        self._selectors.clear()
+        self.channel_selector.clear_channels()
         for series in tuple(self._series.values()):
             self.plot_widget.removeItem(series)
         self._series.clear()
@@ -487,18 +478,12 @@ class GraphsWidget(QWidget):
     def _add_channel(self, name: str) -> None:
         if name in self._selectors:
             return
-        checkbox = QCheckBox(name)
-        checkbox.setObjectName("graphChannelCheckBox")
-        checkbox.toggled.connect(
-            lambda selected, channel=name: self._set_channel_selected(
-                channel, selected
-            )
-        )
-        self._selector_layout.insertWidget(self._selector_layout.count() - 1, checkbox)
-        self._selectors[name] = checkbox
         presentation = self._metadata.get(name)
-        checkbox.setText(presentation.display_name)
-        checkbox.setToolTip(f"Source: {name}")
+        self.channel_selector.add_channel(
+            name,
+            presentation.display_name,
+            tooltip=f"Source: {name}",
+        )
 
     def _refresh_live_plot(self) -> None:
         # Completed replay data is immutable; leaving it alone permits zoom and pan.

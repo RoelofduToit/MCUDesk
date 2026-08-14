@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import load_replay_session
 from serialscope.ui.channel_tile import ChannelTile, format_dashboard_value
+from serialscope.ui.channel_selector import ChannelToggle
 from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
 from serialscope.ui.dashboard_widget import DashboardWidget
 from serialscope.data import AlarmLimits, ChannelKey, ChannelMetadataRegistry, GridPosition
@@ -30,12 +31,39 @@ def test_dashboard_starts_empty_and_adds_channels_once_unselected() -> None:
 
 def test_channel_selectors_use_centralized_circular_multiselect_style() -> None:
     for stylesheet in (DARK_STYLE, LIGHT_STYLE):
-        assert "QCheckBox#dashboardChannelCheckBox::indicator" in stylesheet
-        assert "QCheckBox#graphChannelCheckBox::indicator" in stylesheet
+        assert "QScrollArea#channelSelector" in stylesheet
+        assert "QFrame#channelToggle[checked=\"true\"]" in stylesheet
+        assert "QCheckBox#channelToggleIndicator::indicator" in stylesheet
+        assert "QLabel#channelToggleLabel" in stylesheet
         assert "border-radius: 7px" in stylesheet
         assert "::indicator:checked" in stylesheet
         assert "::indicator:disabled" in stylesheet
-        assert "QCheckBox#graphChannelCheckBox:focus" in stylesheet
+        assert "QFrame#channelToggle:focus" in stylesheet
+        checked_rule = stylesheet.split(
+            "QCheckBox#channelToggleIndicator::indicator:checked {", 1
+        )[1].split("}", 1)[0]
+        assert "border: 1px solid" in checked_rule
+        assert "border: 3px" not in checked_rule
+
+
+def test_dashboard_uses_shared_horizontal_channel_selector() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("A", "B", "C"), (1, 2, 3)))
+
+    assert tuple(widget.channel_selector.toggles) == ("A", "B", "C")
+    assert widget._items is widget.channel_selector.toggles
+    assert all(isinstance(toggle, ChannelToggle) for toggle in widget._items.values())
+    assert (
+        widget.channel_selector.horizontalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    )
+    assert (
+        widget.channel_selector.verticalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    widget.close()
+    application.processEvents()
 
 
 def test_selection_creates_updates_and_removes_one_tile() -> None:

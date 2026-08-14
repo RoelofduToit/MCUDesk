@@ -144,3 +144,36 @@ def test_failed_device_logger_can_finalize_while_peer_continues(tmp_path) -> Non
     assert devices["pico"]["end_reason"] == "logging_error"
     assert devices["uno"]["end_reason"] == "normal"
     assert (directory / "Uno" / "raw.log").read_bytes() == b"preserved"
+
+
+def test_each_recording_source_snapshots_its_own_profile(tmp_path) -> None:
+    session = MultiSourceRecordingSession()
+    directory = session.start(
+        tmp_path,
+        "Profile experiment",
+        (
+            RecordingSourceConfig(
+                "pico",
+                "Pico",
+                "COM4",
+                115200,
+                profile_id="pico-profile",
+                profile_name="Reactor Pico",
+                line_ending="CRLF",
+            ),
+            RecordingSourceConfig(
+                "uno",
+                "Arduino",
+                "COM5",
+                9600,
+                profile_id="uno-profile",
+                profile_name="Pressure Arduino",
+            ),
+        ),
+    )
+    session.stop("normal", {})
+    devices = json.loads((directory / "session.json").read_text("utf-8"))["devices"]
+
+    assert devices[0]["device_profile"]["profile_id"] == "pico-profile"
+    assert devices[0]["line_ending"] == "CRLF"
+    assert devices[1]["device_profile"]["profile_name"] == "Pressure Arduino"

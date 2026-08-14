@@ -39,6 +39,8 @@ class SessionConfig:
     stop_bits: int = 1
     structured_data_delimiter: str = ","
     channels: Mapping[str, Mapping[str, object]] | None = None
+    profile_id: str | None = None
+    profile_name: str | None = None
 
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
@@ -221,6 +223,11 @@ class RecordingSession:
             "total_rx_byte_count": None,
             "end_reason": None,
         }
+        if config.profile_id:
+            self._metadata["device_profile"] = {
+                "profile_id": config.profile_id,
+                "profile_name": config.profile_name,
+            }
         try:
             self._write_metadata()
         except RecordingSessionError:

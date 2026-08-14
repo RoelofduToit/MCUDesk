@@ -10,7 +10,6 @@ from PySide6.QtGui import (
     QShowEvent,
 )
 from PySide6.QtWidgets import (
-    QCheckBox,
     QFrame,
     QLabel,
     QScrollArea,
@@ -27,6 +26,7 @@ from serialscope.data import (
     evaluate_alarm,
 )
 from serialscope.replay import ReplaySession
+from serialscope.ui.channel_selector import ChannelSelector, ChannelToggle
 from serialscope.ui.channel_tile import ChannelTile
 
 
@@ -44,7 +44,7 @@ class DashboardWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("dashboardWidget")
         self._available_names: list[str] = []
-        self._items: dict[str, QCheckBox] = {}
+        self._items: dict[str, ChannelToggle] = {}
         self._latest_values: dict[str, int | float] = {}
         self._tiles: dict[str, ChannelTile] = {}
         self.layout_model = DashboardLayout(columns=4)
@@ -72,24 +72,9 @@ class DashboardWidget(QWidget):
         selector_label.setObjectName("dashboardSelectorLabel")
         layout.addWidget(selector_label)
 
-        self.channel_selector = QScrollArea()
-        self.channel_selector.setObjectName("dashboardChannelSelector")
-        self.channel_selector.setWidgetResizable(True)
-        self.channel_selector.setFrameShape(QFrame.Shape.NoFrame)
-        self.channel_selector.setMaximumHeight(112)
-        self.channel_selector.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self.channel_selector.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        selector_content = QWidget()
-        selector_content.setObjectName("dashboardSelectorContent")
-        self._selector_layout = QVBoxLayout(selector_content)
-        self._selector_layout.setContentsMargins(5, 5, 5, 5)
-        self._selector_layout.setSpacing(3)
-        self._selector_layout.addStretch()
-        self.channel_selector.setWidget(selector_content)
+        self.channel_selector = ChannelSelector()
+        self.channel_selector.selection_changed.connect(self._selection_changed)
+        self._items = self.channel_selector.toggles
         layout.addWidget(self.channel_selector)
 
         self.tile_scroll = QScrollArea()
@@ -172,9 +157,7 @@ class DashboardWidget(QWidget):
         for name in tuple(self._items):
             if not name.startswith(prefix):
                 continue
-            checkbox = self._items.pop(name)
-            self._selector_layout.removeWidget(checkbox)
-            checkbox.setParent(None)
+            self.channel_selector.remove_channel(name)
             self._available_names.remove(name)
             tile = self._tiles.pop(name, None)
             if tile is not None:
@@ -201,10 +184,7 @@ class DashboardWidget(QWidget):
             self._tiles.clear()
             self.layout_model.reset()
             return
-        for checkbox in self._items.values():
-            self._selector_layout.removeWidget(checkbox)
-            checkbox.setParent(None)
-        self._items.clear()
+        self.channel_selector.clear_channels()
         self._available_names.clear()
         self._latest_values.clear()
         for tile in self._tiles.values():
@@ -217,7 +197,7 @@ class DashboardWidget(QWidget):
     def set_channel_selected(self, name: str | ChannelKey, selected: bool) -> None:
         self._build_ui()
         key = name.storage_key if isinstance(name, ChannelKey) else name
-        self._items[key].setChecked(selected)
+        self.channel_selector.set_channel_checked(key, selected)
 
     def tile_value_text(self, name: str) -> str | None:
         tile = self._tiles.get(name)
@@ -227,8 +207,11 @@ class DashboardWidget(QWidget):
         self._metadata = registry
         for source_name, checkbox in self._items.items():
             presentation = registry.get(source_name)
-            checkbox.setText(presentation.display_name)
-            checkbox.setToolTip(f"Source: {source_name}")
+            self.channel_selector.set_channel_text(
+                source_name,
+                presentation.display_name,
+                tooltip=f"Source: {source_name}",
+            )
         for source_name, tile in self._tiles.items():
             tile.set_presentation(registry.get(source_name))
             tile.set_alarm_state(
@@ -290,22 +273,12 @@ class DashboardWidget(QWidget):
     def _add_checkbox(self, name: str) -> None:
         if name in self._items:
             return
-        checkbox = QCheckBox(name)
-        checkbox.setObjectName("dashboardChannelCheckBox")
-        checkbox.setProperty("channelName", name)
-        checkbox.toggled.connect(self._selection_changed_from_sender)
-        self._selector_layout.insertWidget(
-            self._selector_layout.count() - 1, checkbox
-        )
-        self._items[name] = checkbox
         presentation = self._metadata.get(name)
-        checkbox.setText(presentation.display_name)
-        checkbox.setToolTip(f"Source: {name}")
-
-    def _selection_changed_from_sender(self, selected: bool) -> None:
-        checkbox = self.sender()
-        if isinstance(checkbox, QCheckBox):
-            self._selection_changed(str(checkbox.property("channelName")), selected)
+        self.channel_selector.add_channel(
+            name,
+            presentation.display_name,
+            tooltip=f"Source: {name}",
+        )
 
     def _selection_changed(self, name: str, selected: bool) -> None:
         if selected:

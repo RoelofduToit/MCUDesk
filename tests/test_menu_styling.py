@@ -41,6 +41,15 @@ def test_theme_has_semantic_warning_and_alarm_tile_states(stylesheet: str) -> No
     assert 'alarmState="alarm"' in stylesheet
 
 
+@pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])
+def test_theme_styles_all_connection_status_states(stylesheet: str) -> None:
+    assert "QFrame#connectionStatusIndicator" in stylesheet
+    assert 'connectionState="connected"' in stylesheet
+    assert 'connectionState="error"' in stylesheet
+    assert "QLabel#connectionStatusDot" in stylesheet
+    assert "QLabel#connectionStatusLabel" in stylesheet
+
+
 def test_menu_bar_shows_author_authoritative_version_and_updates_link(
     monkeypatch,
 ) -> None:

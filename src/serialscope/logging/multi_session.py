@@ -30,6 +30,9 @@ class RecordingSourceConfig:
     device: str
     baud_rate: int
     channels: Mapping[str, Mapping[str, object]] | None = None
+    profile_id: str | None = None
+    profile_name: str | None = None
+    line_ending: str = "LF"
 
 
 @dataclass(slots=True)
@@ -368,6 +371,11 @@ class MultiSourceRecordingSession:
             "name": config.display_name,
             "port": config.device,
             "baudrate": config.baud_rate,
+            "data_bits": 8,
+            "parity": "none",
+            "stop_bits": 1,
+            "flow_control": "none",
+            "line_ending": config.line_ending,
             "raw_file": f"{item.directory_name}/raw.log",
             "data_file": f"{item.directory_name}/data.csv",
             "structured_data_delimiter": self._delimiter,
@@ -378,6 +386,11 @@ class MultiSourceRecordingSession:
             "recording_state": "recording" if item.active else "completed",
             "end_reason": item.end_reason,
         }
+        if config.profile_id:
+            result["device_profile"] = {
+                "profile_id": config.profile_id,
+                "profile_name": config.profile_name,
+            }
         if total_rx_bytes is not None:
             result["total_rx_byte_count"] = total_rx_bytes
         return result

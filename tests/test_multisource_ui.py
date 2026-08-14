@@ -3,7 +3,7 @@ from unittest.mock import Mock
 from PySide6.QtWidgets import QApplication
 
 from serialscope.parsing import ChannelUpdate
-from serialscope.serial import SerialConnection, SerialPortInfo
+from serialscope.serial import SerialConnection, SerialPortInfo, SerialSourceManager
 from serialscope.ui.main_window import MainWindow
 
 
@@ -49,6 +49,46 @@ def test_add_and_remove_device_progressively_reveals_source_controls() -> None:
     assert window.terminal.source_combo.isHidden()
     assert window.graphs_widget.source_combo.isHidden()
     assert window.data_widget.table.isColumnHidden(4)
+    window.close()
+    application.processEvents()
+
+
+def test_connection_status_follows_selected_source_independently() -> None:
+    application = QApplication.instance() or QApplication([])
+    manager = SerialSourceManager()
+    connected_transport = Mock(is_connected=True)
+    disconnected_transport = Mock(is_connected=False)
+    first = manager.add_source(
+        "Reactor Pico",
+        source_id="reactor",
+        connection=connected_transport,
+    )
+    second = manager.add_source(
+        "Pressure Arduino",
+        source_id="pressure",
+        connection=disconnected_transport,
+    )
+    window = MainWindow(port_scanner=lambda: [], source_manager=manager)
+
+    window.connection_bar.source_combo.setCurrentIndex(
+        window.connection_bar.source_combo.findData(first.source_id)
+    )
+    assert window.connection_bar.source_name_input.text() == "Reactor Pico"
+    assert window.connection_bar.status_label.text() == "CONNECTED"
+
+    window.connection_bar.source_combo.setCurrentIndex(
+        window.connection_bar.source_combo.findData(second.source_id)
+    )
+    assert window.connection_bar.source_name_input.text() == "Pressure Arduino"
+    assert window.connection_bar.status_label.text() == "DISCONNECTED"
+
+    connected_transport.is_connected = False
+    manager.source_state_changed.emit(first.source_id, "disconnected")
+    assert window.connection_bar.status_label.text() == "DISCONNECTED"
+    disconnected_transport.is_connected = True
+    manager.source_state_changed.emit(second.source_id, "connected")
+    assert window.connection_bar.status_label.text() == "CONNECTED"
+
     window.close()
     application.processEvents()
 

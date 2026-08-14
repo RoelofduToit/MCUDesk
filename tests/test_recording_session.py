@@ -157,6 +157,26 @@ def test_disconnect_end_reason_is_recorded(tmp_path: Path) -> None:
     assert metadata["status"] == "completed"
 
 
+def test_session_snapshots_profile_reference_without_profile_dependency(tmp_path: Path) -> None:
+    session = RecordingSession()
+    config = SessionConfig(
+        "Profile run",
+        "COM4",
+        115200,
+        "LF",
+        profile_id="stable-profile-id",
+        profile_name="Reactor Pico",
+    )
+    directory = session.start(tmp_path, config)
+    session.stop("normal", 0)
+
+    metadata = json.loads((directory / "session.json").read_text("utf-8"))
+    assert metadata["device_profile"] == {
+        "profile_id": "stable-profile-id",
+        "profile_name": "Reactor Pico",
+    }
+
+
 def test_selected_structured_delimiter_is_stored_in_metadata(tmp_path: Path) -> None:
     session = RecordingSession()
     config = SessionConfig(

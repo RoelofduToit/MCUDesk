@@ -26,6 +26,7 @@ class SerialSource:
     display_name: str
     port: str | None = None
     baud_rate: int = 115200
+    line_ending: str = "LF"
     connection: SerialConnection = field(default_factory=SerialConnection)
     parser: SerialStreamParser = field(default_factory=SerialStreamParser)
     reader: SerialReader | None = None
@@ -105,12 +106,12 @@ class SerialSourceManager(QObject):
             candidate = f"{base}_{suffix}"
             suffix += 1
         source = SerialSource(
-            candidate,
-            resolved_name,
-            port,
-            baud_rate,
-            connection or self._connection_factory(),
-            self._parser_factory(),
+            source_id=candidate,
+            display_name=resolved_name,
+            port=port,
+            baud_rate=baud_rate,
+            connection=connection or self._connection_factory(),
+            parser=self._parser_factory(),
         )
         self._sources[candidate] = source
         self.source_added.emit(candidate)

@@ -31,6 +31,15 @@ from serialscope.logging import (
 )
 from serialscope.parsing import ChannelUpdate, SerialStreamParser
 from serialscope.data import ChannelMetadataRegistry
+from serialscope.profiles import (
+    DeviceIdentity,
+    DeviceMatchStatus,
+    DeviceProfile,
+    ProfileStore,
+    ProfileStoreError,
+    SerialSettings,
+    match_device_profile,
+)
 from serialscope.replay import ReplaySession, ReplaySessionError, load_replay_session
 from serialscope.settings import ApplicationSettings
 from serialscope.serial import (
@@ -49,6 +58,7 @@ from serialscope.ui.dashboard_widget import DashboardWidget
 from serialscope.ui.event_dialogs import AddEventDialog, EventListDialog
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
 from serialscope.ui.preferences_dialog import PreferencesDialog
+from serialscope.ui.profile_dialogs import ProfileNameDialog
 from serialscope.ui.side_panel import SidePanel
 from serialscope.ui.terminal_widget import TerminalWidget
 from serialscope.ui.theme import apply_application_theme
@@ -83,6 +93,7 @@ class MainWindow(QMainWindow):
         stream_parser: SerialStreamParser | None = None,
         application_settings: ApplicationSettings | None = None,
         source_manager: SerialSourceManager | None = None,
+        profile_store: ProfileStore | None = None,
     ) -> None:
         super().__init__()
         self._port_scanner = port_scanner or discover_recommended_serial_ports
@@ -110,6 +121,10 @@ class MainWindow(QMainWindow):
             default_source.source_id: ChannelMetadataRegistry()
         }
         self._application_settings = application_settings or ApplicationSettings()
+        self._profile_store = profile_store or ProfileStore()
+        self._source_profiles: dict[str, str | None] = {
+            source.source_id: None for source in self._source_manager.sources
+        }
         self._selected_theme = self._application_settings.theme
         self._rx_bytes = 0
         self._tx_bytes = 0
@@ -143,6 +158,21 @@ class MainWindow(QMainWindow):
         self.connection_bar.source_name_input.editingFinished.connect(
             self._rename_selected_source
         )
+        self.connection_bar.profile_combo.currentIndexChanged.connect(
+            self._profile_selection_changed
+        )
+        self.connection_bar.save_profile_action.triggered.connect(
+            self._save_current_profile
+        )
+        self.connection_bar.update_profile_action.triggered.connect(
+            self._update_current_profile
+        )
+        self.connection_bar.rename_profile_action.triggered.connect(
+            self._rename_current_profile
+        )
+        self.connection_bar.delete_profile_action.triggered.connect(
+            self._delete_current_profile
+        )
         root_layout.addWidget(self.connection_bar)
 
         self.replay_banner = QLabel()
@@ -158,6 +188,12 @@ class MainWindow(QMainWindow):
         self.terminal = TerminalWidget()
         self.terminal.send_button.clicked.connect(self.send_command)
         self.terminal.command_input.returnPressed.connect(self.send_command)
+        self.terminal.line_ending_combo.currentTextChanged.connect(
+            self._line_ending_changed
+        )
+        self.terminal.source_combo.currentIndexChanged.connect(
+            self._terminal_source_changed
+        )
         self.data_widget = DataWidget()
         self.dashboard_widget = DashboardWidget(lazy=True)
         self.graphs_widget = MultiSourceGraphsWidget()
@@ -197,6 +233,17 @@ class MainWindow(QMainWindow):
         self._source_manager.source_failed.connect(self._handle_source_failure)
         self._refresh_source_selectors()
         self.refresh_ports()
+        if self._profile_store.load_error:
+            self.connection_bar.set_profile_controls_enabled(False)
+            self.connection_bar.set_profile_status("Unavailable")
+            QTimer.singleShot(
+                0,
+                lambda: QMessageBox.warning(
+                    self,
+                    "Device Profiles unavailable",
+                    self._profile_store.load_error or "Device Profiles are unavailable.",
+                ),
+            )
 
     @property
     def selected_theme(self) -> str:
@@ -384,6 +431,7 @@ class MainWindow(QMainWindow):
         self._apply_channel_metadata()
         self.side_panel.set_connected(False)
         self.workspace_tabs.setCurrentWidget(self.terminal)
+        self._update_profile_control_state()
 
     def _enter_replay_mode(self, session: ReplaySession) -> None:
         self._live_channel_metadata = self._channel_metadata.snapshot()
@@ -448,6 +496,7 @@ class MainWindow(QMainWindow):
         self._apply_channel_metadata()
         self.workspace_tabs.setCurrentWidget(self.data_widget)
         self.close_session_action.setEnabled(True)
+        self._update_profile_control_state()
 
     @staticmethod
     def _replay_metadata_text(session: ReplaySession) -> str:
@@ -483,6 +532,250 @@ class MainWindow(QMainWindow):
     def refresh_ports(self) -> None:
         """Refresh the connection bar with currently available ports."""
         self.connection_bar.set_ports(self._port_scanner())
+        self._update_profile_match()
+
+    def _available_ports(self) -> tuple[SerialPortInfo, ...]:
+        return tuple(
+            port
+            for index in range(self.connection_bar.port_combo.count())
+            if isinstance(
+                (port := self.connection_bar.port_combo.itemData(index)),
+                SerialPortInfo,
+            )
+        )
+
+    def _refresh_profile_selector(self) -> None:
+        selected_id = self._source_profiles.get(self._selected_source_id)
+        self.connection_bar.set_profiles(
+            tuple(
+                (profile.profile_id, profile.name)
+                for profile in self._profile_store.profiles
+            ),
+            selected_id,
+        )
+        self._update_profile_match()
+        self._update_profile_control_state()
+
+    def _profile_selection_changed(self) -> None:
+        profile_id = self.connection_bar.selected_profile_id
+        if profile_id is None:
+            self._source_profiles[self._selected_source_id] = None
+            self.connection_bar.set_profile_status("")
+            self.connection_bar.update_profile_action_state()
+            return
+        if not self._profile_change_is_safe():
+            self._refresh_profile_selector()
+            return
+        try:
+            profile = self._profile_store.get(profile_id)
+        except ProfileStoreError as error:
+            self._show_profile_error(str(error))
+            self._refresh_profile_selector()
+            return
+        self._source_profiles[self._selected_source_id] = profile.profile_id
+        self._apply_profile(profile)
+        self._update_profile_match(profile)
+        self.connection_bar.update_profile_action_state()
+
+    def _profile_change_is_safe(self) -> bool:
+        if self._recording_session.is_recording:
+            self._show_profile_error("Stop recording before changing Device Profiles.")
+            return False
+        if self._selected_source.is_connected:
+            self._show_profile_error(
+                "Disconnect this device before changing its Device Profile."
+            )
+            return False
+        return True
+
+    def _apply_profile(self, profile: DeviceProfile) -> None:
+        source = self._selected_source
+        source.baud_rate = profile.serial.baud_rate
+        source.line_ending = profile.serial.line_ending
+        source.parser.reset()
+        self.connection_bar.baud_combo.setCurrentText(str(profile.serial.baud_rate))
+        self.terminal.line_ending_combo.blockSignals(True)
+        self.terminal.line_ending_combo.setCurrentText(profile.serial.line_ending)
+        self.terminal.line_ending_combo.blockSignals(False)
+        registry = self._source_metadata[source.source_id]
+        registry.replace(
+            profile.channels,
+            registry.source_names,
+            retain_missing=True,
+        )
+        self._channel_metadata = registry
+        self._apply_channel_metadata()
+
+    def _update_profile_match(self, profile: DeviceProfile | None = None) -> None:
+        profile_id = self._source_profiles.get(self._selected_source_id)
+        if profile is None and profile_id is not None:
+            try:
+                profile = self._profile_store.get(profile_id)
+            except ProfileStoreError:
+                profile = None
+        if profile is None:
+            self.connection_bar.set_profile_status("")
+            return
+        match = match_device_profile(profile, self._available_ports())
+        labels = {
+            DeviceMatchStatus.EXACT: "Detected",
+            DeviceMatchStatus.LIKELY: "Likely",
+            DeviceMatchStatus.AMBIGUOUS: "Choose port",
+            DeviceMatchStatus.NOT_FOUND: "Not detected",
+        }
+        tooltip = {
+            DeviceMatchStatus.AMBIGUOUS: (
+                "Multiple devices match this profile; select the intended port manually."
+            ),
+            DeviceMatchStatus.NOT_FOUND: "No matching serial device is currently available.",
+        }.get(match.status, "Matching serial device detected.")
+        self.connection_bar.set_profile_status(labels[match.status], tooltip)
+        if match.status in {
+            DeviceMatchStatus.AMBIGUOUS,
+            DeviceMatchStatus.NOT_FOUND,
+        }:
+            self.connection_bar.port_combo.setCurrentIndex(-1)
+            return
+        if match.port is not None:
+            index = next(
+                (
+                    index
+                    for index in range(self.connection_bar.port_combo.count())
+                    if getattr(
+                        self.connection_bar.port_combo.itemData(index), "device", None
+                    )
+                    == match.port.device
+                ),
+                -1,
+            )
+            if index >= 0:
+                self.connection_bar.port_combo.setCurrentIndex(index)
+
+    def _current_profile_values(self) -> dict[str, object]:
+        source = self._selected_source
+        port = self.connection_bar.selected_port
+        identity = DeviceIdentity(
+            vid=port.vid if port else None,
+            pid=port.pid if port else None,
+            serial_number=port.serial_number if port else None,
+            manufacturer=port.manufacturer if port else None,
+            product=port.product if port else None,
+            location=port.location if port else None,
+            hwid=port.hwid if port else None,
+        )
+        return {
+            "serial": SerialSettings(
+                baud_rate=int(self.connection_bar.baud_combo.currentText()),
+                line_ending=source.line_ending,
+            ),
+            "parser": "auto",
+            "device_identity": identity,
+            "last_port": port.device if port else source.port,
+            "channels": self._source_metadata[source.source_id].snapshot(),
+        }
+
+    def _profile_reference(self, source_id: str) -> tuple[str | None, str | None]:
+        profile_id = self._source_profiles.get(source_id)
+        if profile_id is None:
+            return None, None
+        try:
+            return profile_id, self._profile_store.get(profile_id).name
+        except ProfileStoreError:
+            return None, None
+
+    def _save_current_profile(self) -> None:
+        if not self._profile_change_is_safe():
+            return
+        dialog = ProfileNameDialog("Save Device Profile", parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            profile = self._profile_store.create(
+                dialog.profile_name, **self._current_profile_values()
+            )
+        except ProfileStoreError as error:
+            self._show_profile_error(str(error))
+            return
+        self._source_profiles[self._selected_source_id] = profile.profile_id
+        self._refresh_profile_selector()
+
+    def _update_current_profile(self) -> None:
+        profile_id = self._source_profiles.get(self._selected_source_id)
+        if profile_id is None or not self._profile_change_is_safe():
+            return
+        profile = self._profile_store.get(profile_id)
+        response = QMessageBox.question(
+            self,
+            "Update Device Profile",
+            f'Update "{profile.name}" with the current device settings?',
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if response != QMessageBox.StandardButton.Ok:
+            return
+        try:
+            self._profile_store.update(profile_id, **self._current_profile_values())
+        except ProfileStoreError as error:
+            self._show_profile_error(str(error))
+            return
+        self._refresh_profile_selector()
+
+    def _rename_current_profile(self) -> None:
+        profile_id = self._source_profiles.get(self._selected_source_id)
+        if profile_id is None or not self._profile_change_is_safe():
+            return
+        profile = self._profile_store.get(profile_id)
+        dialog = ProfileNameDialog(
+            "Rename Device Profile", profile.name, "Rename", self
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._profile_store.rename(profile_id, dialog.profile_name)
+        except ProfileStoreError as error:
+            self._show_profile_error(str(error))
+            return
+        self._refresh_profile_selector()
+
+    def _delete_current_profile(self) -> None:
+        profile_id = self._source_profiles.get(self._selected_source_id)
+        if profile_id is None or not self._profile_change_is_safe():
+            return
+        profile = self._profile_store.get(profile_id)
+        response = QMessageBox.question(
+            self,
+            "Delete Device Profile",
+            f'Delete device profile "{profile.name}"?\n\n'
+            "This removes the saved profile only. It does not delete recordings.",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if response != QMessageBox.StandardButton.Ok:
+            return
+        try:
+            self._profile_store.delete(profile_id)
+        except ProfileStoreError as error:
+            self._show_profile_error(str(error))
+            return
+        for source_id, active_id in tuple(self._source_profiles.items()):
+            if active_id == profile_id:
+                self._source_profiles[source_id] = None
+        self._refresh_profile_selector()
+
+    def _line_ending_changed(self, value: str) -> None:
+        if not self._source_manager.sources:
+            return
+        source_id = self.terminal.selected_source_id or self._selected_source_id
+        self._source_manager.get(source_id).line_ending = value
+
+    def _update_profile_control_state(self) -> None:
+        enabled = (
+            self._profile_store.load_error is None
+            and not self._recording_session.is_recording
+            and not self._selected_source.is_connected
+            and not self.is_replay_mode
+        )
+        self.connection_bar.set_profile_controls_enabled(enabled)
 
     @property
     def _selected_source_id(self) -> str:
@@ -509,6 +802,7 @@ class MainWindow(QMainWindow):
         for source_id, name in sources:
             self.graphs_widget.ensure_source(source_id, name)
             self._source_metadata.setdefault(source_id, ChannelMetadataRegistry())
+            self._source_profiles.setdefault(source_id, None)
         count = len(sources)
         self.connection_bar.set_source_count(count)
         self.data_widget.set_source_count(count)
@@ -539,6 +833,7 @@ class MainWindow(QMainWindow):
         self.data_widget.remove_source(source_id)
         self.dashboard_widget.remove_source(source_id)
         self._source_metadata.pop(source_id, None)
+        self._source_profiles.pop(source_id, None)
         self._refresh_source_selectors()
 
     def _rename_selected_source(self) -> None:
@@ -582,6 +877,17 @@ class MainWindow(QMainWindow):
         self.side_panel.set_connected(bool(self._source_manager.connected_sources))
         self._rx_bytes, self._tx_bytes = source.rx_bytes, source.tx_bytes
         self._update_counter_labels()
+        self._refresh_profile_selector()
+
+    def _terminal_source_changed(self) -> None:
+        source_id = self.terminal.selected_source_id
+        if source_id is None:
+            return
+        self.terminal.line_ending_combo.blockSignals(True)
+        self.terminal.line_ending_combo.setCurrentText(
+            self._source_manager.get(source_id).line_ending
+        )
+        self.terminal.line_ending_combo.blockSignals(False)
 
     def toggle_serial_connection(self) -> None:
         """Connect or disconnect according to the current service state."""
@@ -631,6 +937,7 @@ class MainWindow(QMainWindow):
         self.terminal.command_input.setFocus()
         self.terminal.reset_stream_decoder()
         self._serial_reader = self._selected_source.reader
+        self._update_profile_control_state()
 
     def _start_serial_reader(self) -> None:
         self._serial_reader = self._reader_factory(self._serial_connection)
@@ -730,6 +1037,7 @@ class MainWindow(QMainWindow):
             self._rx_bytes, self._tx_bytes = source.rx_bytes, source.tx_bytes
             self._update_counter_labels()
         self.side_panel.set_connected(bool(self._source_manager.connected_sources))
+        self._update_profile_control_state()
 
     def _handle_source_failure(self, source_id: str, message: str) -> None:
         if self._recording_session.is_recording:
@@ -752,6 +1060,7 @@ class MainWindow(QMainWindow):
             if len(self._source_manager.sources) == 1:
                 self._reset_channels()
         self.side_panel.set_connected(bool(self._source_manager.connected_sources))
+        self._update_profile_control_state()
         self._show_connection_error(message)
 
     def send_command(self) -> None:
@@ -828,11 +1137,14 @@ class MainWindow(QMainWindow):
             if isinstance(self._recording_session, MultiSourceRecordingSession):
                 configs = tuple(
                     RecordingSourceConfig(
-                        source.source_id,
-                        source.display_name,
-                        source.port or "",
-                        source.baud_rate,
-                        self._source_metadata[source.source_id].snapshot(),
+                        source_id=source.source_id,
+                        display_name=source.display_name,
+                        device=source.port or "",
+                        baud_rate=source.baud_rate,
+                        channels=self._source_metadata[source.source_id].snapshot(),
+                        profile_id=self._profile_reference(source.source_id)[0],
+                        profile_name=self._profile_reference(source.source_id)[1],
+                        line_ending=source.line_ending,
                     )
                     for source in connected_sources
                 )
@@ -845,6 +1157,7 @@ class MainWindow(QMainWindow):
                 )
             else:
                 source = self._selected_source
+                profile_id, profile_name = self._profile_reference(source.source_id)
                 config = SessionConfig(
                     session_name=session_name,
                     device=source.port or "",
@@ -854,6 +1167,8 @@ class MainWindow(QMainWindow):
                         self.side_panel.data_delimiter_combo.currentData()
                     ),
                     channels=self._channel_metadata.snapshot(),
+                    profile_id=profile_id,
+                    profile_name=profile_name,
                 )
                 self._recording_session.start(Path(selected_directory), config)
         except RecordingSessionError as error:
@@ -896,6 +1211,7 @@ class MainWindow(QMainWindow):
             self._recording_session.event_logging_available,
         )
         self.side_panel.set_events(self._recording_session.events)
+        self._update_profile_control_state()
 
     def add_event(self) -> None:
         """Capture a parent-session timestamp before asking for annotation text."""
@@ -933,6 +1249,7 @@ class MainWindow(QMainWindow):
         self.terminal.set_connected(False)
         self.side_panel.set_connected(False)
         self._reset_channels()
+        self._update_profile_control_state()
 
     def _disconnect_serial_port(self) -> None:
         source_id = self._selected_source_id
@@ -956,6 +1273,7 @@ class MainWindow(QMainWindow):
             self.side_panel.set_connected(False)
             self._reset_channels()
             self._show_connection_error(str(error))
+            self._update_profile_control_state()
             return
 
         self.connection_bar.set_connected(False)
@@ -963,12 +1281,16 @@ class MainWindow(QMainWindow):
         self.side_panel.set_connected(bool(self._source_manager.connected_sources))
         if len(self._source_manager.sources) == 1:
             self._reset_channels()
+        self._update_profile_control_state()
 
     def _show_connection_error(self, message: str) -> None:
         QMessageBox.critical(self, "Serial connection error", message)
 
     def _show_logging_error(self, message: str) -> None:
         QMessageBox.critical(self, "Recording error", message)
+
+    def _show_profile_error(self, message: str) -> None:
+        QMessageBox.warning(self, "Device Profile", message)
 
     def _show_event_error(self, message: str) -> None:
         QMessageBox.critical(self, "Event logging error", message)

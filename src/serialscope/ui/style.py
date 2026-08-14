@@ -93,6 +93,13 @@ QLabel#fieldLabel, QLabel#panelTitle {
 QLabel#mutedLabel {
     color: #718399;
 }
+QLabel#profileStatusLabel { color: #718399; font-size: 9pt; }
+QToolButton#deviceProfileMenuButton {
+    color: #bac8d5; background-color: #18232e; border: 1px solid #314354;
+    border-radius: 4px; padding: 4px 7px;
+}
+QToolButton#deviceProfileMenuButton:hover { background-color: #223341; border-color: #477088; }
+QToolButton#deviceProfileMenuButton:disabled { color: #647585; background-color: #141d25; }
 QLabel#replayModeBanner {
     color: #bfe7fa;
     background-color: #132a38;
@@ -108,45 +115,58 @@ QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
     border-radius: 4px;
     padding: 6px 9px;
 }
-QScrollArea#dashboardChannelSelector, QWidget#dashboardSelectorContent,
-QScrollArea#graphChannelSelector, QScrollArea#graphChannelSelector > QWidget > QWidget {
+QScrollArea#channelSelector {
     color: #c6d2dc;
     background-color: #0e151d;
     border: 1px solid #293846;
     border-radius: 4px;
     padding: 4px;
 }
-QCheckBox#dashboardChannelCheckBox, QCheckBox#graphChannelCheckBox {
-    spacing: 7px;
-    padding: 4px 7px;
+QWidget#channelSelectorContent { background-color: transparent; }
+QFrame#channelToggle {
+    border: 1px solid transparent;
+    border-radius: 4px;
     background-color: transparent;
 }
-QCheckBox#dashboardChannelCheckBox:hover, QCheckBox#graphChannelCheckBox:hover {
-    background-color: #1b2a36;
+QFrame#channelToggle:hover {
+    background-color: #182630;
+    border-color: #314c5d;
 }
-QCheckBox#dashboardChannelCheckBox:focus, QCheckBox#graphChannelCheckBox:focus {
-    border: 1px solid #4b7991;
-    border-radius: 4px;
+QFrame#channelToggle[checked="true"] {
+    background-color: #162630;
+    border-color: #35657b;
 }
-QCheckBox#dashboardChannelCheckBox::indicator,
-QCheckBox#graphChannelCheckBox::indicator {
+QFrame#channelToggle[checked="true"]:hover {
+    background-color: #1a2d3a;
+    border-color: #477b94;
+}
+QFrame#channelToggle:focus { border-color: #5689a1; }
+QLabel#channelToggleLabel {
+    color: #aebdca;
+    background-color: transparent;
+    border: none;
+    font-weight: 400;
+}
+QFrame#channelToggle[checked="true"] QLabel#channelToggleLabel { color: #d5e2eb; }
+QFrame#channelToggle:disabled QLabel#channelToggleLabel { color: #647585; }
+QFrame#channelToggle:disabled {
+    background-color: #121b23;
+    border-color: transparent;
+}
+QCheckBox#channelToggleIndicator { spacing: 0; padding: 0; }
+QCheckBox#channelToggleIndicator::indicator {
     width: 14px;
     height: 14px;
     border: 1px solid #60788b;
     border-radius: 7px;
     background-color: #0e151d;
 }
-QCheckBox#dashboardChannelCheckBox::indicator:hover,
-QCheckBox#graphChannelCheckBox::indicator:hover { border-color: #8ab7cc; }
-QCheckBox#dashboardChannelCheckBox::indicator:checked,
-QCheckBox#graphChannelCheckBox::indicator:checked {
+QCheckBox#channelToggleIndicator::indicator:hover { border-color: #8ab7cc; }
+QCheckBox#channelToggleIndicator::indicator:checked {
     background-color: #2f9bd1;
-    border: 3px solid #bfe7fa;
+    border: 1px solid #78bad7;
 }
-QCheckBox#dashboardChannelCheckBox:disabled,
-QCheckBox#graphChannelCheckBox:disabled { color: #647585; }
-QCheckBox#dashboardChannelCheckBox::indicator:disabled,
-QCheckBox#graphChannelCheckBox::indicator:disabled {
+QCheckBox#channelToggleIndicator::indicator:disabled {
     background-color: #1a242d;
     border-color: #40505d;
 }
@@ -201,26 +221,36 @@ QLabel#dashboardEmptyLabel {
     color: #718399;
     font-size: 12pt;
 }
+QFrame#connectionStatusIndicator {
+    min-height: 32px;
+    background-color: #211b20;
+    border: 1px solid #594047;
+    border-radius: 4px;
+}
+QFrame#connectionStatusIndicator[connectionState="connected"] {
+    background-color: #16251e;
+    border-color: #315f48;
+}
+QFrame#connectionStatusIndicator[connectionState="error"] {
+    background-color: #2b1c20;
+    border-color: #7a454d;
+}
 QLabel#connectionStatusDot {
-    color: #7f8c99;
-    font-size: 11pt;
+    color: #bd6e76;
+    background-color: transparent;
+    font-size: 10pt;
 }
-QLabel#connectionStatusDot[connectionState="connected"] {
-    color: #3dcc87;
-}
-QLabel#connectionStatusDot[connectionState="error"] {
-    color: #e06c75;
-}
+QLabel#connectionStatusDot[connectionState="connected"] { color: #43b97b; }
+QLabel#connectionStatusDot[connectionState="error"] { color: #dd6973; }
 QLabel#connectionStatusLabel {
-    color: #aebdca;
+    color: #d3a1a6;
+    background-color: transparent;
+    font-size: 10.5pt;
     font-weight: 600;
+    letter-spacing: 0.4px;
 }
-QLabel#connectionStatusLabel[connectionState="connected"] {
-    color: #8de1b5;
-}
-QLabel#connectionStatusLabel[connectionState="error"] {
-    color: #ed9a9f;
-}
+QLabel#connectionStatusLabel[connectionState="connected"] { color: #9bd9b8; }
+QLabel#connectionStatusLabel[connectionState="error"] { color: #ee9aa1; }
 QLabel#loggingStatusDot {
     color: #596775;
     font-size: 10pt;
@@ -415,6 +445,13 @@ QLabel#fieldLabel, QLabel#panelTitle {
     letter-spacing: 1px;
 }
 QLabel#mutedLabel, QLabel#graphsEmptyDetail { color: #718399; }
+QLabel#profileStatusLabel { color: #718399; font-size: 9pt; }
+QToolButton#deviceProfileMenuButton {
+    color: #455b6d; background-color: #edf1f4; border: 1px solid #bcc8d0;
+    border-radius: 4px; padding: 4px 7px;
+}
+QToolButton#deviceProfileMenuButton:hover { background-color: #e2edf2; border-color: #7fa6b9; }
+QToolButton#deviceProfileMenuButton:disabled { color: #93a1ac; background-color: #e5eaed; }
 QLabel#replayModeBanner {
     color: #174b65;
     background-color: #dcecf3;
@@ -430,38 +467,53 @@ QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
     border-radius: 4px;
     padding: 6px 9px;
 }
-QScrollArea#dashboardChannelSelector, QWidget#dashboardSelectorContent,
-QScrollArea#graphChannelSelector, QScrollArea#graphChannelSelector > QWidget > QWidget {
+QScrollArea#channelSelector {
     color: #374b5b;
     background-color: #ffffff;
     border: 1px solid #c5cfd8;
     border-radius: 4px;
     padding: 4px;
 }
-QCheckBox#dashboardChannelCheckBox, QCheckBox#graphChannelCheckBox {
-    spacing: 7px; padding: 4px 7px; background-color: transparent;
+QWidget#channelSelectorContent { background-color: transparent; }
+QFrame#channelToggle {
+    border: 1px solid transparent;
+    border-radius: 4px; background-color: transparent;
 }
-QCheckBox#dashboardChannelCheckBox:hover, QCheckBox#graphChannelCheckBox:hover {
-    background-color: #e2edf2;
+QFrame#channelToggle:hover {
+    background-color: #e8eff3;
+    border-color: #a4b9c4;
 }
-QCheckBox#dashboardChannelCheckBox:focus, QCheckBox#graphChannelCheckBox:focus {
-    border: 1px solid #5d8da4; border-radius: 4px;
+QFrame#channelToggle[checked="true"] {
+    background-color: #e3edf2;
+    border-color: #7b9faf;
 }
-QCheckBox#dashboardChannelCheckBox::indicator,
-QCheckBox#graphChannelCheckBox::indicator {
+QFrame#channelToggle[checked="true"]:hover {
+    background-color: #dce9ef;
+    border-color: #628ea2;
+}
+QFrame#channelToggle:focus { border-color: #4f839b; }
+QLabel#channelToggleLabel {
+    color: #526879;
+    background-color: transparent;
+    border: none;
+    font-weight: 400;
+}
+QFrame#channelToggle[checked="true"] QLabel#channelToggleLabel { color: #263f4e; }
+QFrame#channelToggle:disabled QLabel#channelToggleLabel { color: #93a1ac; }
+QFrame#channelToggle:disabled {
+    background-color: #edf1f4;
+    border-color: transparent;
+}
+QCheckBox#channelToggleIndicator { spacing: 0; padding: 0; }
+QCheckBox#channelToggleIndicator::indicator {
     width: 14px; height: 14px; border: 1px solid #718a9b;
     border-radius: 7px; background-color: #f7f9fb;
 }
-QCheckBox#dashboardChannelCheckBox::indicator:hover,
-QCheckBox#graphChannelCheckBox::indicator:hover { border-color: #376f8b; }
-QCheckBox#dashboardChannelCheckBox::indicator:checked,
-QCheckBox#graphChannelCheckBox::indicator:checked {
-    background-color: #287fa8; border: 3px solid #d7eef8;
+QCheckBox#channelToggleIndicator::indicator:hover { border-color: #376f8b; }
+QCheckBox#channelToggleIndicator::indicator:checked {
+    background-color: #287fa8; border: 1px solid #4f91ad;
 }
-QCheckBox#dashboardChannelCheckBox:disabled,
-QCheckBox#graphChannelCheckBox:disabled { color: #93a1ac; }
-QCheckBox#dashboardChannelCheckBox::indicator:disabled,
-QCheckBox#graphChannelCheckBox::indicator:disabled {
+QCheckBox#channelToggleIndicator::indicator:disabled {
     background-color: #e1e6e9; border-color: #b4c0c8;
 }
 QFrame#dashboardChannelTile {
@@ -503,12 +555,36 @@ QFrame#dashboardChannelTile[alarmState="alarm"] {
 QLabel#dashboardTileStatus[alarmState="warning"] { color: #765712; }
 QLabel#dashboardTileStatus[alarmState="alarm"] { color: #9b2935; }
 QLabel#dashboardEmptyLabel { color: #718399; font-size: 12pt; }
-QLabel#connectionStatusDot { color: #7f8c99; font-size: 11pt; }
-QLabel#connectionStatusDot[connectionState="connected"] { color: #168552; }
-QLabel#connectionStatusDot[connectionState="error"] { color: #c43f4d; }
-QLabel#connectionStatusLabel { color: #526474; font-weight: 600; }
-QLabel#connectionStatusLabel[connectionState="connected"] { color: #167548; }
-QLabel#connectionStatusLabel[connectionState="error"] { color: #ac3440; }
+QFrame#connectionStatusIndicator {
+    min-height: 32px;
+    background-color: #f4e9ea;
+    border: 1px solid #d5b8bc;
+    border-radius: 4px;
+}
+QFrame#connectionStatusIndicator[connectionState="connected"] {
+    background-color: #e8f3ed;
+    border-color: #a5c9b4;
+}
+QFrame#connectionStatusIndicator[connectionState="error"] {
+    background-color: #f7e6e8;
+    border-color: #d7a3a9;
+}
+QLabel#connectionStatusDot {
+    color: #aa5962;
+    background-color: transparent;
+    font-size: 10pt;
+}
+QLabel#connectionStatusDot[connectionState="connected"] { color: #258658; }
+QLabel#connectionStatusDot[connectionState="error"] { color: #bd404c; }
+QLabel#connectionStatusLabel {
+    color: #874b52;
+    background-color: transparent;
+    font-size: 10.5pt;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+}
+QLabel#connectionStatusLabel[connectionState="connected"] { color: #256e4d; }
+QLabel#connectionStatusLabel[connectionState="error"] { color: #9f3540; }
 QLabel#loggingStatusDot { color: #8b98a3; font-size: 10pt; }
 QLabel#loggingStatusDot[recordingState="active"] { color: #df2338; }
 QComboBox, QLineEdit {

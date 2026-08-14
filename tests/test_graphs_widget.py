@@ -3,12 +3,15 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.ui.graphs_widget import GraphsWidget, visible_x_range
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
+from serialscope.ui.channel_selector import ChannelToggle
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, LIGHT_GRAPH_PALETTE
+from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
 from serialscope.data import AlarmLimits, ChannelMetadataRegistry, EventMarker
 
 
@@ -48,6 +51,55 @@ def test_detected_channels_appear_once_and_are_unselected() -> None:
     assert widget.channel_names == ("TC1", "TC2")
     assert widget.selected_channels == ()
     assert not widget.has_series("TC1")
+    widget.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])
+def test_graph_channel_layout_does_not_compress_selector_labels(
+    stylesheet: str,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    application.setStyleSheet(stylesheet)
+    labels = (
+        "Channel 1",
+        "Channel 2",
+        "Channel 8",
+        "Channel 9",
+        "Channel 10",
+        "PRESSURE",
+        "Reactor Temperature",
+        "Outlet Pressure",
+    )
+    widget = GraphsWidget()
+    widget.resize(700, 600)
+    widget.show()
+    widget.update_channels(ChannelUpdate(labels, tuple(range(len(labels)))))
+    application.processEvents()
+
+    assert all(isinstance(toggle, ChannelToggle) for toggle in widget._selectors.values())
+
+    for checked, focused, enabled in (
+        (False, False, True),
+        (True, False, True),
+        (True, True, True),
+        (False, True, True),
+        (False, False, False),
+        (True, False, False),
+    ):
+        for checkbox in widget._selectors.values():
+            checkbox.setEnabled(enabled)
+            checkbox.setChecked(checked)
+            if focused:
+                checkbox.setFocus(Qt.FocusReason.OtherFocusReason)
+            else:
+                checkbox.clearFocus()
+        application.processEvents()
+        for checkbox in widget._selectors.values():
+            assert checkbox.width() >= checkbox.minimumSizeHint().width()
+            assert checkbox.width() >= checkbox.sizeHint().width()
+
+    assert widget.selector_scroll.horizontalScrollBar().maximum() > 0
     widget.close()
     application.processEvents()
 
