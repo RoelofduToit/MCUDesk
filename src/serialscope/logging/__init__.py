@@ -1,6 +1,7 @@
 """Raw serial logging services."""
 
 from serialscope.logging.raw_logger import RawLogger, RawLoggerError
+from serialscope.logging.event_logger import EventLogger, EventLoggerError
 from serialscope.logging.session import (
     RecordingSession,
     RecordingSessionError,
@@ -19,6 +20,8 @@ from serialscope.logging.multi_session import (
 __all__ = [
     "RawLogger",
     "RawLoggerError",
+    "EventLogger",
+    "EventLoggerError",
     "RecordingSession",
     "RecordingSessionError",
     "SessionConfig",

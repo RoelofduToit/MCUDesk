@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
 
-from serialscope.data import ChannelMetadataRegistry
+from serialscope.data import ChannelMetadataRegistry, EventMarker
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession, ReplaySource
 from serialscope.ui.graphs_widget import GraphsWidget
@@ -28,6 +28,7 @@ class MultiSourceGraphsWidget(QWidget):
         layout.addWidget(self.stack, 1)
         self._widgets: dict[str, GraphsWidget] = {}
         self._palette = DARK_GRAPH_PALETTE
+        self._events: tuple[EventMarker, ...] = ()
         self.source_combo.currentIndexChanged.connect(self._select_current)
         self._update_selector_visibility()
 
@@ -45,6 +46,7 @@ class MultiSourceGraphsWidget(QWidget):
             return self._widgets[source_id]
         widget = GraphsWidget()
         widget.apply_theme(self._palette)
+        widget.set_events(self._events)
         self._widgets[source_id] = widget
         self.stack.addWidget(widget)
         self.source_combo.addItem(display_name, source_id)
@@ -71,6 +73,7 @@ class MultiSourceGraphsWidget(QWidget):
         self.ensure_source(source_id, display_name).update_channels(update)
 
     def load_multi_replay(self, session: ReplaySession) -> None:
+        self._events = session.events
         for source_id in tuple(self._widgets):
             self.remove_source(source_id)
         for source in session.sources:
@@ -81,8 +84,18 @@ class MultiSourceGraphsWidget(QWidget):
                 source.channel_names,
                 source.samples,
                 (source,),
+                session.events,
             )
             widget.load_replay(adapted)
+
+    @property
+    def events(self) -> tuple[EventMarker, ...]:
+        return self._events
+
+    def set_events(self, events: tuple[EventMarker, ...]) -> None:
+        self._events = tuple(events)
+        for widget in self._widgets.values():
+            widget.set_events(self._events)
 
     def set_source_metadata(self, source_id: str, registry: ChannelMetadataRegistry) -> None:
         self._widgets[source_id].set_channel_metadata(registry)
@@ -97,6 +110,7 @@ class MultiSourceGraphsWidget(QWidget):
             self._widgets[source_id].reset()
 
     def reset_all(self) -> None:
+        self._events = ()
         for widget in self._widgets.values():
             widget.reset()
 
@@ -154,9 +168,11 @@ class MultiSourceGraphsWidget(QWidget):
         self.active_widget.clear_history()
 
     def reset(self) -> None:
+        self._events = ()
         self.active_widget.reset()
 
     def load_replay(self, session: ReplaySession) -> None:
+        self._events = session.events
         self.active_widget.load_replay(session)
 
     def set_channel_metadata(self, registry: ChannelMetadataRegistry) -> None:

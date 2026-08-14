@@ -13,10 +13,16 @@ class GraphPalette:
     foreground: str
     cursor: str
     readout_background: str
+    event_marker: str
+    event_marker_hover: str
 
 
-LIGHT_GRAPH_PALETTE = GraphPalette("#f5f7fa", "#263442", "#46697c", "#e4edf2")
-DARK_GRAPH_PALETTE = GraphPalette("#0a1016", "#aebdca", "#7ba9bf", "#182630")
+LIGHT_GRAPH_PALETTE = GraphPalette(
+    "#f5f7fa", "#263442", "#46697c", "#e4edf2", "#b4681c", "#854800"
+)
+DARK_GRAPH_PALETTE = GraphPalette(
+    "#0a1016", "#aebdca", "#7ba9bf", "#182630", "#e0a04b", "#ffd089"
+)
 
 
 def apply_application_theme(application: QApplication, theme: str) -> GraphPalette:

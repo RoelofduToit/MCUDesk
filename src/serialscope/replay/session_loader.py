@@ -11,6 +11,8 @@ import re
 from types import MappingProxyType
 from typing import Mapping
 
+from serialscope.data import EventMarker
+
 
 class ReplaySessionError(RuntimeError):
     """Raised when a selected directory is not a usable recorded session."""
@@ -33,6 +35,7 @@ class ReplaySession:
     channel_names: tuple[str, ...]
     samples: tuple[ReplaySample, ...]
     sources: tuple["ReplaySource", ...] = ()
+    events: tuple[EventMarker, ...] = ()
 
     @property
     def name(self) -> str:
@@ -180,6 +183,34 @@ def _load_data(data_path: Path, delimiter: str) -> tuple[tuple[str, ...], tuple[
     return channels, tuple(samples)
 
 
+def _load_events(directory: Path, metadata: Mapping[str, object]) -> tuple[EventMarker, ...]:
+    path = _session_file(directory, str(metadata.get("events_file", "events.csv")))
+    if not path.exists():
+        return ()
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as stream:
+            rows = csv.reader(stream)
+            if next(rows, None) != ["elapsed_s", "event_id", "event"]:
+                raise ReplaySessionError("events.csv contains an invalid header.")
+            events: list[EventMarker] = []
+            identifiers: set[str] = set()
+            previous_time = -1.0
+            for row in rows:
+                if len(row) != 3:
+                    raise ReplaySessionError("events.csv contains a malformed row.")
+                marker = EventMarker(row[1], float(row[0]), row[2])
+                if marker.elapsed_s < previous_time or marker.event_id in identifiers:
+                    raise ReplaySessionError("events.csv contains invalid event data.")
+                previous_time = marker.elapsed_s
+                identifiers.add(marker.event_id)
+                events.append(marker)
+            return tuple(events)
+    except ReplaySessionError:
+        raise
+    except (OSError, UnicodeError, csv.Error, ValueError) as error:
+        raise ReplaySessionError("events.csv could not be read or is malformed.") from error
+
+
 def load_replay_session(directory: Path) -> ReplaySession:
     """Load legacy or source-separated sessions into memory."""
     directory = Path(directory)
@@ -240,10 +271,12 @@ def load_replay_session(directory: Path) -> ReplaySession:
             )
         )
     primary = sources[0]
+    events = _load_events(directory, metadata)
     return ReplaySession(
         directory=directory,
         metadata=MappingProxyType(metadata),
         channel_names=primary.channel_names,
         samples=primary.samples,
         sources=tuple(sources),
+        events=events,
     )

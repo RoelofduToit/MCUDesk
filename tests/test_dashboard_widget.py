@@ -28,6 +28,16 @@ def test_dashboard_starts_empty_and_adds_channels_once_unselected() -> None:
     application.processEvents()
 
 
+def test_channel_selectors_use_centralized_circular_multiselect_style() -> None:
+    for stylesheet in (DARK_STYLE, LIGHT_STYLE):
+        assert "QCheckBox#dashboardChannelCheckBox::indicator" in stylesheet
+        assert "QCheckBox#graphChannelCheckBox::indicator" in stylesheet
+        assert "border-radius: 7px" in stylesheet
+        assert "::indicator:checked" in stylesheet
+        assert "::indicator:disabled" in stylesheet
+        assert "QCheckBox#graphChannelCheckBox:focus" in stylesheet
+
+
 def test_selection_creates_updates_and_removes_one_tile() -> None:
     application = QApplication.instance() or QApplication([])
     widget = DashboardWidget()

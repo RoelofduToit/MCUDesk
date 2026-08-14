@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from serialscope.data import (
     ChannelHistory,
     ChannelMetadataRegistry,
+    EventMarker,
     calculate_statistics,
     nearest_measurement,
     process_display_points,
@@ -70,6 +71,8 @@ class GraphsWidget(QWidget):
         self._replay_session: ReplaySession | None = None
         self._graph_palette = DARK_GRAPH_PALETTE
         self._metadata = ChannelMetadataRegistry()
+        self._events: tuple[EventMarker, ...] = ()
+        self._event_lines: list[pg.InfiniteLine] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -269,7 +272,35 @@ class GraphsWidget(QWidget):
         self._replay_session = session
         for name in session.channel_names:
             self._add_channel(name)
+        self.set_events(session.events)
         self.refresh_plot()
+
+    @property
+    def events(self) -> tuple[EventMarker, ...]:
+        return self._events
+
+    def set_events(self, events: tuple[EventMarker, ...]) -> None:
+        """Replace sparse presentation markers without touching measurements."""
+        events = tuple(events)
+        if events == self._events:
+            return
+        for line in self._event_lines:
+            self.plot_widget.removeItem(line)
+        self._event_lines.clear()
+        self._events = events
+        for marker in events:
+            line = pg.InfiniteLine(
+                pos=marker.elapsed_s,
+                angle=90,
+                movable=False,
+                pen=pg.mkPen(self._graph_palette.event_marker, width=1),
+                hoverPen=pg.mkPen(self._graph_palette.event_marker_hover, width=2),
+            )
+            line.setObjectName("graphEventMarker")
+            line.setToolTip(f"{marker.elapsed_s:.3f} s\n{marker.text}")
+            line.setZValue(5)
+            self.plot_widget.addItem(line, ignoreBounds=True)
+            self._event_lines.append(line)
 
     def set_channel_selected(self, name: str, selected: bool) -> None:
         self._selectors[name].setChecked(selected)
@@ -376,6 +407,9 @@ class GraphsWidget(QWidget):
             axis.setTextPen(palette.foreground)
         if self._cursor_line is not None:
             self._cursor_line.setPen(pg.mkPen(palette.cursor, width=1))
+        for line in self._event_lines:
+            line.setPen(pg.mkPen(palette.event_marker, width=1))
+            line.setHoverPen(pg.mkPen(palette.event_marker_hover, width=2))
         legend = self.plot_widget.plotItem.legend
         if legend is not None:
             legend.setBrush(palette.background)
@@ -397,6 +431,7 @@ class GraphsWidget(QWidget):
         self._measured_series.clear()
         self.history.reset()
         self._replay_session = None
+        self.set_events(())
         self._paused = False
         self.pause_button.setText("Pause")
         if self._cursor_line is not None:

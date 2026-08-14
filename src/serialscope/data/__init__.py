@@ -17,6 +17,7 @@ from serialscope.data.graph_processing import (
 )
 from serialscope.data.engineering_units import ENGINEERING_UNITS, is_builtin_unit
 from serialscope.data.channel_key import ChannelKey
+from serialscope.data.event_marker import EventMarker
 
 __all__ = [
     "ChannelHistory",
@@ -36,4 +37,5 @@ __all__ = [
     "ENGINEERING_UNITS",
     "is_builtin_unit",
     "ChannelKey",
+    "EventMarker",
 ]

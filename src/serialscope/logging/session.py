@@ -6,9 +6,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 import platform
 import re
+import time
 from typing import Mapping
+import uuid
 
 from serialscope import __version__
+from serialscope.data import EventMarker
+from serialscope.logging.event_logger import EventLogger, EventLoggerError
 from serialscope.logging.raw_logger import RawLogger, RawLoggerError
 from serialscope.logging.structured_csv_logger import (
     StructuredCsvLogger,
@@ -67,13 +71,24 @@ class RecordingSession:
         raw_logger: RawLogger | None = None,
         structured_logger: StructuredCsvLogger | None = None,
         clock: Callable[[], datetime] | None = None,
+        event_logger: EventLogger | None = None,
+        monotonic_clock: Callable[[], float] = time.monotonic,
+        event_id_factory: Callable[[], str] | None = None,
     ) -> None:
+        self._monotonic_clock = monotonic_clock
         self._raw_logger = raw_logger or RawLogger()
-        self._structured_logger = structured_logger or StructuredCsvLogger()
+        self._owns_structured_logger = structured_logger is None
+        self._structured_logger = structured_logger or StructuredCsvLogger(
+            monotonic_clock
+        )
         self._clock = clock or (lambda: datetime.now().astimezone())
+        self._event_logger = event_logger or EventLogger()
+        self._event_id_factory = event_id_factory or (lambda: uuid.uuid4().hex)
         self._directory: Path | None = None
         self._config: SessionConfig | None = None
         self._started_at: datetime | None = None
+        self._started_monotonic: float | None = None
+        self._events: list[EventMarker] = []
         self._metadata: dict[str, object] = {}
 
     @property
@@ -102,6 +117,30 @@ class RecordingSession:
             return 0
         return max(0, int((self._now() - self._started_at).total_seconds()))
 
+    @property
+    def events(self) -> tuple[EventMarker, ...]:
+        return tuple(self._events)
+
+    @property
+    def event_logging_available(self) -> bool:
+        return self.is_recording and self._event_logger.is_recording
+
+    def elapsed_now(self) -> float:
+        if self._started_monotonic is None:
+            raise RecordingSessionError("No recording session is active.")
+        return max(0.0, self._monotonic_clock() - self._started_monotonic)
+
+    def add_event(self, elapsed_s: float, text: str) -> EventMarker:
+        if not self.is_recording:
+            raise RecordingSessionError("No recording session is active.")
+        try:
+            marker = EventMarker(self._event_id_factory(), elapsed_s, text)
+            self._event_logger.write(marker)
+        except (EventLoggerError, ValueError) as error:
+            raise RecordingSessionError(f"Could not record event: {error}") from error
+        self._events.append(marker)
+        return marker
+
     def start(self, parent_directory: Path, config: SessionConfig) -> Path:
         """Create a collision-safe session directory and begin raw logging."""
         if self.is_recording:
@@ -112,6 +151,7 @@ class RecordingSession:
             )
 
         started_at = self._now()
+        started_monotonic = self._monotonic_clock()
         folder_base = sanitize_session_name(config.session_name)
         timestamp = started_at.strftime("%Y-%m-%d_%H%M")
         try:
@@ -120,20 +160,37 @@ class RecordingSession:
                 f"{folder_base}_{timestamp}",
             )
             self._raw_logger.start(directory / "raw.log")
+            structured_options = (
+                {"started_at": started_monotonic}
+                if self._owns_structured_logger
+                else {}
+            )
             self._structured_logger.start(
                 directory / "data.csv",
                 delimiter=config.structured_data_delimiter,
+                **structured_options,
             )
-        except (OSError, RawLoggerError, StructuredCsvLoggerError) as error:
+            self._event_logger.start(directory / "events.csv")
+        except (OSError, RawLoggerError, StructuredCsvLoggerError, EventLoggerError) as error:
             try:
                 self._raw_logger.stop()
             except RawLoggerError:
+                pass
+            try:
+                self._structured_logger.stop()
+            except StructuredCsvLoggerError:
+                pass
+            try:
+                self._event_logger.stop()
+            except EventLoggerError:
                 pass
             raise RecordingSessionError(f"Could not start recording session: {error}") from error
 
         self._directory = directory
         self._config = config
         self._started_at = started_at
+        self._started_monotonic = started_monotonic
+        self._events = []
         self._metadata = {
             "serialscope_version": __version__,
             "session_name": config.session_name,
@@ -153,6 +210,8 @@ class RecordingSession:
             "structured_row_count": 0,
             "structured_columns": [],
             "structured_ignored_channels": [],
+            "events_file": "events.csv",
+            "event_count": 0,
             "channels": self._normalize_channel_metadata(config.channels or {}),
             "status": "recording",
             "recording_end_local": None,
@@ -172,6 +231,10 @@ class RecordingSession:
             try:
                 self._structured_logger.stop()
             except StructuredCsvLoggerError:
+                pass
+            try:
+                self._event_logger.stop()
+            except EventLoggerError:
                 pass
             self._clear_active_state()
             raise
@@ -234,6 +297,7 @@ class RecordingSession:
         started_at = self._started_at
         raw_error: RawLoggerError | None = None
         structured_error: StructuredCsvLoggerError | None = None
+        event_error: EventLoggerError | None = None
         try:
             self._raw_logger.stop()
         except RawLoggerError as error:
@@ -242,6 +306,10 @@ class RecordingSession:
             self._structured_logger.stop()
         except StructuredCsvLoggerError as error:
             structured_error = error
+        try:
+            self._event_logger.stop()
+        except EventLoggerError as error:
+            event_error = error
 
         self._metadata.update(
             {
@@ -258,6 +326,7 @@ class RecordingSession:
                 "structured_ignored_channels": list(
                     self._structured_logger.ignored_channels
                 ),
+                "event_count": len(self._events),
                 "total_rx_byte_count": total_rx_bytes,
                 "end_reason": end_reason,
             }
@@ -276,6 +345,8 @@ class RecordingSession:
             raise RecordingSessionError(str(raw_error)) from raw_error
         if structured_error is not None:
             raise RecordingSessionError(str(structured_error)) from structured_error
+        if event_error is not None:
+            raise RecordingSessionError(str(event_error)) from event_error
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -306,3 +377,4 @@ class RecordingSession:
 
     def _clear_active_state(self) -> None:
         self._started_at = None
+        self._started_monotonic = None

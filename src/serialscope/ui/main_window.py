@@ -46,6 +46,7 @@ from serialscope.ui.about_dialog import AboutDialog, APPLICATION_AUTHOR, GITHUB_
 from serialscope.ui.channel_settings_dialog import ChannelSettingsDialog
 from serialscope.ui.data_widget import DataWidget
 from serialscope.ui.dashboard_widget import DashboardWidget
+from serialscope.ui.event_dialogs import AddEventDialog, EventListDialog
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
 from serialscope.ui.preferences_dialog import PreferencesDialog
 from serialscope.ui.side_panel import SidePanel
@@ -168,6 +169,8 @@ class MainWindow(QMainWindow):
         self.workspace_tabs.setCurrentWidget(self.terminal)
         self.side_panel = SidePanel()
         self.side_panel.logging_button.clicked.connect(self.toggle_logging)
+        self.side_panel.add_event_button.clicked.connect(self.add_event)
+        self.side_panel.view_events_button.clicked.connect(self.show_events)
         self.workspace_splitter.addWidget(self.workspace_tabs)
         self.workspace_splitter.addWidget(self.side_panel)
         self.workspace_splitter.setStretchFactor(0, 1)
@@ -376,6 +379,8 @@ class MainWindow(QMainWindow):
                 self.graphs_widget.remove_source(source_id)
         self._refresh_source_selectors()
         self._reset_channels(reset_graphs=True)
+        self.side_panel.set_events(())
+        self.graphs_widget.set_events(())
         self._apply_channel_metadata()
         self.side_panel.set_connected(False)
         self.workspace_tabs.setCurrentWidget(self.terminal)
@@ -438,6 +443,8 @@ class MainWindow(QMainWindow):
             self._source_metadata[source.source_id] = registry
         if not legacy_replay:
             self.graphs_widget.load_multi_replay(session)
+        self.side_panel.set_events(session.events)
+        self.graphs_widget.set_events(session.events)
         self._apply_channel_metadata()
         self.workspace_tabs.setCurrentWidget(self.data_widget)
         self.close_session_action.setEnabled(True)
@@ -855,6 +862,8 @@ class MainWindow(QMainWindow):
             return
 
         self._recording_timer.start()
+        self.side_panel.set_events(())
+        self.graphs_widget.set_events(())
         self._update_recording_presentation()
         self.side_panel.set_connected(True)
 
@@ -884,7 +893,34 @@ class MainWindow(QMainWindow):
             self._recording_session.display_name,
             format_byte_count(self._recording_session.bytes_written),
             format_elapsed_time(self._recording_session.elapsed_seconds),
+            self._recording_session.event_logging_available,
         )
+        self.side_panel.set_events(self._recording_session.events)
+
+    def add_event(self) -> None:
+        """Capture a parent-session timestamp before asking for annotation text."""
+        if not self._recording_session.event_logging_available:
+            return
+        try:
+            elapsed_s = self._recording_session.elapsed_now()
+        except RecordingSessionError as error:
+            self._show_event_error(str(error))
+            return
+        dialog = AddEventDialog(elapsed_s, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.event_text:
+            return
+        try:
+            self._recording_session.add_event(elapsed_s, dialog.event_text)
+        except RecordingSessionError as error:
+            self._update_recording_presentation()
+            self._show_event_error(str(error))
+            return
+        self.side_panel.set_events(self._recording_session.events)
+        self.graphs_widget.set_events(self._recording_session.events)
+
+    def show_events(self) -> None:
+        if self.side_panel.events:
+            EventListDialog(self.side_panel.events, self).exec()
 
     def _return_to_disconnected_state(self, end_reason: str) -> None:
         self._stop_recording(end_reason)
@@ -933,6 +969,9 @@ class MainWindow(QMainWindow):
 
     def _show_logging_error(self, message: str) -> None:
         QMessageBox.critical(self, "Recording error", message)
+
+    def _show_event_error(self, message: str) -> None:
+        QMessageBox.critical(self, "Event logging error", message)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Release an open serial port before the window is destroyed."""

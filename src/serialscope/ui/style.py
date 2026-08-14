@@ -108,19 +108,47 @@ QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
     border-radius: 4px;
     padding: 6px 9px;
 }
-QScrollArea#dashboardChannelSelector, QWidget#dashboardSelectorContent {
+QScrollArea#dashboardChannelSelector, QWidget#dashboardSelectorContent,
+QScrollArea#graphChannelSelector, QScrollArea#graphChannelSelector > QWidget > QWidget {
     color: #c6d2dc;
     background-color: #0e151d;
     border: 1px solid #293846;
     border-radius: 4px;
     padding: 4px;
 }
-QCheckBox#dashboardChannelCheckBox {
-    padding: 3px 7px;
+QCheckBox#dashboardChannelCheckBox, QCheckBox#graphChannelCheckBox {
+    spacing: 7px;
+    padding: 4px 7px;
     background-color: transparent;
 }
-QCheckBox#dashboardChannelCheckBox:hover {
+QCheckBox#dashboardChannelCheckBox:hover, QCheckBox#graphChannelCheckBox:hover {
     background-color: #1b2a36;
+}
+QCheckBox#dashboardChannelCheckBox:focus, QCheckBox#graphChannelCheckBox:focus {
+    border: 1px solid #4b7991;
+    border-radius: 4px;
+}
+QCheckBox#dashboardChannelCheckBox::indicator,
+QCheckBox#graphChannelCheckBox::indicator {
+    width: 14px;
+    height: 14px;
+    border: 1px solid #60788b;
+    border-radius: 7px;
+    background-color: #0e151d;
+}
+QCheckBox#dashboardChannelCheckBox::indicator:hover,
+QCheckBox#graphChannelCheckBox::indicator:hover { border-color: #8ab7cc; }
+QCheckBox#dashboardChannelCheckBox::indicator:checked,
+QCheckBox#graphChannelCheckBox::indicator:checked {
+    background-color: #2f9bd1;
+    border: 3px solid #bfe7fa;
+}
+QCheckBox#dashboardChannelCheckBox:disabled,
+QCheckBox#graphChannelCheckBox:disabled { color: #647585; }
+QCheckBox#dashboardChannelCheckBox::indicator:disabled,
+QCheckBox#graphChannelCheckBox::indicator:disabled {
+    background-color: #1a242d;
+    border-color: #40505d;
 }
 QFrame#dashboardChannelTile {
     background-color: #151e28;
@@ -402,15 +430,40 @@ QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
     border-radius: 4px;
     padding: 6px 9px;
 }
-QScrollArea#dashboardChannelSelector, QWidget#dashboardSelectorContent {
+QScrollArea#dashboardChannelSelector, QWidget#dashboardSelectorContent,
+QScrollArea#graphChannelSelector, QScrollArea#graphChannelSelector > QWidget > QWidget {
     color: #374b5b;
     background-color: #ffffff;
     border: 1px solid #c5cfd8;
     border-radius: 4px;
     padding: 4px;
 }
-QCheckBox#dashboardChannelCheckBox { padding: 3px 7px; background-color: transparent; }
-QCheckBox#dashboardChannelCheckBox:hover { background-color: #e2edf2; }
+QCheckBox#dashboardChannelCheckBox, QCheckBox#graphChannelCheckBox {
+    spacing: 7px; padding: 4px 7px; background-color: transparent;
+}
+QCheckBox#dashboardChannelCheckBox:hover, QCheckBox#graphChannelCheckBox:hover {
+    background-color: #e2edf2;
+}
+QCheckBox#dashboardChannelCheckBox:focus, QCheckBox#graphChannelCheckBox:focus {
+    border: 1px solid #5d8da4; border-radius: 4px;
+}
+QCheckBox#dashboardChannelCheckBox::indicator,
+QCheckBox#graphChannelCheckBox::indicator {
+    width: 14px; height: 14px; border: 1px solid #718a9b;
+    border-radius: 7px; background-color: #f7f9fb;
+}
+QCheckBox#dashboardChannelCheckBox::indicator:hover,
+QCheckBox#graphChannelCheckBox::indicator:hover { border-color: #376f8b; }
+QCheckBox#dashboardChannelCheckBox::indicator:checked,
+QCheckBox#graphChannelCheckBox::indicator:checked {
+    background-color: #287fa8; border: 3px solid #d7eef8;
+}
+QCheckBox#dashboardChannelCheckBox:disabled,
+QCheckBox#graphChannelCheckBox:disabled { color: #93a1ac; }
+QCheckBox#dashboardChannelCheckBox::indicator:disabled,
+QCheckBox#graphChannelCheckBox::indicator:disabled {
+    background-color: #e1e6e9; border-color: #b4c0c8;
+}
 QFrame#dashboardChannelTile {
     background-color: #f7f9fb;
     border: 1px solid #bccbd5;

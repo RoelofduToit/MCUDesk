@@ -7,8 +7,9 @@ from PySide6.QtWidgets import QApplication
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.ui.graphs_widget import GraphsWidget, visible_x_range
+from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, LIGHT_GRAPH_PALETTE
-from serialscope.data import AlarmLimits, ChannelMetadataRegistry
+from serialscope.data import AlarmLimits, ChannelMetadataRegistry, EventMarker
 
 
 @pytest.mark.parametrize(
@@ -47,6 +48,42 @@ def test_detected_channels_appear_once_and_are_unselected() -> None:
     assert widget.channel_names == ("TC1", "TC2")
     assert widget.selected_channels == ()
     assert not widget.has_series("TC1")
+    widget.close()
+    application.processEvents()
+
+
+def test_event_markers_are_presentational_and_keep_measurement_history() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(("TC1",), (100.4,)))
+    history = widget.history.points("TC1")
+
+    widget.set_events((EventMarker("one", 2.5, "Valve opened"),))
+
+    assert widget.events[0].text == "Valve opened"
+    assert len(widget._event_lines) == 1
+    assert "Valve opened" in widget._event_lines[0].toolTip()
+    assert widget.history.points("TC1") == history
+    widget.apply_theme(LIGHT_GRAPH_PALETTE)
+    assert widget.events[0].elapsed_s == 2.5
+    assert widget.history.points("TC1") == history
+    widget.close()
+    application.processEvents()
+
+
+def test_parent_events_appear_on_every_device_graph() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = MultiSourceGraphsWidget()
+    pico = widget.ensure_source("pico", "Pico")
+    arduino = widget.ensure_source("arduino", "Arduino")
+    event = EventMarker("one", 12.438, "Opened reactor valve")
+
+    widget.set_events((event,))
+
+    assert pico.events == (event,)
+    assert arduino.events == (event,)
+    assert pico._event_lines[0].value() == pytest.approx(12.438)
+    assert arduino._event_lines[0].value() == pytest.approx(12.438)
     widget.close()
     application.processEvents()
 

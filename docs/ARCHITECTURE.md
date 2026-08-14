@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, version 0.9.1 hardened lifecycle and persistence boundaries, and version 0.9.2 adds the first standalone Linux development bundle.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, version 0.9.1 hardened lifecycle and persistence boundaries, version 0.9.2 added the first standalone Linux development bundle, and version 0.9.3 adds parent-session operator events and clearer multi-select channel controls.
 
 ## Current structure
 
@@ -16,6 +16,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/serial/reader.py` runs bounded serial reads in a dedicated `QThread` and emits raw byte chunks.
 - `src/serialscope/logging/raw_logger.py` owns a buffered binary log file and writes exact RX byte chunks.
 - `src/serialscope/logging/structured_csv_logger.py` writes parser-produced numeric samples to rectangular UTF-8 CSV.
+- `src/serialscope/logging/event_logger.py` writes sparse parent-session annotations to a dedicated UTF-8 CSV.
 - `src/serialscope/logging/session.py` owns session directories, timing, metadata, and end-reason lifecycle around both loggers.
 - `src/serialscope/parsing/csv_parser.py` incrementally detects simple CSV headers and emits numeric channel updates without Qt dependencies.
 - `src/serialscope/parsing/key_value_parser.py` incrementally parses comma-separated numeric `key=value` lines.
@@ -23,6 +24,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/parsing/stream_parser.py` deterministically selects and locks a parser for the current connection.
 - `src/serialscope/data/channel_history.py` retains Qt-independent, monotonic, bounded numeric history for plotting.
 - `src/serialscope/data/channel_metadata.py` retains optional aliases and units keyed by authoritative source channel names.
+- `src/serialscope/data/event_marker.py` defines immutable session elapsed-time annotations with stable identities.
 - `src/serialscope/data/dashboard_layout.py` owns non-overlapping source-keyed logical grid positions, free-cell assignment, moves, and swaps.
 - `src/serialscope/data/engineering_units.py` defines the reusable categorized built-in unit catalogue without conversion behavior.
 - `src/serialscope/data/alarm.py` validates optional limits and derives one current alarm state from a measured numeric value.
@@ -42,6 +44,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
 - `src/serialscope/ui/terminal_widget.py` contains the terminal display and command row.
 - `src/serialscope/ui/side_panel.py` contains configuration placeholders.
+- `src/serialscope/ui/event_dialogs.py` collects event text and presents the current/replayed event list.
 - `src/serialscope/ui/style.py` contains the small application stylesheet.
 - `tests/` contains automated tests.
 - `docs/` contains project documentation and architectural decisions.
@@ -74,6 +77,7 @@ Data and Dashboard combine source-aware values for operational visibility. Dashb
 ```text
 Experiment_2026-08-13_2030/
 ├── session.json
+├── events.csv
 ├── Pi_Pico/
 │   ├── raw.log
 │   └── data.csv
@@ -87,6 +91,16 @@ Raw bytes never cross source boundaries. Structured rows use each device's actua
 Replay recognizes the `devices` list and loads each referenced structured file into an independent `ReplaySource`. Graph workspaces remain separated while Data and Dashboard can present all sources. The loader treats the earlier root-level `data.csv` format as one conceptual `legacy_source`, preserving backward compatibility without feeding replay through live parsers or serial transport.
 
 Version 0.8.0 intentionally excludes combined graphs/CSV, device-clock synchronization, mid-recording participants, broadcast TX, automatic device matching, network sources, and protocol-specific transports.
+
+## Version 0.9.3 experiment events
+
+`EventMarker(event_id, elapsed_s, text)` is immutable annotation data and is never inserted into raw bytes, parser output, `ChannelUpdate`, device `data.csv`, or measured graph history. The parent recording session owns one event collection and one `EventLogger`, regardless of device count. The logger opens a header-only parent-level `events.csv` at recording start and writes UTF-8 CSV rows with the schema `elapsed_s,event_id,event`. The ID distinguishes repeated descriptions; the full-precision elapsed value is authoritative for graph placement.
+
+The Add Event handler calls the recording session's monotonic `elapsed_now()` before constructing or opening the modal text dialog. Confirmation writes the original captured value, so typing or correction time cannot move the marker. Cancelled and empty descriptions produce no model object or CSV row. Events remain available if one device participant fails; only final parent-session stop or application shutdown closes the event logger. An event-file write failure disables further event entry and reports an error without stopping serial acquisition or device measurement logging.
+
+All device graphs receive the same tuple of parent `EventMarker` objects and render thin theme-aware PyQtGraph vertical lines with elapsed-time/description tooltips. This presentation is rebuilt only when the event collection, replay, source workspace, or theme changes. Graph Clear does not delete session events. Replay loads the root `events.csv` without snapping its timestamps to samples; an absent file means zero events, while malformed event data follows the existing concise replay-error path.
+
+Graph and Dashboard selection retain native `QCheckBox` multi-selection, keyboard, and accessibility behavior. Centralized Light/Dark QSS gives their indicators a compact circular filled/empty appearance with explicit hover, selected, disabled, and focus states. The selectors remain source-aware and do not alter graph or Dashboard data models.
 
 ## Version 0.9.1 reliability boundaries
 

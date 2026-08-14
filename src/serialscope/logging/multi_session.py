@@ -7,9 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 import platform
 import time
+import uuid
 from collections.abc import Callable, Mapping
 
 from serialscope import __version__
+from serialscope.data import EventMarker
+from serialscope.logging.event_logger import EventLogger, EventLoggerError
 from serialscope.logging.raw_logger import RawLogger, RawLoggerError
 from serialscope.logging.session import RecordingSessionError, sanitize_session_name
 from serialscope.logging.structured_csv_logger import (
@@ -49,6 +52,8 @@ class MultiSourceRecordingSession:
         monotonic_clock: Callable[[], float] = time.monotonic,
         raw_logger_factory: Callable[[], RawLogger] = RawLogger,
         structured_logger_factory: Callable[[], StructuredCsvLogger] | None = None,
+        event_logger: EventLogger | None = None,
+        event_id_factory: Callable[[], str] | None = None,
     ) -> None:
         self._datetime_clock = datetime_clock or (lambda: datetime.now().astimezone())
         self._monotonic_clock = monotonic_clock
@@ -56,6 +61,8 @@ class MultiSourceRecordingSession:
         self._structured_factory = structured_logger_factory or (
             lambda: StructuredCsvLogger(monotonic_clock)
         )
+        self._event_logger = event_logger or EventLogger()
+        self._event_id_factory = event_id_factory or (lambda: uuid.uuid4().hex)
         self._directory: Path | None = None
         self._session_name = ""
         self._started_local: datetime | None = None
@@ -64,6 +71,7 @@ class MultiSourceRecordingSession:
         self._delimiter = ","
         self._sources: dict[str, _SourceLoggers] = {}
         self._metadata: dict[str, object] = {}
+        self._events: list[EventMarker] = []
 
     @property
     def is_recording(self) -> bool:
@@ -94,6 +102,30 @@ class MultiSourceRecordingSession:
     @property
     def active_source_ids(self) -> tuple[str, ...]:
         return tuple(key for key, item in self._sources.items() if item.active)
+
+    @property
+    def events(self) -> tuple[EventMarker, ...]:
+        return tuple(self._events)
+
+    @property
+    def event_logging_available(self) -> bool:
+        return self.is_recording and self._event_logger.is_recording
+
+    def elapsed_now(self) -> float:
+        if self._started_monotonic is None:
+            raise RecordingSessionError("No recording session is active.")
+        return max(0.0, self._monotonic_clock() - self._started_monotonic)
+
+    def add_event(self, elapsed_s: float, text: str) -> EventMarker:
+        if not self.is_recording:
+            raise RecordingSessionError("No recording session is active.")
+        try:
+            marker = EventMarker(self._event_id_factory(), elapsed_s, text)
+            self._event_logger.write(marker)
+        except (EventLoggerError, ValueError) as error:
+            raise RecordingSessionError(f"Could not record event: {error}") from error
+        self._events.append(marker)
+        return marker
 
     def start(
         self,
@@ -141,7 +173,8 @@ class MultiSourceRecordingSession:
                     delimiter=delimiter,
                     started_at=started_monotonic,
                 )
-        except (OSError, RawLoggerError, StructuredCsvLoggerError) as error:
+            self._event_logger.start(directory / "events.csv")
+        except (OSError, RawLoggerError, StructuredCsvLoggerError, EventLoggerError) as error:
             for item in loggers.values():
                 try:
                     item.raw.stop()
@@ -151,6 +184,10 @@ class MultiSourceRecordingSession:
                     item.structured.stop()
                 except StructuredCsvLoggerError:
                     pass
+            try:
+                self._event_logger.stop()
+            except EventLoggerError:
+                pass
             raise RecordingSessionError(f"Could not start recording session: {error}") from error
 
         self._directory = directory
@@ -160,6 +197,7 @@ class MultiSourceRecordingSession:
         self._started_monotonic = started_monotonic
         self._delimiter = delimiter
         self._sources = loggers
+        self._events = []
         self._metadata = {
             "serialscope_version": __version__,
             "session_name": session_name,
@@ -169,6 +207,8 @@ class MultiSourceRecordingSession:
             "structured_data_delimiter": delimiter,
             "common_time_origin": "host_monotonic_at_recording_start",
             "line_ending": line_ending,
+            "events_file": "events.csv",
+            "event_count": 0,
             "status": "recording",
             "devices": [self._device_metadata(item) for item in loggers.values()],
             "recording_end_local": None,
@@ -189,6 +229,10 @@ class MultiSourceRecordingSession:
                 except StructuredCsvLoggerError:
                     pass
                 item.active = False
+            try:
+                self._event_logger.stop()
+            except EventLoggerError:
+                pass
             self._clear_active_state()
             raise
         return directory
@@ -245,6 +289,10 @@ class MultiSourceRecordingSession:
                 errors.append(error)
             item.active = False
             item.end_reason = end_reason
+        try:
+            self._event_logger.stop()
+        except EventLoggerError as error:
+            errors.append(error)
         devices = [
             self._device_metadata(item, (total_rx_bytes or {}).get(item.config.source_id))
             for item in self._sources.values()
@@ -258,6 +306,7 @@ class MultiSourceRecordingSession:
                     0.0, self._monotonic_clock() - (self._started_monotonic or 0.0)
                 ),
                 "end_reason": end_reason,
+                "event_count": len(self._events),
                 "devices": devices,
             }
         )

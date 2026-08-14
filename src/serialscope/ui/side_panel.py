@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from serialscope.ui.channels_widget import ChannelsWidget
+from serialscope.data import EventMarker
 
 
 class SidePanel(QFrame):
@@ -27,6 +28,8 @@ class SidePanel(QFrame):
         self.setMinimumWidth(230)
         self._connected = False
         self._recording = False
+        self._events: tuple[EventMarker, ...] = ()
+        self._event_logging_available = False
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
@@ -134,6 +137,15 @@ class SidePanel(QFrame):
         self.logged_bytes_label.setObjectName("loggedBytesLabel")
         layout.addWidget(self.logged_bytes_label)
 
+        event_row = QHBoxLayout()
+        self.add_event_button = QPushButton("+ Add Event")
+        self.add_event_button.setObjectName("addEventButton")
+        event_row.addWidget(self.add_event_button)
+        self.view_events_button = QPushButton("Events (0)")
+        self.view_events_button.setObjectName("viewEventsButton")
+        event_row.addWidget(self.view_events_button)
+        layout.addLayout(event_row)
+
         self.logging_button = QPushButton("Start Logging")
         self.logging_button.setObjectName("loggingButton")
         layout.addWidget(self.logging_button)
@@ -143,6 +155,7 @@ class SidePanel(QFrame):
         """Update recording availability for the serial connection state."""
         self._connected = connected
         self._update_logging_button_enabled()
+        self._update_event_buttons()
 
     def set_logging_state(
         self,
@@ -150,9 +163,11 @@ class SidePanel(QFrame):
         filename: str = "",
         byte_count: str = "0 B",
         elapsed: str = "00:00:00",
+        event_logging_available: bool = True,
     ) -> None:
         """Present raw logging state without performing file operations."""
         self._recording = recording
+        self._event_logging_available = recording and event_logging_available
         self.logging_status_label.setText("Recording" if recording else "Not recording")
         state = "active" if recording else "inactive"
         self.logging_status_dot.setProperty("recordingState", state)
@@ -165,6 +180,20 @@ class SidePanel(QFrame):
         self.session_name_input.setEnabled(not recording)
         self.data_delimiter_combo.setEnabled(not recording)
         self._update_logging_button_enabled()
+        self._update_event_buttons()
+
+    def set_events(self, events: tuple[EventMarker, ...]) -> None:
+        self._events = tuple(events)
+        self.view_events_button.setText(f"Events ({len(self._events)})")
+        self._update_event_buttons()
+
+    @property
+    def events(self) -> tuple[EventMarker, ...]:
+        return self._events
+
+    def _update_event_buttons(self) -> None:
+        self.add_event_button.setEnabled(self._event_logging_available)
+        self.view_events_button.setEnabled(bool(self._events))
 
     def _update_logging_button_enabled(self) -> None:
         self.logging_button.setEnabled(self._recording or self._connected)
