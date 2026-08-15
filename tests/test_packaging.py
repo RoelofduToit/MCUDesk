@@ -1,5 +1,6 @@
 from pathlib import Path
 import configparser
+import struct
 
 from PySide6.QtWidgets import QApplication
 
@@ -76,7 +77,9 @@ def test_generated_packaging_output_is_ignored_but_spec_is_tracked() -> None:
     assert "build/" in ignore
     assert "dist/" in ignore
     assert "!packaging/serialscope.spec" in ignore
+    assert "!packaging/serialscope_windows.spec" in ignore
     assert (project_root / "packaging" / "serialscope.spec").is_file()
+    assert (project_root / "packaging" / "serialscope_windows.spec").is_file()
 
 
 def test_module_entry_and_build_script_share_application_startup() -> None:
@@ -150,14 +153,17 @@ def test_debian_build_uses_authoritative_version_and_native_amd64_layout() -> No
     assert __version__ in f"serialscope_{__version__}_amd64.deb"
 
 
-def test_debian_packaging_uses_master_icon_without_checked_in_derivatives() -> None:
+def test_debian_packaging_uses_master_png_independently_of_windows_icon() -> None:
     project_root = Path(__file__).resolve().parents[1]
     build_script = (project_root / "scripts" / "build_linux_deb.sh").read_text(
         "utf-8"
     )
-    source_icons = list((project_root / "assets" / "icons").glob("serialscope*"))
+    source_icons = set((project_root / "assets" / "icons").glob("serialscope*"))
 
-    assert source_icons == [project_root / "assets" / "icons" / "serialscope.png"]
+    assert source_icons == {
+        project_root / "assets" / "icons" / "serialscope.ico",
+        project_root / "assets" / "icons" / "serialscope.png",
+    }
     assert 'ICON_SOURCE="${PROJECT_ROOT}/assets/icons/serialscope.png"' in build_script
     assert "image.scaled(" in build_script
     assert 'resized.save(str(destination), "PNG")' in build_script
@@ -188,3 +194,74 @@ def test_debian_smoke_test_checks_package_identity_layout_and_permissions() -> N
     assert '[[ -x "${PACKAGE_ROOT}/opt/serialscope/SerialScope" ]]' in smoke_script
     assert '[[ -x "${PACKAGE_ROOT}/usr/bin/serialscope" ]]' in smoke_script
     assert "--packaging-smoke-test" in smoke_script
+
+
+def test_windows_spec_is_windowed_one_folder_and_bundles_runtime_icon() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    spec = (project_root / "packaging" / "serialscope_windows.spec").read_text(
+        "utf-8"
+    )
+
+    assert '"serialscope" / "__main__.py"' in spec
+    assert 'name="SerialScope"' in spec
+    assert "console=False" in spec
+    assert "COLLECT(" in spec
+    assert 'icon=str(WINDOWS_ICON)' in spec
+    assert '"assets" / "icons" / "serialscope.ico"' in spec
+    assert 'datas=[(str(ICON_SOURCE), "assets/icons")]' in spec
+    assert '"assets" / "icons" / "serialscope.png"' in spec
+    assert __version__ == "0.11.1"
+
+
+def test_windows_icon_contains_conventional_multiresolution_sizes() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    icon = project_root / "assets" / "icons" / "serialscope.ico"
+    data = icon.read_bytes()
+    reserved, image_type, count = struct.unpack_from("<HHH", data)
+    assert (reserved, image_type) == (0, 1)
+    assert count >= 7
+
+    sizes = set()
+    for index in range(count):
+        width, height = struct.unpack_from("BB", data, 6 + index * 16)
+        sizes.add((width or 256, height or 256))
+    assert {(size, size) for size in (16, 24, 32, 48, 64, 128, 256)} <= sizes
+
+
+def test_windows_build_and_smoke_scripts_are_cwd_independent() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    build_script = (project_root / "scripts" / "build_windows.ps1").read_text(
+        "utf-8"
+    )
+    smoke_script = (
+        project_root / "scripts" / "smoke_test_windows.ps1"
+    ).read_text("utf-8")
+
+    assert '$PSScriptRoot ".."' in build_script
+    assert "packaging\\serialscope_windows.spec" in build_script
+    assert "-m PyInstaller" in build_script
+    assert "--clean" in build_script
+    assert "Remove-Item Env:PYTHONPATH" in build_script
+    assert "Remove-Item Env:PYTHONHOME" in build_script
+    assert '$BundleDirectory = Join-Path $DistRoot "SerialScope"' in build_script
+    assert "SerialScope.exe" in build_script
+    assert "qwindows.dll" in build_script
+    assert '$PSScriptRoot ".."' in smoke_script
+    assert "SerialScope.exe" in smoke_script
+    assert "Get-PeSubsystem" in smoke_script
+    assert "Start-Process" in smoke_script
+    assert "-WorkingDirectory $SmokeDirectory" in smoke_script
+    assert "CloseMainWindow" in smoke_script
+
+
+def test_windows_packaging_documentation_covers_build_and_manual_validation() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    documentation = (project_root / "docs" / "PACKAGING_WINDOWS.md").read_text(
+        "utf-8"
+    )
+
+    assert ".\\scripts\\build_windows.ps1" in documentation
+    assert ".\\scripts\\smoke_test_windows.ps1" in documentation
+    assert "dist\\SerialScope\\SerialScope.exe" in documentation
+    assert "COM ports" in documentation
+    assert "No installer" in documentation
