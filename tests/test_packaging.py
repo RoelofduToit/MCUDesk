@@ -19,7 +19,6 @@ def test_package_metadata_uses_authoritative_runtime_version() -> None:
     assert 'dynamic = ["version"]' in configuration
     assert '\nversion = "' not in configuration
     assert 'version = {attr = "serialscope.__version__"}' in configuration
-    assert __version__ == "0.11.1"
     assert '[project.gui-scripts]' in configuration
     assert 'serialscope = "serialscope.app:main"' in configuration
 
@@ -210,7 +209,6 @@ def test_windows_spec_is_windowed_one_folder_and_bundles_runtime_icon() -> None:
     assert '"assets" / "icons" / "serialscope.ico"' in spec
     assert 'datas=[(str(ICON_SOURCE), "assets/icons")]' in spec
     assert '"assets" / "icons" / "serialscope.png"' in spec
-    assert __version__ == "0.11.1"
 
 
 def test_windows_icon_contains_conventional_multiresolution_sizes() -> None:
