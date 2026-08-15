@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from serialscope.ui.graph_display import format_graph_value
+
 
 MAX_VISIBLE_STATISTIC_ROWS = 6
 
@@ -26,11 +28,6 @@ class GraphStatisticsRow:
     minimum: float
     average: float
     maximum: float
-
-
-def format_statistic(value: float) -> str:
-    """Format a graph statistic without changing its stored precision."""
-    return f"{value:.2f}"
 
 
 class GraphStatisticsTable(QTableWidget):
@@ -74,7 +71,7 @@ class GraphStatisticsTable(QTableWidget):
             self._set_presentation(row.source_name, row.display_name, row.unit, row.color)
             values = (row.minimum, row.average, row.maximum)
             for item, value in zip(self._value_items[row.source_name], values, strict=True):
-                item.setText(format_statistic(value))
+                item.setText(format_graph_value(value))
             self.setRowHeight(row_index, self.verticalHeader().defaultSectionSize())
 
     def clear_statistics(self) -> None:

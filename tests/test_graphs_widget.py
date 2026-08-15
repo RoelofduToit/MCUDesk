@@ -3,13 +3,15 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.ui.graphs_widget import GraphsWidget, visible_x_range
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
 from serialscope.ui.channel_selector import ChannelToggle
+from serialscope.ui.graph_display import format_cursor_time
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, LIGHT_GRAPH_PALETTE
 from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
 from serialscope.data import AlarmLimits, ChannelMetadataRegistry, EventMarker
@@ -150,8 +152,11 @@ def test_cursor_shows_alarm_state_without_changing_graph_source() -> None:
     history_before = widget.history.points("TC1")
 
     widget.set_channel_metadata(registry)
+    widget._update_cursor_values(0.0)
 
-    assert "Temperature: 118.4 °C  [HIGH]" in widget.cursor_text_at(0.0)
+    assert widget.cursor_table.channel_text("TC1") == "Temperature"
+    assert widget.cursor_table.value_text("TC1") == "118.40 °C"
+    assert widget.cursor_table.status_text("TC1") == "HIGH"
     assert widget.history.points("TC1") == history_before
     widget.close()
     application.processEvents()
@@ -456,11 +461,19 @@ def test_replay_uses_the_same_structured_statistics_table(tmp_path) -> None:
     widget.load_replay(load_replay_session(directory))
     widget.time_window_combo.setCurrentText("5 min")
     widget.set_channel_selected("A", True)
+    widget._update_cursor_values(70.0)
 
     assert widget.statistics_table.source_names == ("A",)
     assert widget.statistics_table.value_text("A", "min") == "1.25"
     assert widget.statistics_table.value_text("A", "avg") == "2.50"
     assert widget.statistics_table.value_text("A", "max") == "3.75"
+    assert widget.cursor_table.source_names == ("A",)
+    assert widget.cursor_table.value_text("A") == "2.50"
+    assert widget.cursor_table.status_text("A") == "NORMAL"
+    assert widget.cursor_time_label.text() == "Cursor: 1:10"
+    assert "Measurement: 1:00.00" in (
+        widget.cursor_table.measurement_tooltip("A") or ""
+    )
     widget.close()
     application.processEvents()
 
@@ -505,7 +518,10 @@ def test_alias_and_unit_update_legend_cursor_statistics_without_reset() -> None:
     nearest = widget.inspect_at(1.1)["TC1"]
     assert presentation.display_name == "Reactor Temperature"
     assert nearest == (1.0, 104.6)
-    assert "Reactor Temperature: 104.6 °C" in widget.cursor_text_at(1.1)
+    widget._update_cursor_values(1.1)
+    assert widget.cursor_table.channel_text("TC1") == "Reactor Temperature"
+    assert widget.cursor_table.value_text("TC1") == "104.60 °C"
+    assert widget.cursor_table.status_text("TC1") == "NORMAL"
     assert widget.statistics_table.channel_text("TC1") == "Reactor Temperature (°C)"
     assert widget.statistics_table.value_text("TC1", "min") == "98.40"
     assert widget.statistics_table.value_text("TC1", "avg") == "101.20"
@@ -572,5 +588,338 @@ def test_multi_source_statistics_remain_isolated() -> None:
     assert arduino.statistics_table.source_names == ("RPM",)
     assert arduino.statistics_table.value_text("RPM", "avg") == "1500.00"
     assert arduino.statistics_table.value_text("TEMP", "avg") is None
+    widget.close()
+    application.processEvents()
+
+
+def test_graph_page_scrolls_vertically_with_graph_before_detail_tables() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget()
+    layout = widget.page_content.layout()
+    widget.resize(900, 650)
+    widget.show()
+    application.processEvents()
+
+    assert widget.page_scroll.widgetResizable()
+    assert widget.page_scroll.horizontalScrollBarPolicy() == (
+        Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    assert widget.page_scroll.verticalScrollBarPolicy() == (
+        Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    )
+    assert layout.indexOf(widget.plot_widget) < layout.indexOf(widget.cursor_heading)
+    assert layout.indexOf(widget.cursor_heading) < layout.indexOf(widget.cursor_table)
+    assert layout.indexOf(widget.cursor_table) < layout.indexOf(widget.statistics_heading)
+    assert layout.indexOf(widget.statistics_heading) < layout.indexOf(
+        widget.statistics_table
+    )
+    assert widget.plot_widget.minimumHeight() == 500
+    assert widget.plot_widget.sizePolicy().verticalPolicy() == (
+        QSizePolicy.Policy.Expanding
+    )
+    assert widget.page_scroll.verticalScrollBar().maximum() > 0
+    assert widget.page_scroll.horizontalScrollBar().maximum() == 0
+    assert widget.page_scroll.verticalScrollBar().value() == 0
+    assert not widget.eventFilter(
+        widget.plot_widget.viewport(),
+        QEvent(QEvent.Type.Wheel),
+    )
+    widget.close()
+    application.processEvents()
+
+
+def test_graph_expands_in_a_taller_scroll_viewport_without_losing_minimum() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget()
+    widget.resize(1_000, 700)
+    widget.show()
+    application.processEvents()
+    short_height = widget.plot_widget.height()
+
+    widget.resize(1_000, 1_400)
+    application.processEvents()
+
+    assert short_height >= 500
+    assert widget.plot_widget.height() > short_height
+    widget.close()
+    application.processEvents()
+
+
+def test_live_updates_continue_while_graph_page_is_scrolled_down() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 11.0))
+    widget = GraphsWidget(clock=lambda: next(times))
+    widget.resize(900, 650)
+    widget.show()
+    widget.update_channels(ChannelUpdate(("A",), (1.0,)))
+    widget.set_channel_selected("A", True)
+    application.processEvents()
+    scrollbar = widget.page_scroll.verticalScrollBar()
+    scrollbar.setValue(scrollbar.maximum())
+    scrolled_position = scrollbar.value()
+
+    widget.update_channels(ChannelUpdate(("A",), (3.0,)))
+    widget.refresh_plot()
+
+    assert scrolled_position > 0
+    assert scrollbar.value() == scrolled_position
+    assert widget.history.points("A")[1] == (1.0, 3.0)
+    assert widget._series["A"].getData()[1].tolist() == [1.0, 3.0]
+    assert widget.statistics_table.value_text("A", "avg") == "2.00"
+    widget.close()
+    application.processEvents()
+
+
+def test_reset_returns_graph_page_to_top() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget()
+    widget.resize(900, 650)
+    widget.show()
+    application.processEvents()
+    scrollbar = widget.page_scroll.verticalScrollBar()
+    scrollbar.setValue(scrollbar.maximum())
+    assert scrollbar.value() > 0
+
+    widget.reset()
+
+    assert scrollbar.value() == 0
+    widget.close()
+    application.processEvents()
+
+
+def test_wheel_over_plot_zooms_graph_while_page_background_scrolls() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget()
+    widget.resize(1_000, 700)
+    widget.show()
+    application.processEvents()
+    plot_range = widget.plot_widget.viewRange()
+    page_position = widget.page_scroll.verticalScrollBar().value()
+
+    plot_viewport = widget.plot_widget.viewport()
+    plot_center = plot_viewport.rect().center()
+    zoom_event = QWheelEvent(
+        QPointF(plot_center),
+        QPointF(plot_viewport.mapToGlobal(plot_center)),
+        QPoint(),
+        QPoint(0, 120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.ScrollUpdate,
+        False,
+    )
+    QApplication.sendEvent(plot_viewport, zoom_event)
+    application.processEvents()
+
+    assert zoom_event.isAccepted()
+    assert widget.plot_widget.viewRange() != plot_range
+    assert widget.page_scroll.verticalScrollBar().value() == page_position
+
+    page_viewport = widget.page_scroll.viewport()
+    page_center = page_viewport.rect().center()
+    scroll_event = QWheelEvent(
+        QPointF(page_center),
+        QPointF(page_viewport.mapToGlobal(page_center)),
+        QPoint(),
+        QPoint(0, -120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.ScrollUpdate,
+        False,
+    )
+    QApplication.sendEvent(page_viewport, scroll_event)
+    application.processEvents()
+
+    assert scroll_event.isAccepted()
+    assert widget.page_scroll.verticalScrollBar().value() > page_position
+    widget.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "expected"),
+    [
+        (42.34, "42.3 s"),
+        (613.11, "10:13"),
+        (4_363.0, "01:12:43"),
+    ],
+)
+def test_cursor_time_uses_human_friendly_elapsed_format(
+    elapsed: float,
+    expected: str,
+) -> None:
+    assert format_cursor_time(elapsed) == expected
+
+
+def test_cursor_time_rejects_non_finite_input() -> None:
+    assert format_cursor_time(float("nan")) == "—"
+    assert format_cursor_time(float("inf")) == "—"
+
+
+def test_cursor_table_tracks_selected_channels_and_reuses_rows() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 11.0))
+    widget = GraphsWidget(clock=lambda: next(times))
+    widget.update_channels(ChannelUpdate(("A", "B"), (1.234, 9.0)))
+    widget.update_channels(ChannelUpdate(("A", "B"), (2.345, 8.0)))
+    widget.set_channel_selected("A", True)
+
+    assert widget.cursor_table.source_names == ("A",)
+    assert widget.cursor_table.value_text("A") == "—"
+    original_row = widget.cursor_table.row_widget("A")
+    widget._update_cursor_values(0.8)
+
+    assert widget.cursor_table.row_widget("A") is original_row
+    assert widget.cursor_table.value_text("A") == "2.35"
+    assert widget.cursor_table.status_text("A") == "NORMAL"
+    assert widget.cursor_time_label.text() == "Cursor: 0.8 s"
+
+    widget.set_channel_selected("B", True)
+    assert widget.cursor_table.source_names == ("A", "B")
+    widget.set_channel_selected("A", False)
+    assert widget.cursor_table.source_names == ("B",)
+    assert widget.cursor_table.value_text("A") is None
+    widget.close()
+    application.processEvents()
+
+
+def test_cursor_table_uses_alias_unit_color_status_and_measurement_tooltip() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 12.0))
+    widget = GraphsWidget(clock=lambda: next(times))
+    widget.update_channels(ChannelUpdate(("P",), (4.0,)))
+    widget.update_channels(ChannelUpdate(("P",), (4.25,)))
+    widget.set_channel_selected("P", True)
+    metadata = ChannelMetadataRegistry()
+    metadata.set("P", "Reactor Pressure", "bar", AlarmLimits(high=4.2))
+    widget.set_channel_metadata(metadata)
+
+    widget._update_cursor_values(1.8)
+
+    assert widget.cursor_table.channel_text("P") == "Reactor Pressure"
+    assert widget.cursor_table.value_text("P") == "4.25 bar"
+    assert widget.cursor_table.status_text("P") == "HIGH"
+    assert widget.cursor_table.swatch_color("P") == widget._series[
+        "P"
+    ].opts["pen"].color().name()
+    tooltip = widget.cursor_table.measurement_tooltip("P")
+    assert tooltip is not None
+    assert "Value: 4.25 bar" in tooltip
+    assert "Status: HIGH" in tooltip
+    assert "Cursor: 1.80 s" in tooltip
+    assert "Measurement: 2.00 s" in tooltip
+    widget.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (5.0, "LOW-LOW"),
+        (15.0, "LOW"),
+        (50.0, "NORMAL"),
+        (85.0, "HIGH"),
+        (95.0, "HIGH-HIGH"),
+    ],
+)
+def test_cursor_table_displays_existing_alarm_states(
+    value: float,
+    expected: str,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(("A",), (value,)))
+    widget.set_channel_selected("A", True)
+    metadata = ChannelMetadataRegistry()
+    metadata.set(
+        "A",
+        alarms=AlarmLimits(low_low=10, low=20, high=80, high_high=90),
+    )
+    widget.set_channel_metadata(metadata)
+
+    widget._update_cursor_values(0.0)
+
+    assert widget.cursor_table.status_text("A") == expected
+    widget.close()
+    application.processEvents()
+
+
+def test_cursor_table_clears_stale_values_when_measurements_disappear() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(("A",), (83.002932,)))
+    widget.set_channel_selected("A", True)
+    widget._update_cursor_values(0.0)
+    assert widget.cursor_table.value_text("A") == "83.00"
+
+    widget.clear_history()
+
+    assert widget.cursor_table.source_names == ("A",)
+    assert widget.cursor_table.value_text("A") == "—"
+    assert widget.cursor_table.status_text("A") == "—"
+    assert widget.cursor_time_label.text() == "Cursor: —"
+    widget.close()
+    application.processEvents()
+
+
+def test_cursor_table_uses_placeholders_for_non_finite_measurements() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(("A",), (1.0,)))
+    widget.set_channel_selected("A", True)
+
+    widget.cursor_table.set_cursor_values(
+        (widget._cursor_row("A", 0.0, float("nan"), cursor_time=0.0),)
+    )
+
+    assert widget.cursor_table.value_text("A") == "—"
+    assert widget.cursor_table.status_text("A") == "—"
+    widget.close()
+    application.processEvents()
+
+
+def test_cursor_table_is_bounded_and_scrolls_for_many_selected_channels() -> None:
+    application = QApplication.instance() or QApplication([])
+    names = tuple(f"Channel {index}" for index in range(1, 10))
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(names, tuple(range(1, 10))))
+    for name in names:
+        widget.set_channel_selected(name, True)
+    widget._update_cursor_values(0.0)
+    widget.resize(900, 800)
+    widget.show()
+    application.processEvents()
+
+    expected_maximum_height = (
+        max(widget.cursor_table.horizontalHeader().sizeHint().height(), 28)
+        + 6 * widget.cursor_table.verticalHeader().defaultSectionSize()
+        + widget.cursor_table.frameWidth() * 2
+    )
+    assert widget.cursor_table.rowCount() == 9
+    assert widget.cursor_table.height() == expected_maximum_height
+    assert widget.cursor_table.verticalScrollBar().maximum() > 0
+    assert widget.cursor_table.horizontalScrollBar().maximum() == 0
+    widget.close()
+    application.processEvents()
+
+
+def test_multi_source_cursor_tables_remain_isolated() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = MultiSourceGraphsWidget()
+    pico = widget.ensure_source("pico", "Pico")
+    arduino = widget.ensure_source("arduino", "Arduino")
+    pico.update_channels(ChannelUpdate(("TEMP",), (25.0,)))
+    arduino.update_channels(ChannelUpdate(("RPM",), (1_500,)))
+    pico.set_channel_selected("TEMP", True)
+    arduino.set_channel_selected("RPM", True)
+    pico._update_cursor_values(0.0)
+    arduino._update_cursor_values(0.0)
+
+    assert pico.cursor_table.source_names == ("TEMP",)
+    assert pico.cursor_table.value_text("TEMP") == "25.00"
+    assert pico.cursor_table.value_text("RPM") is None
+    assert arduino.cursor_table.source_names == ("RPM",)
+    assert arduino.cursor_table.value_text("RPM") == "1500.00"
+    assert arduino.cursor_table.value_text("TEMP") is None
     widget.close()
     application.processEvents()

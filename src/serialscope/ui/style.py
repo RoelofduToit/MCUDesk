@@ -108,21 +108,19 @@ QLabel#replayModeBanner {
     padding: 7px 10px;
     font-weight: 600;
 }
-QLabel#graphCursorReadout {
-    color: #aebdca;
-    background-color: #182630;
-    border: 1px solid #293f4d;
-    border-radius: 4px;
-    padding: 6px 9px;
-}
-QLabel#graphStatisticsHeading {
+QLabel#graphCursorHeading, QLabel#graphStatisticsHeading {
     color: #aebdca;
     font-weight: 600;
 }
-QLabel#graphStatisticsEmptyLabel {
+QLabel#graphCursorTimeLabel { color: #8fa3b8; }
+QLabel#graphCursorEmptyLabel, QLabel#graphStatisticsEmptyLabel {
     color: #718399;
     padding: 2px 6px;
 }
+QLabel#graphCursorStatus[alarmState="normal"] { color: #76c99a; }
+QLabel#graphCursorStatus[alarmState="warning"] { color: #e0b95c; }
+QLabel#graphCursorStatus[alarmState="alarm"] { color: #ef8991; font-weight: 600; }
+QLabel#graphCursorStatus[alarmState="unknown"] { color: #718399; }
 QScrollArea#channelSelector {
     color: #c6d2dc;
     background-color: #0e151d;
@@ -315,7 +313,9 @@ QPlainTextEdit#terminalOutput {
     padding: 14px;
     selection-background-color: #255b72;
 }
-QTableWidget#channelDataTable, QTableWidget#graphStatisticsTable {
+QTableWidget#channelDataTable,
+QTableWidget#graphCursorTable,
+QTableWidget#graphStatisticsTable {
     color: #d9e2ec;
     background-color: #0e151d;
     alternate-background-color: #111b25;
@@ -323,10 +323,15 @@ QTableWidget#channelDataTable, QTableWidget#graphStatisticsTable {
     gridline-color: #263442;
     selection-background-color: #255b72;
 }
+QWidget#graphCursorChannel,
 QWidget#graphStatisticsChannel,
+QLabel#graphCursorChannelLabel,
+QLabel#graphCursorStatus,
+QLabel#graphCursorSwatch,
 QLabel#graphStatisticsChannelLabel,
 QLabel#graphStatisticsSwatch { background-color: transparent; }
 QTableWidget#channelDataTable QHeaderView::section,
+QTableWidget#graphCursorTable QHeaderView::section,
 QTableWidget#graphStatisticsTable QHeaderView::section {
     color: #aebdca;
     background-color: #18232e;
@@ -472,21 +477,19 @@ QLabel#replayModeBanner {
     padding: 7px 10px;
     font-weight: 600;
 }
-QLabel#graphCursorReadout {
-    color: #374f5e;
-    background-color: #e4edf2;
-    border: 1px solid #c1d2da;
-    border-radius: 4px;
-    padding: 6px 9px;
-}
-QLabel#graphStatisticsHeading {
+QLabel#graphCursorHeading, QLabel#graphStatisticsHeading {
     color: #374f5e;
     font-weight: 600;
 }
-QLabel#graphStatisticsEmptyLabel {
+QLabel#graphCursorTimeLabel { color: #607486; }
+QLabel#graphCursorEmptyLabel, QLabel#graphStatisticsEmptyLabel {
     color: #718399;
     padding: 2px 6px;
 }
+QLabel#graphCursorStatus[alarmState="normal"] { color: #2f7d57; }
+QLabel#graphCursorStatus[alarmState="warning"] { color: #9b6a12; }
+QLabel#graphCursorStatus[alarmState="alarm"] { color: #b13f49; font-weight: 600; }
+QLabel#graphCursorStatus[alarmState="unknown"] { color: #718399; }
 QScrollArea#channelSelector {
     color: #374b5b;
     background-color: #ffffff;
@@ -642,7 +645,9 @@ QPlainTextEdit#terminalOutput {
     padding: 14px;
     selection-background-color: #9bc9dd;
 }
-QTableWidget#channelDataTable, QTableWidget#graphStatisticsTable {
+QTableWidget#channelDataTable,
+QTableWidget#graphCursorTable,
+QTableWidget#graphStatisticsTable {
     color: #263442;
     background-color: #ffffff;
     alternate-background-color: #f1f4f6;
@@ -650,10 +655,15 @@ QTableWidget#channelDataTable, QTableWidget#graphStatisticsTable {
     gridline-color: #d7dee4;
     selection-background-color: #9bc9dd;
 }
+QWidget#graphCursorChannel,
 QWidget#graphStatisticsChannel,
+QLabel#graphCursorChannelLabel,
+QLabel#graphCursorStatus,
+QLabel#graphCursorSwatch,
 QLabel#graphStatisticsChannelLabel,
 QLabel#graphStatisticsSwatch { background-color: transparent; }
 QTableWidget#channelDataTable QHeaderView::section,
+QTableWidget#graphCursorTable QHeaderView::section,
 QTableWidget#graphStatisticsTable QHeaderView::section {
     color: #374b5b;
     background-color: #e4e9ed;

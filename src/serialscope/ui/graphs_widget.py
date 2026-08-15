@@ -1,16 +1,20 @@
 """Selectable live plotting of structured numeric channels."""
 
 from collections.abc import Callable
+import math
 import time
 
 import pyqtgraph as pg
-from PySide6.QtCore import QEvent, QObject, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QSize, QTimer, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QDoubleSpinBox,
     QVBoxLayout,
@@ -29,6 +33,8 @@ from serialscope.data import (
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
 from serialscope.ui.elapsed_time_axis import ElapsedTimeAxis
+from serialscope.ui.graph_cursor_table import GraphCursorRow, GraphCursorTable
+from serialscope.ui.graph_display import format_cursor_time
 from serialscope.ui.graph_statistics_table import (
     GraphStatisticsRow,
     GraphStatisticsTable,
@@ -75,8 +81,27 @@ class GraphsWidget(QWidget):
         self._metadata = ChannelMetadataRegistry()
         self._events: tuple[EventMarker, ...] = ()
         self._event_lines: list[pg.InfiniteLine] = []
+        self._cursor_elapsed: float | None = None
 
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        self.page_scroll = QScrollArea()
+        self.page_scroll.setObjectName("graphsPageScrollArea")
+        self.page_scroll.setWidgetResizable(True)
+        self.page_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.page_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.page_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.page_content = QWidget()
+        self.page_content.setObjectName("graphsPageContent")
+        self.page_content.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
+        layout = QVBoxLayout(self.page_content)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
@@ -203,13 +228,25 @@ class GraphsWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.18)
         self.plot_widget.setLabel("left", "Value")
         self.plot_widget.addLegend()
+        self.plot_widget.setMinimumHeight(500)
+        self.plot_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self._cursor_line: pg.InfiniteLine | None = None
         layout.addWidget(self.plot_widget, 1)
 
-        self.cursor_readout = QLabel("Move over the graph to inspect measured values.")
-        self.cursor_readout.setObjectName("graphCursorReadout")
-        self.cursor_readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(self.cursor_readout)
+        self.cursor_heading = QLabel("Cursor Values")
+        self.cursor_heading.setObjectName("graphCursorHeading")
+        layout.addWidget(self.cursor_heading)
+        self.cursor_time_label = QLabel("Cursor: —")
+        self.cursor_time_label.setObjectName("graphCursorTimeLabel")
+        layout.addWidget(self.cursor_time_label)
+        self.cursor_table = GraphCursorTable()
+        layout.addWidget(self.cursor_table)
+        self.cursor_empty_label = QLabel("Select a channel and move over the graph.")
+        self.cursor_empty_label.setObjectName("graphCursorEmptyLabel")
+        layout.addWidget(self.cursor_empty_label)
         self.statistics_heading = QLabel("Statistics")
         self.statistics_heading.setObjectName("graphStatisticsHeading")
         layout.addWidget(self.statistics_heading)
@@ -218,6 +255,8 @@ class GraphsWidget(QWidget):
         self.statistics_empty_label = QLabel("Select a channel to view statistics.")
         self.statistics_empty_label.setObjectName("graphStatisticsEmptyLabel")
         layout.addWidget(self.statistics_empty_label)
+        self.page_scroll.setWidget(self.page_content)
+        outer_layout.addWidget(self.page_scroll)
         self.apply_theme(DARK_GRAPH_PALETTE)
         self._apply_x_range(0.0)
 
@@ -238,7 +277,6 @@ class GraphsWidget(QWidget):
                 control.valueChanged.connect(self._processing_changed)
             else:
                 control.currentIndexChanged.connect(self._processing_changed)
-
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setInterval(100)
         self._refresh_timer.timeout.connect(self._refresh_live_plot)
@@ -247,6 +285,11 @@ class GraphsWidget(QWidget):
     @property
     def channel_names(self) -> tuple[str, ...]:
         return tuple(self._selectors)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        """Expose content width while allowing the scroll area to absorb height."""
+        hint = super().minimumSizeHint()
+        return QSize(max(hint.width(), self.page_content.minimumSizeHint().width()), hint.height())
 
     @property
     def selected_channels(self) -> tuple[str, ...]:
@@ -324,6 +367,11 @@ class GraphsWidget(QWidget):
                 presentation.display_name,
                 presentation.unit,
             )
+            self.cursor_table.update_presentation(
+                source_name,
+                presentation.display_name,
+                presentation.unit,
+            )
             series = self._series.get(source_name)
             if series is not None:
                 series.opts["name"] = presentation.display_name
@@ -334,6 +382,7 @@ class GraphsWidget(QWidget):
                             presentation.display_name,
                             color=self._graph_palette.foreground,
                         )
+        self._refresh_cursor_values()
         if not self._paused:
             self.refresh_plot()
 
@@ -405,6 +454,7 @@ class GraphsWidget(QWidget):
         self.statistics_table.clear_statistics()
         self.statistics_empty_label.setText("No measured data in the visible range.")
         self.statistics_empty_label.show()
+        self._clear_cursor_values()
         self._apply_x_range(0.0)
 
     def apply_theme(self, palette: GraphPalette) -> None:
@@ -443,10 +493,15 @@ class GraphsWidget(QWidget):
         self.pause_button.setText("Pause")
         if self._cursor_line is not None:
             self._cursor_line.hide()
-        self.cursor_readout.setText("Move over the graph to inspect measured values.")
+        self._cursor_elapsed = None
+        self.cursor_time_label.setText("Cursor: —")
+        self.cursor_table.clear_values()
+        self.cursor_empty_label.setText("Select a channel and move over the graph.")
+        self.cursor_empty_label.show()
         self.statistics_table.clear_statistics()
         self.statistics_empty_label.setText("Select a channel to view statistics.")
         self.statistics_empty_label.show()
+        self.page_scroll.verticalScrollBar().setValue(0)
         self._apply_x_range(0.0)
 
     def reset_zoom(self) -> None:
@@ -493,6 +548,7 @@ class GraphsWidget(QWidget):
             if marker is not None:
                 self.plot_widget.removeItem(marker)
             self.refresh_plot()
+        self._refresh_cursor_values()
 
     def _add_channel(self, name: str) -> None:
         if name in self._selectors:
@@ -543,12 +599,14 @@ class GraphsWidget(QWidget):
         if not self.plot_widget.sceneBoundingRect().contains(position):
             if self._cursor_line is not None:
                 self._cursor_line.hide()
+            self._clear_cursor_values()
             return
         mouse_point = self.plot_widget.plotItem.vb.mapSceneToView(position)
         target = max(0.0, mouse_point.x())
         self.cursor_line.setPos(target)
         self.cursor_line.show()
-        self.cursor_readout.setText(self.cursor_text_at(target))
+        self._cursor_elapsed = target
+        self._update_cursor_values(target)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         """Inspect graph mouse motion without retaining scene-signal proxies."""
@@ -565,19 +623,6 @@ class GraphsWidget(QWidget):
             if (nearest := nearest_measurement(*points, elapsed_time)) is not None
         }
 
-    def cursor_text_at(self, elapsed_time: float) -> str:
-        """Format nearest measured values with presentation metadata."""
-        lines = [f"Time: {max(0.0, elapsed_time):.2f} s"]
-        for name, (timestamp, value) in self.inspect_at(elapsed_time).items():
-            presentation = self._metadata.get(name)
-            unit = f" {presentation.unit}" if presentation.unit else ""
-            state = evaluate_alarm(value, presentation.alarms)
-            lines.append(
-                f"{presentation.display_name}: {value:g}{unit}  "
-                f"[{state.value}]  (measured at {timestamp:.2f} s)"
-            )
-        return "   |   ".join(lines)
-
     @property
     def cursor_line(self) -> pg.InfiniteLine:
         """Create the inspection cursor only when first needed."""
@@ -588,6 +633,70 @@ class GraphsWidget(QWidget):
             self._cursor_line.hide()
             self.plot_widget.addItem(self._cursor_line, ignoreBounds=True)
         return self._cursor_line
+
+    def _refresh_cursor_values(self) -> None:
+        if self._cursor_elapsed is None:
+            self._show_cursor_placeholders()
+        else:
+            self._update_cursor_values(self._cursor_elapsed)
+
+    def _show_cursor_placeholders(self) -> None:
+        rows = tuple(self._cursor_row(name, None, None) for name in self._series)
+        self.cursor_table.set_cursor_values(rows)
+        self.cursor_empty_label.setVisible(not rows)
+
+    def _clear_cursor_values(self) -> None:
+        self._cursor_elapsed = None
+        self.cursor_time_label.setText("Cursor: —")
+        self._show_cursor_placeholders()
+
+    def _update_cursor_values(self, elapsed_time: float) -> None:
+        inspected = self.inspect_at(elapsed_time)
+        rows = []
+        for name in self._series:
+            measurement_time, value = inspected.get(name, (None, None))
+            rows.append(
+                self._cursor_row(
+                    name,
+                    measurement_time,
+                    value,
+                    cursor_time=elapsed_time,
+                )
+            )
+        self.cursor_time_label.setText(f"Cursor: {format_cursor_time(elapsed_time)}")
+        self.cursor_table.set_cursor_values(tuple(rows))
+        self.cursor_empty_label.setVisible(not rows)
+
+    def _cursor_row(
+        self,
+        name: str,
+        measurement_time: float | None,
+        value: int | float | None,
+        *,
+        cursor_time: float | None = None,
+    ) -> GraphCursorRow:
+        presentation = self._metadata.get(name)
+        valid_value = (
+            value
+            if value is not None and math.isfinite(float(value))
+            else None
+        )
+        state = (
+            evaluate_alarm(valid_value, presentation.alarms)
+            if valid_value is not None
+            else None
+        )
+        pen = self._series[name].opts["pen"]
+        return GraphCursorRow(
+            source_name=name,
+            display_name=presentation.display_name,
+            unit=presentation.unit,
+            color=pen.color().name(),
+            cursor_time=cursor_time,
+            measurement_time=measurement_time,
+            value=valid_value,
+            status=state,
+        )
 
     def _update_statistics(
         self,
