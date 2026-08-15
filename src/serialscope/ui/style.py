@@ -98,6 +98,7 @@ QToolButton#deviceProfileMenuButton {
     color: #bac8d5; background-color: #18232e; border: 1px solid #314354;
     border-radius: 4px; padding: 4px 7px;
 }
+QToolButton#deviceProfileMenuButton::menu-indicator { image: none; width: 0; }
 QToolButton#deviceProfileMenuButton:hover { background-color: #223341; border-color: #477088; }
 QToolButton#deviceProfileMenuButton:disabled { color: #647585; background-color: #141d25; }
 QLabel#replayModeBanner {
@@ -109,18 +110,84 @@ QLabel#replayModeBanner {
     font-weight: 600;
 }
 QLabel#graphCursorHeading, QLabel#graphStatisticsHeading {
-    color: #aebdca;
+    color: #c5d3de;
     font-weight: 600;
+    letter-spacing: 0.4px;
 }
 QLabel#graphCursorTimeLabel { color: #8fa3b8; }
 QLabel#graphCursorEmptyLabel, QLabel#graphStatisticsEmptyLabel {
     color: #718399;
     padding: 2px 6px;
 }
-QLabel#graphCursorStatus[alarmState="normal"] { color: #76c99a; }
-QLabel#graphCursorStatus[alarmState="warning"] { color: #e0b95c; }
-QLabel#graphCursorStatus[alarmState="alarm"] { color: #ef8991; font-weight: 600; }
-QLabel#graphCursorStatus[alarmState="unknown"] { color: #718399; }
+QFrame#graphCursorPanel, QFrame#graphStatisticsPanel {
+    background-color: #151e28;
+    border: 1px solid #2a3b4c;
+    border-radius: 6px;
+}
+QLabel#channelDataStatusBadge, QLabel#graphCursorStatus {
+    padding: 5px 12px;
+    border-radius: 10px;
+    font-size: 10.5pt;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    min-height: 22px;
+    color: #8fa3b8;
+    background-color: #18232e;
+    border: 1px solid #314354;
+}
+QLabel#channelDataStatusBadge[alarmState="normal"],
+QLabel#channelDataStatusBadge[alarmKind="NORMAL"],
+QLabel#graphCursorStatus[alarmState="normal"],
+QLabel#graphCursorStatus[alarmKind="NORMAL"] {
+    color: #6bb88a;
+    background-color: #16251e;
+    border: 1px solid #315f48;
+}
+QLabel#channelDataStatusBadge[alarmState="warning"],
+QLabel#graphCursorStatus[alarmState="warning"] {
+    color: #c9a24a;
+    background-color: #2a2518;
+    border: 1px solid #8a7030;
+}
+QLabel#channelDataStatusBadge[alarmKind="LOW"],
+QLabel#graphCursorStatus[alarmKind="LOW"] {
+    color: #c4b06a;
+    background-color: #282617;
+    border: 1px solid #7a7038;
+}
+QLabel#channelDataStatusBadge[alarmKind="HIGH"],
+QLabel#graphCursorStatus[alarmKind="HIGH"] {
+    color: #c9a24a;
+    background-color: #2a2518;
+    border: 1px solid #8a7030;
+}
+QLabel#channelDataStatusBadge[alarmState="alarm"],
+QLabel#graphCursorStatus[alarmState="alarm"] {
+    color: #d07a82;
+    background-color: #2c1c20;
+    border: 1px solid #8a4a52;
+}
+QLabel#channelDataStatusBadge[alarmKind="LOW-LOW"],
+QLabel#graphCursorStatus[alarmKind="LOW-LOW"] {
+    color: #c07080;
+    background-color: #28181c;
+    border: 1px solid #7a4048;
+}
+QLabel#channelDataStatusBadge[alarmKind="HIGH-HIGH"],
+QLabel#channelDataStatusBadge[alarmKind="ERROR"],
+QLabel#graphCursorStatus[alarmKind="HIGH-HIGH"],
+QLabel#graphCursorStatus[alarmKind="ERROR"] {
+    color: #d07a82;
+    background-color: #2c1c20;
+    border: 1px solid #8a4a52;
+}
+QLabel#channelDataStatusBadge[alarmState="unknown"],
+QLabel#channelDataStatusBadge[alarmKind="UNKNOWN"],
+QLabel#graphCursorStatus[alarmState="unknown"] {
+    color: #8fa3b8;
+    background-color: #18232e;
+    border: 1px solid #314354;
+}
 QScrollArea#channelSelector {
     color: #c6d2dc;
     background-color: #0e151d;
@@ -233,7 +300,6 @@ QWidget#dashboardTileSparkline {
     background-color: transparent;
     min-height: 26px;
     max-height: 28px;
-    qproperty-lineColor: #4db3d9;
 }
 QLabel#dashboardEmptyLabel {
     color: #718399;
@@ -269,12 +335,34 @@ QLabel#connectionStatusLabel {
 }
 QLabel#connectionStatusLabel[connectionState="connected"] { color: #9bd9b8; }
 QLabel#connectionStatusLabel[connectionState="error"] { color: #ee9aa1; }
+QFrame#loggingStatusIndicator {
+    min-height: 34px;
+    background-color: #18232e;
+    border: 1px solid #314354;
+    border-radius: 4px;
+}
+QFrame#loggingStatusIndicator[recordingState="active"] {
+    background-color: #3a1c22;
+    border: 1px solid #c44552;
+}
 QLabel#loggingStatusDot {
-    color: #596775;
-    font-size: 10pt;
+    color: #6b7785;
+    background-color: transparent;
+    font-size: 14pt;
+    min-width: 16px;
 }
 QLabel#loggingStatusDot[recordingState="active"] {
-    color: #ff3b4f;
+    color: #ef4454;
+}
+QLabel#loggingStatusLabel {
+    color: #8fa3b8;
+    background-color: transparent;
+    font-weight: 500;
+}
+QLabel#loggingStatusLabel[recordingState="active"] {
+    color: #f3cdd1;
+    font-weight: 700;
+    letter-spacing: 0.8px;
 }
 QComboBox, QLineEdit, QAbstractSpinBox {
     min-height: 32px;
@@ -407,9 +495,27 @@ QPlainTextEdit#terminalOutput {
     selection-background-color: #255b72;
 }
 QLabel#graphChannelsLabel, QLabel#dashboardSelectorLabel,
-QLabel#graphTimeWindowLabel {
+QLabel#graphTimeWindowLabel, QLabel#graphSettingsHeading {
     color: #8fa3b8;
     font-weight: 600;
+}
+QLabel#graphSettingsHeading {
+    font-size: 9pt;
+    letter-spacing: 0.6px;
+}
+QLabel#graphDensityLabel, QLabel#graphMaxGapLabel,
+QLabel#graphMovingAverageLabel, QLabel#graphEmaAlphaLabel {
+    color: #94a7b9;
+    background: transparent;
+}
+QLabel#graphDensityLabel:disabled, QLabel#graphMaxGapLabel:disabled {
+    color: #4e5f6d;
+}
+QFrame#graphSettingsPanel { background: transparent; }
+QFrame#graphControls, QFrame#graphProcessingControls, QFrame#graphSmoothingControls {
+    background-color: #151e28;
+    border: 1px solid #2a3b4c;
+    border-radius: 6px;
 }
 QTableWidget#channelDataTable,
 QTableWidget#graphCursorTable,
@@ -422,13 +528,47 @@ QTableWidget#eventListTable {
     gridline-color: #263442;
     selection-background-color: #255b72;
 }
+QTableWidget#channelDataTable,
+QTableWidget#graphCursorTable,
+QTableWidget#graphStatisticsTable {
+    gridline-color: transparent;
+    outline: none;
+    alternate-background-color: #121b24;
+}
+QTableWidget#channelDataTable::item,
+QTableWidget#graphCursorTable::item,
+QTableWidget#graphStatisticsTable::item {
+    padding: 6px 12px;
+    border: none;
+    border-bottom: 1px solid #1c2833;
+}
+QTableWidget#channelDataTable::item:hover,
+QTableWidget#graphCursorTable::item:hover,
+QTableWidget#graphStatisticsTable::item:hover {
+    background-color: #18242f;
+}
+QTableWidget#channelDataTable::item:selected {
+    color: #e8f4fa;
+    background-color: #1f3a4c;
+}
+QWidget#channelDataStatusCell { background: transparent; }
 QWidget#graphCursorChannel,
 QWidget#graphStatisticsChannel,
+QWidget#graphCursorStatusCell,
 QLabel#graphCursorChannelLabel,
-QLabel#graphCursorStatus,
-QLabel#graphCursorSwatch,
-QLabel#graphStatisticsChannelLabel,
-QLabel#graphStatisticsSwatch { background-color: transparent; }
+QLabel#graphStatisticsChannelLabel { background-color: transparent; }
+QLabel#graphCursorChannelLabel, QLabel#graphStatisticsChannelLabel {
+    color: #d9e2ec;
+    font-weight: 500;
+}
+QLabel#graphCursorSwatch, QLabel#graphStatisticsSwatch {
+    min-width: 8px;
+    max-width: 8px;
+    min-height: 8px;
+    max-height: 8px;
+    border-radius: 4px;
+    border: none;
+}
 QTableWidget#channelDataTable QHeaderView::section,
 QTableWidget#graphCursorTable QHeaderView::section,
 QTableWidget#graphStatisticsTable QHeaderView::section,
@@ -439,6 +579,16 @@ QTableWidget#eventListTable QHeaderView::section {
     border-bottom: 1px solid #314354;
     padding: 8px;
     font-weight: 600;
+}
+QTableWidget#channelDataTable QHeaderView::section,
+QTableWidget#graphCursorTable QHeaderView::section,
+QTableWidget#graphStatisticsTable QHeaderView::section {
+    color: #c5d3de;
+    background-color: #1a2530;
+    padding: 9px 12px;
+    border-bottom: 1px solid #3a5163;
+    font-size: 9pt;
+    letter-spacing: 0.5px;
 }
 QLabel#dataEmptyLabel, QLabel#graphsEmptyLabel {
     color: #94a7b9;
@@ -713,6 +863,7 @@ QToolButton#deviceProfileMenuButton {
     color: #2A3340; background-color: #EDF1F5; border: 1px solid #C5CED8;
     border-radius: 4px; padding: 4px 7px;
 }
+QToolButton#deviceProfileMenuButton::menu-indicator { image: none; width: 0; }
 QToolButton#deviceProfileMenuButton:hover { background-color: #DCE6ED; border-color: #8AA3B3; }
 QToolButton#deviceProfileMenuButton:disabled { color: #8A96A3; background-color: #E4E9EE; }
 QLabel#replayModeBanner {
@@ -726,16 +877,82 @@ QLabel#replayModeBanner {
 QLabel#graphCursorHeading, QLabel#graphStatisticsHeading {
     color: #2A3340;
     font-weight: 600;
+    letter-spacing: 0.4px;
 }
 QLabel#graphCursorTimeLabel { color: #586574; }
 QLabel#graphCursorEmptyLabel, QLabel#graphStatisticsEmptyLabel {
     color: #6B7785;
     padding: 2px 6px;
 }
-QLabel#graphCursorStatus[alarmState="normal"] { color: #2A704F; }
-QLabel#graphCursorStatus[alarmState="warning"] { color: #8A5E10; }
-QLabel#graphCursorStatus[alarmState="alarm"] { color: #A33A44; font-weight: 600; }
-QLabel#graphCursorStatus[alarmState="unknown"] { color: #6B7785; }
+QFrame#graphCursorPanel, QFrame#graphStatisticsPanel {
+    background-color: #F3F6F8;
+    border: 1px solid #C5CED8;
+    border-radius: 6px;
+}
+QLabel#channelDataStatusBadge, QLabel#graphCursorStatus {
+    padding: 5px 12px;
+    border-radius: 10px;
+    font-size: 10.5pt;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    min-height: 22px;
+    color: #586574;
+    background-color: #EDF1F5;
+    border: 1px solid #C5CED8;
+}
+QLabel#channelDataStatusBadge[alarmState="normal"],
+QLabel#channelDataStatusBadge[alarmKind="NORMAL"],
+QLabel#graphCursorStatus[alarmState="normal"],
+QLabel#graphCursorStatus[alarmKind="NORMAL"] {
+    color: #215F43;
+    background-color: #D9E8DF;
+    border: 1px solid #8FB39C;
+}
+QLabel#channelDataStatusBadge[alarmState="warning"],
+QLabel#graphCursorStatus[alarmState="warning"] {
+    color: #6E5110;
+    background-color: #EDE3C4;
+    border: 1px solid #A37A28;
+}
+QLabel#channelDataStatusBadge[alarmKind="LOW"],
+QLabel#graphCursorStatus[alarmKind="LOW"] {
+    color: #5E5720;
+    background-color: #E8E4C8;
+    border: 1px solid #9A8F3A;
+}
+QLabel#channelDataStatusBadge[alarmKind="HIGH"],
+QLabel#graphCursorStatus[alarmKind="HIGH"] {
+    color: #6E5110;
+    background-color: #EDE3C4;
+    border: 1px solid #A37A28;
+}
+QLabel#channelDataStatusBadge[alarmState="alarm"],
+QLabel#graphCursorStatus[alarmState="alarm"] {
+    color: #8B2C36;
+    background-color: #E8D4D7;
+    border: 1px solid #A84A54;
+}
+QLabel#channelDataStatusBadge[alarmKind="LOW-LOW"],
+QLabel#graphCursorStatus[alarmKind="LOW-LOW"] {
+    color: #7A3040;
+    background-color: #E5D0D4;
+    border: 1px solid #9A5A64;
+}
+QLabel#channelDataStatusBadge[alarmKind="HIGH-HIGH"],
+QLabel#channelDataStatusBadge[alarmKind="ERROR"],
+QLabel#graphCursorStatus[alarmKind="HIGH-HIGH"],
+QLabel#graphCursorStatus[alarmKind="ERROR"] {
+    color: #8B2C36;
+    background-color: #E8D4D7;
+    border: 1px solid #A84A54;
+}
+QLabel#channelDataStatusBadge[alarmState="unknown"],
+QLabel#channelDataStatusBadge[alarmKind="UNKNOWN"],
+QLabel#graphCursorStatus[alarmState="unknown"] {
+    color: #586574;
+    background-color: #EDF1F5;
+    border: 1px solid #C5CED8;
+}
 QScrollArea#channelSelector {
     color: #2A3340;
     background-color: #E4E9EE;
@@ -824,7 +1041,6 @@ QWidget#dashboardTileSparkline {
     background-color: transparent;
     min-height: 26px;
     max-height: 28px;
-    qproperty-lineColor: #2A7AA8;
 }
 QFrame#dashboardChannelTile[alarmState="warning"] {
     background-color: #F0E6C8;
@@ -867,8 +1083,35 @@ QLabel#connectionStatusLabel {
 }
 QLabel#connectionStatusLabel[connectionState="connected"] { color: #215F43; }
 QLabel#connectionStatusLabel[connectionState="error"] { color: #92323C; }
-QLabel#loggingStatusDot { color: #7A8692; font-size: 10pt; }
-QLabel#loggingStatusDot[recordingState="active"] { color: #C41E32; }
+QFrame#loggingStatusIndicator {
+    min-height: 34px;
+    background-color: #E4E9EE;
+    border: 1px solid #C5CED8;
+    border-radius: 4px;
+}
+QFrame#loggingStatusIndicator[recordingState="active"] {
+    background-color: #EDD4D7;
+    border: 1px solid #B03A46;
+}
+QLabel#loggingStatusDot {
+    color: #7A8692;
+    background-color: transparent;
+    font-size: 14pt;
+    min-width: 16px;
+}
+QLabel#loggingStatusDot[recordingState="active"] {
+    color: #C41E32;
+}
+QLabel#loggingStatusLabel {
+    color: #586574;
+    background-color: transparent;
+    font-weight: 500;
+}
+QLabel#loggingStatusLabel[recordingState="active"] {
+    color: #8B2C36;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}
 QComboBox, QLineEdit, QAbstractSpinBox {
     min-height: 32px;
     padding: 1px 9px;
@@ -996,9 +1239,27 @@ QPlainTextEdit#terminalOutput {
     selection-background-color: #B7D0DC;
 }
 QLabel#graphChannelsLabel, QLabel#dashboardSelectorLabel,
-QLabel#graphTimeWindowLabel {
+QLabel#graphTimeWindowLabel, QLabel#graphSettingsHeading {
     color: #586574;
     font-weight: 600;
+}
+QLabel#graphSettingsHeading {
+    font-size: 9pt;
+    letter-spacing: 0.6px;
+}
+QLabel#graphDensityLabel, QLabel#graphMaxGapLabel,
+QLabel#graphMovingAverageLabel, QLabel#graphEmaAlphaLabel {
+    color: #586574;
+    background: transparent;
+}
+QLabel#graphDensityLabel:disabled, QLabel#graphMaxGapLabel:disabled {
+    color: #8A96A3;
+}
+QFrame#graphSettingsPanel { background: transparent; }
+QFrame#graphControls, QFrame#graphProcessingControls, QFrame#graphSmoothingControls {
+    background-color: #F3F6F8;
+    border: 1px solid #C5CED8;
+    border-radius: 6px;
 }
 QTableWidget#channelDataTable,
 QTableWidget#graphCursorTable,
@@ -1011,13 +1272,47 @@ QTableWidget#eventListTable {
     gridline-color: #D0D7DE;
     selection-background-color: #D2DFE8;
 }
+QTableWidget#channelDataTable,
+QTableWidget#graphCursorTable,
+QTableWidget#graphStatisticsTable {
+    gridline-color: transparent;
+    outline: none;
+    alternate-background-color: #E6EBEF;
+}
+QTableWidget#channelDataTable::item,
+QTableWidget#graphCursorTable::item,
+QTableWidget#graphStatisticsTable::item {
+    padding: 6px 12px;
+    border: none;
+    border-bottom: 1px solid #D5DCE3;
+}
+QTableWidget#channelDataTable::item:hover,
+QTableWidget#graphCursorTable::item:hover,
+QTableWidget#graphStatisticsTable::item:hover {
+    background-color: #DDE6EC;
+}
+QTableWidget#channelDataTable::item:selected {
+    color: #163040;
+    background-color: #D2DFE8;
+}
+QWidget#channelDataStatusCell { background: transparent; }
 QWidget#graphCursorChannel,
 QWidget#graphStatisticsChannel,
+QWidget#graphCursorStatusCell,
 QLabel#graphCursorChannelLabel,
-QLabel#graphCursorStatus,
-QLabel#graphCursorSwatch,
-QLabel#graphStatisticsChannelLabel,
-QLabel#graphStatisticsSwatch { background-color: transparent; }
+QLabel#graphStatisticsChannelLabel { background-color: transparent; }
+QLabel#graphCursorChannelLabel, QLabel#graphStatisticsChannelLabel {
+    color: #202833;
+    font-weight: 500;
+}
+QLabel#graphCursorSwatch, QLabel#graphStatisticsSwatch {
+    min-width: 8px;
+    max-width: 8px;
+    min-height: 8px;
+    max-height: 8px;
+    border-radius: 4px;
+    border: none;
+}
 QTableWidget#channelDataTable QHeaderView::section,
 QTableWidget#graphCursorTable QHeaderView::section,
 QTableWidget#graphStatisticsTable QHeaderView::section,
@@ -1028,6 +1323,16 @@ QTableWidget#eventListTable QHeaderView::section {
     border-bottom: 1px solid #C5CED8;
     padding: 8px;
     font-weight: 600;
+}
+QTableWidget#channelDataTable QHeaderView::section,
+QTableWidget#graphCursorTable QHeaderView::section,
+QTableWidget#graphStatisticsTable QHeaderView::section {
+    color: #2A3340;
+    background-color: #E4E9EE;
+    padding: 9px 12px;
+    border-bottom: 1px solid #B7C2CD;
+    font-size: 9pt;
+    letter-spacing: 0.5px;
 }
 QLabel#dataEmptyLabel, QLabel#graphsEmptyLabel {
     color: #586574;

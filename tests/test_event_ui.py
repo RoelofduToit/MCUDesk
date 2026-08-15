@@ -19,6 +19,9 @@ def test_event_controls_follow_actual_recording_and_event_state() -> None:
 
     panel.set_logging_state(True, event_logging_available=True)
     assert panel.add_event_button.isEnabled()
+    assert panel.logging_status_label.text() == "RECORDING"
+    assert panel.logging_status_indicator.property("recordingState") == "active"
+    assert panel.logging_status_dot.property("recordingState") == "active"
     panel.set_events((EventMarker("one", 1.0, "Started pump"),))
     assert panel.view_events_button.isEnabled()
     assert panel.view_events_button.text() == "Events (1)"
@@ -26,6 +29,9 @@ def test_event_controls_follow_actual_recording_and_event_state() -> None:
     panel.set_logging_state(False)
     assert not panel.add_event_button.isEnabled()
     assert panel.view_events_button.isEnabled()
+    assert panel.logging_status_label.text() == "Not recording"
+    assert panel.logging_status_indicator.property("recordingState") == "inactive"
+    assert panel.logging_status_dot.property("recordingState") == "inactive"
     panel.close()
     application.processEvents()
 

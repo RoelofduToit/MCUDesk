@@ -1,10 +1,11 @@
 """Placeholder controls for the side panel."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QAbstractAnimation, QEasingCurve, QPropertyAnimation, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QFrame,
+    QGraphicsOpacityEffect,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -128,21 +129,36 @@ class SidePanel(QFrame):
         )
         layout.addWidget(self.data_delimiter_combo)
 
-        status_row = QWidget()
-        status_layout = QHBoxLayout(status_row)
-        status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setSpacing(7)
+        self.logging_status_indicator = QFrame()
+        self.logging_status_indicator.setObjectName("loggingStatusIndicator")
+        self.logging_status_indicator.setProperty("recordingState", "inactive")
+        status_layout = QHBoxLayout(self.logging_status_indicator)
+        status_layout.setContentsMargins(10, 6, 12, 6)
+        status_layout.setSpacing(8)
 
         self.logging_status_dot = QLabel("●")
         self.logging_status_dot.setObjectName("loggingStatusDot")
+        self.logging_status_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.logging_status_dot.setProperty("recordingState", "inactive")
         status_layout.addWidget(self.logging_status_dot)
 
         self.logging_status_label = QLabel("Not recording")
         self.logging_status_label.setObjectName("loggingStatusLabel")
-        status_layout.addWidget(self.logging_status_label)
-        status_layout.addStretch()
-        layout.addWidget(status_row)
+        self.logging_status_label.setProperty("recordingState", "inactive")
+        status_layout.addWidget(self.logging_status_label, 1)
+        layout.addWidget(self.logging_status_indicator)
+
+        self._recording_dot_effect = QGraphicsOpacityEffect(self.logging_status_dot)
+        self.logging_status_dot.setGraphicsEffect(self._recording_dot_effect)
+        self._recording_pulse = QPropertyAnimation(
+            self._recording_dot_effect, b"opacity", self
+        )
+        self._recording_pulse.setDuration(1600)
+        self._recording_pulse.setStartValue(1.0)
+        self._recording_pulse.setKeyValueAt(0.5, 0.4)
+        self._recording_pulse.setEndValue(1.0)
+        self._recording_pulse.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._recording_pulse.setLoopCount(-1)
 
         self.logging_filename_label = QLabel("")
         self.logging_filename_label.setObjectName("loggingFilenameLabel")
@@ -201,11 +217,22 @@ class SidePanel(QFrame):
         """Present raw logging state without performing file operations."""
         self._recording = recording
         self._event_logging_available = recording and event_logging_available
-        self.logging_status_label.setText("Recording" if recording else "Not recording")
+        self.logging_status_label.setText("RECORDING" if recording else "Not recording")
         state = "active" if recording else "inactive"
-        self.logging_status_dot.setProperty("recordingState", state)
-        self.logging_status_dot.style().unpolish(self.logging_status_dot)
-        self.logging_status_dot.style().polish(self.logging_status_dot)
+        for widget in (
+            self.logging_status_indicator,
+            self.logging_status_dot,
+            self.logging_status_label,
+        ):
+            widget.setProperty("recordingState", state)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        if recording:
+            if self._recording_pulse.state() != QAbstractAnimation.State.Running:
+                self._recording_pulse.start()
+        else:
+            self._recording_pulse.stop()
+            self._recording_dot_effect.setOpacity(1.0)
         self.logging_filename_label.setText(filename)
         self.recording_elapsed_label.setText(elapsed)
         self.logged_bytes_label.setText(f"Logged: {byte_count}")

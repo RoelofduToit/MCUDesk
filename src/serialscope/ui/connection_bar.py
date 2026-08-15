@@ -1,13 +1,16 @@
 """Connection controls displayed above the main workspace."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
+    QLayoutItem,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QToolButton,
     QMenu,
     QWidget,
@@ -16,45 +19,169 @@ from PySide6.QtWidgets import (
 from serialscope.serial import SerialPortInfo
 
 
+class _WrapLayout(QLayout):
+    """Keep control groups on one row when they fit, otherwise wrap."""
+
+    def __init__(self, parent: QWidget | None = None, spacing: int = 8) -> None:
+        super().__init__(parent)
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(spacing)
+        self._items: list[QLayoutItem] = []
+
+    def addItem(self, item: QLayoutItem) -> None:  # noqa: N802
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:  # noqa: N802
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:  # noqa: N802
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self) -> Qt.Orientation:  # noqa: N802
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        width = 0
+        height = 0
+        spacing = self.spacing()
+        for index, item in enumerate(self._items):
+            hint = item.sizeHint()
+            width += hint.width()
+            if index:
+                width += spacing
+            height = max(height, hint.height())
+        left, top, right, bottom = self.getContentsMargins()
+        return QSize(width + left + right, height + top + bottom)
+
+    def minimumSize(self) -> QSize:  # noqa: N802
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        left, top, right, bottom = self.getContentsMargins()
+        return size + QSize(left + right, top + bottom)
+
+    def _item_size(self, item: QLayoutItem, available_width: int) -> QSize:
+        hint = item.sizeHint()
+        width = hint.width() if hint.width() <= available_width else max(
+            item.minimumSize().width(), available_width
+        )
+        if width < hint.width() and item.hasHeightForWidth():
+            return QSize(width, item.heightForWidth(width))
+        return QSize(width, hint.height())
+
+    def _do_layout(self, rect: QRect, *, test_only: bool) -> int:
+        left, top, right, bottom = self.getContentsMargins()
+        effective = rect.adjusted(left, top, -right, -bottom)
+        x = effective.x()
+        y = effective.y()
+        line_height = 0
+        spacing = self.spacing()
+        available = max(0, effective.width())
+        for item in self._items:
+            size = self._item_size(item, available)
+            next_x = x + size.width() + spacing
+            if line_height and next_x - spacing > effective.right() + 1:
+                x = effective.x()
+                y += line_height + spacing
+                size = self._item_size(item, available)
+                next_x = x + size.width() + spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), size))
+            x = next_x
+            line_height = max(line_height, size.height())
+        return y + line_height - rect.y() + bottom
+
+
+def _compact_combo(combo: QComboBox, *, contents: int = 4) -> None:
+    """Prefer a modest width and shrink before neighboring labels clip."""
+    combo.setSizeAdjustPolicy(
+        QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+    )
+    combo.setMinimumContentsLength(contents)
+    combo.setMinimumWidth(64)
+    combo.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
+
+def _fixed_control(widget: QWidget) -> None:
+    widget.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+
+
+def _cluster(*widgets: QWidget) -> QWidget:
+    group = QWidget()
+    group.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+    row = QHBoxLayout(group)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(6)
+    for widget in widgets:
+        row.addWidget(widget)
+    return group
+
+
 class ConnectionBar(QFrame):
     """Present the connection controls without implementing their behavior."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("connectionBar")
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(0)
+        self._rows = QWidget()
+        self._wrap = _WrapLayout(self._rows, spacing=8)
+        layout.addWidget(self._rows, 1)
 
         self.source_label = QLabel("DEVICE")
         self.source_label.setObjectName("fieldLabel")
-        layout.addWidget(self.source_label)
+        _fixed_control(self.source_label)
         self.source_combo = QComboBox()
         self.source_combo.setObjectName("serialSourceCombo")
-        self.source_combo.setMinimumContentsLength(10)
-        layout.addWidget(self.source_combo)
+        _compact_combo(self.source_combo, contents=4)
         self.source_name_input = QLineEdit()
         self.source_name_input.setObjectName("serialSourceName")
         self.source_name_input.setPlaceholderText("Device name")
-        self.source_name_input.setMaximumWidth(150)
-        layout.addWidget(self.source_name_input)
+        self.source_name_input.setMinimumWidth(80)
+        self.source_name_input.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
         self.add_source_button = QPushButton("Add Device")
         self.add_source_button.setObjectName("addSerialSourceButton")
-        layout.addWidget(self.add_source_button)
+        _fixed_control(self.add_source_button)
         self.remove_source_button = QPushButton("Remove")
         self.remove_source_button.setObjectName("removeSerialSourceButton")
-        layout.addWidget(self.remove_source_button)
+        _fixed_control(self.remove_source_button)
+        self._wrap.addWidget(
+            _cluster(
+                self.source_label,
+                self.source_combo,
+                self.source_name_input,
+                self.add_source_button,
+                self.remove_source_button,
+            )
+        )
 
         self.profile_label = QLabel("PROFILE")
         self.profile_label.setObjectName("fieldLabel")
-        layout.addWidget(self.profile_label)
+        _fixed_control(self.profile_label)
         self.profile_combo = QComboBox()
         self.profile_combo.setObjectName("deviceProfileCombo")
-        self.profile_combo.setMinimumContentsLength(11)
-        self.profile_combo.setMaximumWidth(180)
+        _compact_combo(self.profile_combo, contents=5)
         self.profile_combo.addItem("Custom", None)
-        layout.addWidget(self.profile_combo)
         self.profile_menu_button = QToolButton()
         self.profile_menu_button.setObjectName("deviceProfileMenuButton")
         self.profile_menu_button.setText("⋮")
@@ -68,30 +195,37 @@ class ConnectionBar(QFrame):
         self.rename_profile_action = self.profile_menu.addAction("Rename Profile...")
         self.delete_profile_action = self.profile_menu.addAction("Delete Profile...")
         self.profile_menu_button.setMenu(self.profile_menu)
-        layout.addWidget(self.profile_menu_button)
+        _fixed_control(self.profile_menu_button)
         self.profile_status_label = QLabel("")
         self.profile_status_label.setObjectName("profileStatusLabel")
-        self.profile_status_label.setMaximumWidth(115)
-        layout.addWidget(self.profile_status_label)
+        self.profile_status_label.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred
+        )
+        self.profile_status_label.hide()
+        self._wrap.addWidget(
+            _cluster(
+                self.profile_label,
+                self.profile_combo,
+                self.profile_menu_button,
+                self.profile_status_label,
+            )
+        )
 
-        port_label = QLabel("PORT")
-        port_label.setObjectName("fieldLabel")
-        layout.addWidget(port_label)
-
+        self.port_label = QLabel("PORT")
+        self.port_label.setObjectName("fieldLabel")
+        _fixed_control(self.port_label)
         self.port_combo = QComboBox()
         self.port_combo.setObjectName("portCombo")
-        self.port_combo.setMinimumContentsLength(14)
-        layout.addWidget(self.port_combo)
-
+        _compact_combo(self.port_combo, contents=6)
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.setObjectName("refreshButton")
         self.refresh_button.setToolTip("Refresh available serial ports")
-        layout.addWidget(self.refresh_button)
+        _fixed_control(self.refresh_button)
+        self._wrap.addWidget(_cluster(self.port_label, self.port_combo, self.refresh_button))
 
-        baud_label = QLabel("BAUD")
-        baud_label.setObjectName("fieldLabel")
-        layout.addWidget(baud_label)
-
+        self.baud_label = QLabel("BAUD")
+        self.baud_label.setObjectName("fieldLabel")
+        _fixed_control(self.baud_label)
         self.baud_combo = QComboBox()
         self.baud_combo.setObjectName("baudCombo")
         self.baud_combo.addItems(
@@ -107,37 +241,70 @@ class ConnectionBar(QFrame):
             ]
         )
         self.baud_combo.setCurrentText("115200")
-        layout.addWidget(self.baud_combo)
+        _compact_combo(self.baud_combo, contents=4)
+        self.baud_combo.setMinimumWidth(72)
+        self._wrap.addWidget(_cluster(self.baud_label, self.baud_combo))
 
         self.status_indicator = QFrame()
         self.status_indicator.setObjectName("connectionStatusIndicator")
+        self.status_indicator.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+        )
         status_layout = QHBoxLayout(self.status_indicator)
         status_layout.setContentsMargins(9, 0, 10, 0)
         status_layout.setSpacing(6)
-
         self.status_dot = QLabel("●")
         self.status_dot.setObjectName("connectionStatusDot")
         self.status_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status_layout.addWidget(self.status_dot)
-
         self.status_label = QLabel("DISCONNECTED")
         self.status_label.setObjectName("connectionStatusLabel")
-        self.status_label.ensurePolished()
-        self.status_label.setMinimumWidth(
-            self.status_label.fontMetrics().horizontalAdvance("CONNECTION ERROR")
-        )
         status_layout.addWidget(self.status_label)
-        layout.addWidget(self.status_indicator)
-
         self.connect_button = QPushButton("Connect")
         self.connect_button.setObjectName("connectButton")
-        layout.addWidget(self.connect_button)
-
-        layout.addStretch()
+        _fixed_control(self.connect_button)
+        self._wrap.addWidget(_cluster(self.status_indicator, self.connect_button))
+        self._update_status_label_width()
+        self._update_connect_button_width()
 
         self.set_connection_state("disconnected")
         self.set_source_count(1)
         self.set_profile_controls_enabled(True)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        margins = self.layout().contentsMargins()
+        inner = max(1, width - margins.left() - margins.right())
+        return self._wrap.heightForWidth(inner) + margins.top() + margins.bottom()
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() in {QEvent.Type.StyleChange, QEvent.Type.FontChange}:
+            self._update_status_label_width()
+            self._update_connect_button_width()
+
+    def _update_status_label_width(self) -> None:
+        self.status_label.ensurePolished()
+        text_width = self.status_label.fontMetrics().horizontalAdvance(
+            "CONNECTION ERROR"
+        )
+        self.status_label.setMinimumWidth(text_width)
+        margins = self.status_indicator.layout().contentsMargins()
+        self.status_indicator.setMinimumWidth(
+            text_width
+            + self.status_dot.sizeHint().width()
+            + margins.left()
+            + margins.right()
+            + 6
+        )
+
+    def _update_connect_button_width(self) -> None:
+        self.connect_button.ensurePolished()
+        self.connect_button.setMinimumWidth(
+            self.connect_button.fontMetrics().horizontalAdvance("Disconnect") + 24
+        )
 
     def set_source_count(self, count: int) -> None:
         """Reveal source management only when it distinguishes devices."""
@@ -218,6 +385,7 @@ class ConnectionBar(QFrame):
     def set_profile_status(self, text: str, tooltip: str = "") -> None:
         self.profile_status_label.setText(text)
         self.profile_status_label.setToolTip(tooltip or text)
+        self.profile_status_label.setVisible(bool(text))
 
     def set_profile_controls_enabled(self, enabled: bool) -> None:
         self.profile_combo.setEnabled(enabled)

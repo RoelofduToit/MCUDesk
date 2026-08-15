@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
-    QHBoxLayout,
     QLabel,
     QLayout,
     QLayoutItem,
@@ -42,6 +41,7 @@ from serialscope.ui.graph_statistics_table import (
     GraphStatisticsTable,
 )
 from serialscope.ui.channel_selector import ChannelSelector, ChannelToggle
+from serialscope.ui.channel_colors import series_color_for_channel
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, GraphPalette
 
 
@@ -54,6 +54,32 @@ TIME_WINDOWS = {
     "30 min": 1_800.0,
     "1 hour": 3_600.0,
 }
+
+
+def _compact_graph_combo(combo: QComboBox, contents: int) -> None:
+    combo.setSizeAdjustPolicy(
+        QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+    )
+    combo.setMinimumContentsLength(contents)
+    combo.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+
+
+def _settings_group(object_name: str, heading: str) -> tuple[QFrame, QLayout]:
+    group = QFrame()
+    group.setObjectName(object_name)
+    group.setProperty("graphSettingsGroup", True)
+    group.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+    outer = QVBoxLayout(group)
+    outer.setContentsMargins(10, 8, 10, 8)
+    outer.setSpacing(6)
+    title = QLabel(heading)
+    title.setObjectName("graphSettingsHeading")
+    outer.addWidget(title)
+    row_host = QWidget()
+    row_host.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+    row = _FlowLayout(row_host, spacing=6)
+    outer.addWidget(row_host)
+    return group, row
 
 
 class _FlowLayout(QLayout):
@@ -91,7 +117,17 @@ class _FlowLayout(QLayout):
         self._do_layout(rect, test_only=False)
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        return self.minimumSize()
+        width = 0
+        height = 0
+        spacing = self.spacing()
+        for index, item in enumerate(self._items):
+            hint = item.sizeHint()
+            width += hint.width()
+            if index:
+                width += spacing
+            height = max(height, hint.height())
+        left, top, right, bottom = self.getContentsMargins()
+        return QSize(width + left + right, height + top + bottom)
 
     def minimumSize(self) -> QSize:  # noqa: N802
         size = QSize()
@@ -100,6 +136,15 @@ class _FlowLayout(QLayout):
         left, top, right, bottom = self.getContentsMargins()
         return size + QSize(left + right, top + bottom)
 
+    def _item_size(self, item: QLayoutItem, available_width: int) -> QSize:
+        hint = item.sizeHint()
+        width = hint.width() if hint.width() <= available_width else max(
+            item.minimumSize().width(), available_width
+        )
+        if width < hint.width() and item.hasHeightForWidth():
+            return QSize(width, item.heightForWidth(width))
+        return QSize(width, hint.height())
+
     def _do_layout(self, rect: QRect, *, test_only: bool) -> int:
         left, top, right, bottom = self.getContentsMargins()
         effective = rect.adjusted(left, top, -right, -bottom)
@@ -107,19 +152,21 @@ class _FlowLayout(QLayout):
         y = effective.y()
         line_height = 0
         spacing = self.spacing()
+        available = max(0, effective.width())
 
         for item in self._items:
-            hint = item.sizeHint()
-            next_x = x + hint.width() + spacing
+            size = self._item_size(item, available)
+            next_x = x + size.width() + spacing
             if line_height and next_x - spacing > effective.right() + 1:
                 x = effective.x()
                 y += line_height + spacing
-                next_x = x + hint.width() + spacing
+                size = self._item_size(item, available)
+                next_x = x + size.width() + spacing
                 line_height = 0
             if not test_only:
-                item.setGeometry(QRect(QPoint(x, y), hint))
+                item.setGeometry(QRect(QPoint(x, y), size))
             x = next_x
-            line_height = max(line_height, hint.height())
+            line_height = max(line_height, size.height())
 
         return y + line_height - rect.y() + bottom
 
@@ -185,98 +232,107 @@ class GraphsWidget(QWidget):
         self._selectors: dict[str, ChannelToggle] = self.channel_selector.toggles
         layout.addWidget(self.selector_scroll)
 
-        controls = QWidget()
-        controls.setObjectName("graphControls")
-        controls_layout = _FlowLayout(controls)
+        settings = QFrame()
+        settings.setObjectName("graphSettingsPanel")
+        settings_layout = _FlowLayout(settings, spacing=8)
 
+        view, view_row = _settings_group("graphControls", "View")
         self.pause_button = QPushButton("Pause")
         self.pause_button.setObjectName("graphPauseButton")
         self.pause_button.clicked.connect(self.toggle_pause)
-        controls_layout.addWidget(self.pause_button)
-
+        view_row.addWidget(self.pause_button)
         self.clear_button = QPushButton("Clear")
         self.clear_button.setObjectName("graphClearButton")
         self.clear_button.clicked.connect(self.clear_history)
-        controls_layout.addWidget(self.clear_button)
-
+        view_row.addWidget(self.clear_button)
         self.reset_zoom_button = QPushButton("Reset Zoom")
         self.reset_zoom_button.setObjectName("graphResetZoomButton")
         self.reset_zoom_button.clicked.connect(self.reset_zoom)
-        controls_layout.addWidget(self.reset_zoom_button)
-
+        view_row.addWidget(self.reset_zoom_button)
         window_label = QLabel("Time Window")
         window_label.setObjectName("graphTimeWindowLabel")
-        controls_layout.addWidget(window_label)
-
+        view_row.addWidget(window_label)
         self.time_window_combo = QComboBox()
         self.time_window_combo.setObjectName("graphTimeWindowCombo")
         for label, seconds in TIME_WINDOWS.items():
             self.time_window_combo.addItem(label, seconds)
         self.time_window_combo.setCurrentText("60 s")
         self.time_window_combo.currentIndexChanged.connect(self.refresh_plot)
-        controls_layout.addWidget(self.time_window_combo)
-        layout.addWidget(controls)
+        _compact_graph_combo(self.time_window_combo, 5)
+        view_row.addWidget(self.time_window_combo)
+        settings_layout.addWidget(view)
 
-        processing = QWidget()
-        processing.setObjectName("graphProcessingControls")
-        processing_layout = _FlowLayout(processing)
-
-        processing_layout.addWidget(QLabel("Interpolation"))
+        processing, processing_row = _settings_group(
+            "graphProcessingControls", "Interpolation"
+        )
         self.interpolation_combo = QComboBox()
         self.interpolation_combo.setObjectName("graphInterpolationCombo")
         self.interpolation_combo.addItem("Off", "off")
         self.interpolation_combo.addItem("Linear", "linear")
         self.interpolation_combo.addItem("PCHIP", "pchip")
-        processing_layout.addWidget(self.interpolation_combo)
-
-        processing_layout.addWidget(QLabel("Density"))
+        _compact_graph_combo(self.interpolation_combo, 6)
+        processing_row.addWidget(self.interpolation_combo)
+        self.density_label = QLabel("Density")
+        self.density_label.setObjectName("graphDensityLabel")
+        processing_row.addWidget(self.density_label)
         self.density_combo = QComboBox()
         self.density_combo.setObjectName("graphInterpolationDensityCombo")
         for density in (2, 5, 10):
             self.density_combo.addItem(f"{density}x", density)
         self.density_combo.setCurrentText("5x")
-        processing_layout.addWidget(self.density_combo)
-
-        processing_layout.addWidget(QLabel("Max Gap"))
+        _compact_graph_combo(self.density_combo, 3)
+        processing_row.addWidget(self.density_combo)
+        self.max_gap_label = QLabel("Max Gap")
+        self.max_gap_label.setObjectName("graphMaxGapLabel")
+        processing_row.addWidget(self.max_gap_label)
         self.max_gap_combo = QComboBox()
         self.max_gap_combo.setObjectName("graphMaxGapCombo")
-        for label, seconds in (("1 s", 1.0), ("2 s", 2.0), ("5 s", 5.0), ("10 s", 10.0), ("Unlimited", None)):
+        for label, seconds in (
+            ("1 s", 1.0),
+            ("2 s", 2.0),
+            ("5 s", 5.0),
+            ("10 s", 10.0),
+            ("Unlimited", None),
+        ):
             self.max_gap_combo.addItem(label, seconds)
         self.max_gap_combo.setCurrentText("5 s")
-        processing_layout.addWidget(self.max_gap_combo)
-
+        _compact_graph_combo(self.max_gap_combo, 6)
+        processing_row.addWidget(self.max_gap_combo)
         self.measured_points_checkbox = QCheckBox("Show measured points")
         self.measured_points_checkbox.setObjectName("graphMeasuredPointsCheckBox")
-        processing_layout.addWidget(self.measured_points_checkbox)
-        layout.addWidget(processing)
+        processing_row.addWidget(self.measured_points_checkbox)
+        settings_layout.addWidget(processing)
 
-        smoothing = QWidget()
-        smoothing.setObjectName("graphSmoothingControls")
-        smoothing_layout = _FlowLayout(smoothing)
-        smoothing_layout.addWidget(QLabel("Smoothing"))
+        smoothing, smoothing_row = _settings_group(
+            "graphSmoothingControls", "Smoothing"
+        )
         self.smoothing_combo = QComboBox()
         self.smoothing_combo.setObjectName("graphSmoothingCombo")
         self.smoothing_combo.addItem("Off", "off")
         self.smoothing_combo.addItem("Moving Average", "moving_average")
         self.smoothing_combo.addItem("EMA", "ema")
-        smoothing_layout.addWidget(self.smoothing_combo)
+        _compact_graph_combo(self.smoothing_combo, 12)
+        smoothing_row.addWidget(self.smoothing_combo)
         self.moving_average_label = QLabel("Window (samples)")
-        smoothing_layout.addWidget(self.moving_average_label)
+        self.moving_average_label.setObjectName("graphMovingAverageLabel")
+        smoothing_row.addWidget(self.moving_average_label)
         self.moving_average_spin = QSpinBox()
         self.moving_average_spin.setObjectName("graphMovingAverageWindow")
         self.moving_average_spin.setRange(2, 100)
         self.moving_average_spin.setValue(5)
-        smoothing_layout.addWidget(self.moving_average_spin)
+        smoothing_row.addWidget(self.moving_average_spin)
         self.ema_alpha_label = QLabel("Alpha")
-        smoothing_layout.addWidget(self.ema_alpha_label)
+        self.ema_alpha_label.setObjectName("graphEmaAlphaLabel")
+        smoothing_row.addWidget(self.ema_alpha_label)
         self.ema_alpha_spin = QDoubleSpinBox()
         self.ema_alpha_spin.setObjectName("graphEmaAlpha")
         self.ema_alpha_spin.setRange(0.01, 1.0)
         self.ema_alpha_spin.setSingleStep(0.05)
         self.ema_alpha_spin.setDecimals(2)
         self.ema_alpha_spin.setValue(0.2)
-        smoothing_layout.addWidget(self.ema_alpha_spin)
-        layout.addWidget(smoothing)
+        smoothing_row.addWidget(self.ema_alpha_spin)
+        settings_layout.addWidget(smoothing)
+        layout.addWidget(settings)
         self._update_processing_control_state()
 
         self.elapsed_time_axis = ElapsedTimeAxis()
@@ -297,27 +353,40 @@ class GraphsWidget(QWidget):
         self._cursor_line: pg.InfiniteLine | None = None
         layout.addWidget(self.plot_widget, 1)
 
+        self.cursor_panel = QFrame()
+        self.cursor_panel.setObjectName("graphCursorPanel")
+        cursor_panel_layout = QVBoxLayout(self.cursor_panel)
+        cursor_panel_layout.setContentsMargins(12, 10, 12, 10)
+        cursor_panel_layout.setSpacing(6)
         self.cursor_heading = QLabel("Cursor Values")
         self.cursor_heading.setObjectName("graphCursorHeading")
-        layout.addWidget(self.cursor_heading)
+        cursor_panel_layout.addWidget(self.cursor_heading)
         self.cursor_time_label = QLabel("Cursor: —")
         self.cursor_time_label.setObjectName("graphCursorTimeLabel")
-        layout.addWidget(self.cursor_time_label)
+        cursor_panel_layout.addWidget(self.cursor_time_label)
         self.cursor_table = GraphCursorTable()
-        layout.addWidget(self.cursor_table)
+        cursor_panel_layout.addWidget(self.cursor_table)
         self.cursor_empty_label = QLabel("Select a channel and move over the graph.")
         self.cursor_empty_label.setObjectName("graphCursorEmptyLabel")
         self.cursor_empty_label.setWordWrap(True)
-        layout.addWidget(self.cursor_empty_label)
+        cursor_panel_layout.addWidget(self.cursor_empty_label)
+        layout.addWidget(self.cursor_panel)
+
+        self.statistics_panel = QFrame()
+        self.statistics_panel.setObjectName("graphStatisticsPanel")
+        statistics_panel_layout = QVBoxLayout(self.statistics_panel)
+        statistics_panel_layout.setContentsMargins(12, 10, 12, 10)
+        statistics_panel_layout.setSpacing(6)
         self.statistics_heading = QLabel("Statistics")
         self.statistics_heading.setObjectName("graphStatisticsHeading")
-        layout.addWidget(self.statistics_heading)
+        statistics_panel_layout.addWidget(self.statistics_heading)
         self.statistics_table = GraphStatisticsTable()
-        layout.addWidget(self.statistics_table)
+        statistics_panel_layout.addWidget(self.statistics_table)
         self.statistics_empty_label = QLabel("Select a channel to view statistics.")
         self.statistics_empty_label.setObjectName("graphStatisticsEmptyLabel")
         self.statistics_empty_label.setWordWrap(True)
-        layout.addWidget(self.statistics_empty_label)
+        statistics_panel_layout.addWidget(self.statistics_empty_label)
+        layout.addWidget(self.statistics_panel)
         self.page_scroll.setWidget(self.page_content)
         outer_layout.addWidget(self.page_scroll)
         self.apply_theme(DARK_GRAPH_PALETTE)
@@ -583,11 +652,7 @@ class GraphsWidget(QWidget):
 
     def _set_channel_selected(self, name: str, selected: bool) -> None:
         if selected:
-            color = pg.intColor(
-                list(self._selectors).index(name),
-                hues=12,
-                minValue=180,
-            )
+            color = series_color_for_channel(name, tuple(self._selectors))
             self._series[name] = self.plot_widget.plot(
                 name=self._metadata.get(name).display_name,
                 pen=pg.mkPen(color, width=2),
@@ -649,6 +714,8 @@ class GraphsWidget(QWidget):
         interpolation_enabled = self.interpolation_combo.currentData() != "off"
         self.density_combo.setEnabled(interpolation_enabled)
         self.max_gap_combo.setEnabled(interpolation_enabled)
+        self.density_label.setEnabled(interpolation_enabled)
+        self.max_gap_label.setEnabled(interpolation_enabled)
         smoothing = self.smoothing_combo.currentData()
         moving_average = smoothing == "moving_average"
         ema = smoothing == "ema"

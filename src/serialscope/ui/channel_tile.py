@@ -21,6 +21,16 @@ from serialscope.data import AlarmState, ChannelPresentation
 SPARKLINE_MAX_SAMPLES = 48
 
 
+def mark_tile_display_widget(widget: QWidget) -> None:
+    """Forward mouse input through decorative tile content to the parent tile.
+
+    Interactive child controls should skip this so they keep receiving clicks.
+    """
+    widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    widget.setCursor(Qt.CursorShape.OpenHandCursor)
+
+
 def format_dashboard_value(value: int | float) -> str:
     """Format a numeric measurement compactly without guessing units."""
     if isinstance(value, int):
@@ -138,17 +148,11 @@ class ChannelTile(QFrame):
 
         self.name_label = ElidedLabel(channel_name)
         self.name_label.setObjectName("dashboardTileName")
-        self.name_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
         layout.addWidget(self.name_label)
 
         self.value_label = QLabel("—")
         self.value_label.setObjectName("dashboardTileValue")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.value_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
         layout.addWidget(self.value_label, 1)
 
         self.unit_label = QLabel("")
@@ -169,6 +173,16 @@ class ChannelTile(QFrame):
         self.sparkline = SparklineWidget()
         layout.addWidget(self.sparkline)
 
+        for child in (
+            self.name_label,
+            self.value_label,
+            self.unit_label,
+            self.status_label,
+            self.source_label,
+            self.sparkline,
+        ):
+            mark_tile_display_widget(child)
+
     def set_source_name(self, source_name: str) -> None:
         self.source_label.setText(source_name)
 
@@ -180,6 +194,9 @@ class ChannelTile(QFrame):
     def set_sparkline_samples(self, values: tuple[int | float, ...]) -> None:
         """Replace the visible trend without changing the current value label."""
         self.sparkline.set_samples(values)
+
+    def set_sparkline_color(self, color: QColor | str) -> None:
+        self.sparkline.setLineColor(QColor(color))
 
     def set_presentation(self, presentation: ChannelPresentation) -> None:
         self.name_label.setText(presentation.display_name)

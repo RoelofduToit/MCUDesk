@@ -1,10 +1,12 @@
 """Large tabular presentation of detected structured channels."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QLabel,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -14,6 +16,27 @@ from PySide6.QtWidgets import (
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
 from serialscope.data import ChannelKey, ChannelMetadataRegistry, evaluate_alarm
+from serialscope.ui.status_badge import (
+    apply_status_row_height,
+    make_status_badge,
+    status_column_width,
+    status_presentation,
+    table_value_font,
+)
+
+_VALUE_COLUMN_WIDTH = 120
+_UNIT_COLUMN_WIDTH = 88
+
+
+def _status_badge(text: str, style_state: str, kind: str) -> QWidget:
+    cell, _badge = make_status_badge(
+        text,
+        style_state,
+        kind,
+        object_name="channelDataStatusBadge",
+        cell_name="channelDataStatusCell",
+    )
+    return cell
 
 
 class DataWidget(QWidget):
@@ -24,6 +47,7 @@ class DataWidget(QWidget):
         self.setObjectName("dataWidget")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(0)
 
         self.empty_label = QLabel("No structured channels detected.")
         self.empty_label.setObjectName("dataEmptyLabel")
@@ -33,25 +57,38 @@ class DataWidget(QWidget):
         self.table = QTableWidget(0, 5)
         self.table.setObjectName("channelDataTable")
         self.table.setHorizontalHeaderLabels(["Channel", "Value", "Unit", "Status", "Source"])
-        self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
+        self.table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        self.table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
+        self._syncing_columns = False
+        header = self.table.horizontalHeader()
+        header.setHighlightSections(False)
+        header.setStretchLastSection(False)
+        header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        self.table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.table.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.ResizeToContents
-        )
+        header.setMinimumSectionSize(48)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        self._status_min_width = 0
         self.table.verticalHeader().hide()
+        apply_status_row_height(self.table)
+        self.table.installEventFilter(self)
+        self.table.horizontalHeader().installEventFilter(self)
+        self.table.viewport().installEventFilter(self)
+        self._sync_column_widths()
+        self.table.setShowGrid(False)
+        self.table.setWordWrap(False)
+        self.table.setMouseTracking(True)
+        self.table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.hide()
         layout.addWidget(self.table, 1)
 
@@ -59,11 +96,16 @@ class DataWidget(QWidget):
         self._metadata = ChannelMetadataRegistry()
         self._latest_values: dict[str, int | float] = {}
         self._source_names: dict[str, str] = {}
+        self._syncing_columns = False
         self.set_source_count(1)
 
     def set_source_count(self, count: int) -> None:
         """Show source identity only when it disambiguates multiple devices."""
-        self.table.setColumnHidden(4, count < 2)
+        hidden = count < 2
+        self.table.setColumnHidden(4, hidden)
+        if hidden:
+            self.table.setColumnWidth(4, 0)
+        self._sync_column_widths()
 
     def remove_source(self, source_id: str) -> None:
         prefix = f"{source_id}\x1f"
@@ -144,15 +186,63 @@ class DataWidget(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
             self.table.setItem(row, 0, QTableWidgetItem(name))
-            self.table.setItem(row, 1, QTableWidgetItem("—"))
-            self.table.setItem(row, 2, QTableWidgetItem(""))
-            self.table.setItem(row, 3, QTableWidgetItem("UNKNOWN"))
+            self.table.setItem(row, 1, self._value_item("—"))
+            unit_item = QTableWidgetItem("")
+            unit_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+            )
+            self.table.setItem(row, 2, unit_item)
+            status_item = QTableWidgetItem("UNKNOWN")
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            status_item.setData(Qt.ItemDataRole.UserRole, "unknown")
+            self.table.setItem(row, 3, status_item)
+            self.table.setCellWidget(
+                row, 3, _status_badge("UNKNOWN", "unknown", "UNKNOWN")
+            )
             self.table.setItem(row, 4, QTableWidgetItem(self._source_names.get(name, "")))
             self._rows[name] = row
         self.set_channel_metadata(self._metadata)
+        apply_status_row_height(self.table)
         if self._rows:
             self.empty_label.hide()
             self.table.show()
+
+    def _value_item(self, text: str) -> QTableWidgetItem:
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        item.setFont(table_value_font())
+        return item
+
+    def eventFilter(self, watched: QWidget, event: QEvent) -> bool:  # noqa: N802
+        if event.type() in {QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest}:
+            if watched in {self.table, self.table.viewport(), self.table.horizontalHeader()}:
+                self._sync_column_widths()
+        return super().eventFilter(watched, event)
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._status_min_width = status_column_width(self.table)
+        self._sync_column_widths()
+        apply_status_row_height(self.table)
+
+    def _sync_column_widths(self) -> None:
+        """Keep Value/Unit/Status fully visible; Channel absorbs leftover width."""
+        if self._syncing_columns:
+            return
+        self._syncing_columns = True
+        try:
+            header = self.table.horizontalHeader()
+            if self._status_min_width <= 0:
+                self._status_min_width = status_column_width(self.table)
+            header.resizeSection(1, _VALUE_COLUMN_WIDTH)
+            header.resizeSection(2, _UNIT_COLUMN_WIDTH)
+            header.resizeSection(3, self._status_min_width)
+            if self.table.isColumnHidden(4):
+                header.resizeSection(4, 0)
+        finally:
+            self._syncing_columns = False
 
     def status_text(self, name: str) -> str | None:
         row = self._rows.get(name)
@@ -166,6 +256,8 @@ class DataWidget(QWidget):
             self._latest_values.get(source_name),
             self._metadata.get(source_name).alarms,
         )
+        label, style_state, kind = status_presentation(state)
         item = self.table.item(row, 3)
-        item.setText(state.value)
-        item.setData(Qt.ItemDataRole.UserRole, state.style_state)
+        item.setText(label)
+        item.setData(Qt.ItemDataRole.UserRole, style_state)
+        self.table.setCellWidget(row, 3, _status_badge(label, style_state, kind))

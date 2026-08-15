@@ -281,6 +281,7 @@ class MainWindow(QMainWindow):
         self._selected_theme = theme
         graph_palette = apply_application_theme(application, theme)
         self.graphs_widget.apply_theme(graph_palette)
+        self.dashboard_widget.apply_theme(theme)
 
     def _save_delimiter_preference(self) -> None:
         self._application_settings.set_structured_data_delimiter(

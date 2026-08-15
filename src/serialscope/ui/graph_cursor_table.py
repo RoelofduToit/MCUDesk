@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QWheelEvent
+from PySide6.QtGui import QResizeEvent, QShowEvent, QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -17,6 +17,23 @@ from PySide6.QtWidgets import (
 
 from serialscope.data import AlarmState
 from serialscope.ui.graph_display import format_cursor_time, format_graph_value
+from serialscope.ui.status_badge import (
+    apply_status_row_height,
+    apply_status_style,
+    make_status_badge,
+    status_column_width,
+    status_presentation,
+    table_value_font,
+)
+
+_VALUE_COLUMN_WIDTH = 112
+
+
+def _channel_swatch() -> QLabel:
+    swatch = QLabel()
+    swatch.setObjectName("graphCursorSwatch")
+    swatch.setFixedSize(8, 8)
+    return swatch
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,13 +63,22 @@ class GraphCursorTable(QTableWidget):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMouseTracking(True)
+        self.setWordWrap(False)
         self.verticalHeader().hide()
-        self.verticalHeader().setDefaultSectionSize(26)
+        apply_status_row_height(self)
         header = self.horizontalHeader()
+        header.setHighlightSections(False)
         header.setStretchLastSection(False)
+        header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        header.setMinimumSectionSize(64)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, _VALUE_COLUMN_WIDTH)
+        header.resizeSection(2, status_column_width(self))
         self._source_names: tuple[str, ...] = ()
         self._channel_widgets: dict[str, QWidget] = {}
         self._channel_labels: dict[str, QLabel] = {}
@@ -71,9 +97,10 @@ class GraphCursorTable(QTableWidget):
         if source_names != self._source_names:
             self._rebuild(source_names)
 
-        for row_index, row in enumerate(rows):
+        for row in rows:
             self._set_row(row)
-            self.setRowHeight(row_index, self.verticalHeader().defaultSectionSize())
+        apply_status_row_height(self)
+        self._resize_to_rows()
 
     def clear_values(self) -> None:
         self._rebuild(())
@@ -130,11 +157,10 @@ class GraphCursorTable(QTableWidget):
             channel_widget = QWidget()
             channel_widget.setObjectName("graphCursorChannel")
             layout = QHBoxLayout(channel_widget)
-            layout.setContentsMargins(6, 0, 4, 0)
-            layout.setSpacing(6)
-            swatch = QLabel("●")
-            swatch.setObjectName("graphCursorSwatch")
-            layout.addWidget(swatch)
+            layout.setContentsMargins(10, 2, 8, 2)
+            layout.setSpacing(8)
+            swatch = _channel_swatch()
+            layout.addWidget(swatch, 0, Qt.AlignmentFlag.AlignVCenter)
             label = QLabel(source_name)
             label.setObjectName("graphCursorChannelLabel")
             layout.addWidget(label, 1)
@@ -145,19 +171,24 @@ class GraphCursorTable(QTableWidget):
             value_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             )
+            value_item.setFont(table_value_font())
             self.setItem(row, 1, value_item)
 
-            status_label = QLabel("—")
-            status_label.setObjectName("graphCursorStatus")
-            status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            status_label.setProperty("alarmState", "unknown")
-            self.setCellWidget(row, 2, status_label)
+            status_cell, status_label = make_status_badge(
+                "—",
+                "unknown",
+                "unknown",
+                object_name="graphCursorStatus",
+                cell_name="graphCursorStatusCell",
+            )
+            self.setCellWidget(row, 2, status_cell)
 
             self._channel_widgets[source_name] = channel_widget
             self._channel_labels[source_name] = label
             self._swatches[source_name] = swatch
             self._value_items[source_name] = value_item
             self._status_labels[source_name] = status_label
+        apply_status_row_height(self)
         self._resize_to_rows()
 
     def _set_row(self, row: GraphCursorRow) -> None:
@@ -168,7 +199,7 @@ class GraphCursorTable(QTableWidget):
         swatch = self._swatches[row.source_name]
         swatch.setProperty("graphColor", row.color)
         swatch.setStyleSheet(
-            f"color: {row.color}; background-color: transparent; border: none;"
+            f"background-color: {row.color}; border-radius: 4px; border: none;"
         )
 
         value_item = self._value_items[row.source_name]
@@ -177,19 +208,28 @@ class GraphCursorTable(QTableWidget):
         value_item.setText(value_text)
 
         status_label = self._status_labels[row.source_name]
-        status_text = row.status.value if row.status is not None else "—"
-        status_label.setText(status_text)
-        status_label.setProperty(
-            "alarmState",
-            row.status.style_state if row.status is not None else "unknown",
+        status_text, style_state, kind = status_presentation(
+            row.status,
+            row.status.value if row.status is not None else "—",
         )
-        status_label.style().unpolish(status_label)
-        status_label.style().polish(status_label)
+        status_label.setText(status_text)
+        apply_status_style(status_label, style_state, kind)
 
         tooltip = _measurement_tooltip(row, value_text, status_text)
         self._channel_widgets[row.source_name].setToolTip(tooltip)
         value_item.setToolTip(tooltip)
         status_label.setToolTip(tooltip)
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        apply_status_row_height(self)
+        self._resize_to_rows()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self.setColumnWidth(2, status_column_width(self))
+        if self.columnWidth(1) < _VALUE_COLUMN_WIDTH:
+            self.setColumnWidth(1, _VALUE_COLUMN_WIDTH)
 
     def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
         """Let the Graphs page scroll; this table never owns a vertical viewport."""

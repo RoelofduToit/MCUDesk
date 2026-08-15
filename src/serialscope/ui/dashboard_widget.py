@@ -28,6 +28,7 @@ from serialscope.data import (
 )
 from serialscope.ui.channel_tile import SPARKLINE_MAX_SAMPLES, ChannelTile
 from serialscope.replay import ReplaySession
+from serialscope.ui.channel_colors import sparkline_color_for_channel
 from serialscope.ui.channel_selector import ChannelSelector, ChannelToggle
 
 
@@ -59,6 +60,7 @@ class DashboardWidget(QWidget):
         self._source_names: dict[str, str] = {}
         self._show_source_labels = False
         self._drop_candidate: GridPosition | None = None
+        self._light_theme = False
         self._built = False
         self.setAcceptDrops(True)
         if not lazy:
@@ -173,7 +175,22 @@ class DashboardWidget(QWidget):
             self._source_names.pop(name, None)
         if self._built:
             self.empty_label.setVisible(not self._tiles)
+            self._apply_sparkline_colors()
             self._reflow(force=True)
+
+    def apply_theme(self, theme: str) -> None:
+        """Keep sparkline contrast aligned with the active tile background."""
+        self._light_theme = theme == "light"
+        self._apply_sparkline_colors()
+
+    def _apply_sparkline_colors(self) -> None:
+        names = tuple(self._available_names)
+        for name, tile in self._tiles.items():
+            tile.set_sparkline_color(
+                sparkline_color_for_channel(
+                    name, names, light_theme=self._light_theme
+                )
+            )
 
     def load_replay(self, session: ReplaySession) -> None:
         """Expose replay channels and their final recorded values."""
@@ -281,6 +298,8 @@ class DashboardWidget(QWidget):
             self._available_names.append(name)
             if self._built:
                 self._add_checkbox(name)
+        if self._tiles:
+            self._apply_sparkline_colors()
 
     def _add_checkbox(self, name: str) -> None:
         if name in self._items:
@@ -314,6 +333,7 @@ class DashboardWidget(QWidget):
                 self.layout_model.add(name)
                 tile.show()
                 tile.source_label.setVisible(self._show_source_labels)
+                self._apply_sparkline_colors()
         else:
             tile = self._tiles.pop(name, None)
             if tile is not None:

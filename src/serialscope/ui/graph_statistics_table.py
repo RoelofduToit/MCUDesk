@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QWheelEvent
+from PySide6.QtGui import QFont, QResizeEvent, QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -16,6 +16,23 @@ from PySide6.QtWidgets import (
 )
 
 from serialscope.ui.graph_display import format_graph_value
+
+_ROW_HEIGHT = 36
+_NUMERIC_COLUMN_MIN = 88
+
+
+def _numeric_font(*, emphasize: bool = False) -> QFont:
+    font = QFont()
+    font.setPointSizeF(10.5)
+    font.setWeight(QFont.Weight.Medium if emphasize else QFont.Weight.Normal)
+    return font
+
+
+def _channel_swatch() -> QLabel:
+    swatch = QLabel()
+    swatch.setObjectName("graphStatisticsSwatch")
+    swatch.setFixedSize(8, 8)
+    return swatch
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,13 +61,22 @@ class GraphStatisticsTable(QTableWidget):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMouseTracking(True)
+        self.setWordWrap(False)
         self.verticalHeader().hide()
-        self.verticalHeader().setDefaultSectionSize(26)
+        self.verticalHeader().setDefaultSectionSize(_ROW_HEIGHT)
+        self.verticalHeader().setMinimumSectionSize(32)
         header = self.horizontalHeader()
+        header.setHighlightSections(False)
         header.setStretchLastSection(False)
+        header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        header.setMinimumSectionSize(64)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for column in range(1, 4):
-            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
+            header.resizeSection(column, _NUMERIC_COLUMN_MIN)
         self._source_names: tuple[str, ...] = ()
         self._channel_labels: dict[str, QLabel] = {}
         self._swatches: dict[str, QLabel] = {}
@@ -119,11 +145,10 @@ class GraphStatisticsTable(QTableWidget):
             channel_widget = QWidget()
             channel_widget.setObjectName("graphStatisticsChannel")
             layout = QHBoxLayout(channel_widget)
-            layout.setContentsMargins(6, 0, 4, 0)
-            layout.setSpacing(6)
-            swatch = QLabel("●")
-            swatch.setObjectName("graphStatisticsSwatch")
-            layout.addWidget(swatch)
+            layout.setContentsMargins(10, 2, 8, 2)
+            layout.setSpacing(8)
+            swatch = _channel_swatch()
+            layout.addWidget(swatch, 0, Qt.AlignmentFlag.AlignVCenter)
             label = QLabel(source_name)
             label.setObjectName("graphStatisticsChannelLabel")
             layout.addWidget(label, 1)
@@ -137,9 +162,11 @@ class GraphStatisticsTable(QTableWidget):
                 item.setTextAlignment(
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                 )
+                item.setFont(_numeric_font(emphasize=column == 2))
                 self.setItem(row, column, item)
                 items.append(item)
             self._value_items[source_name] = tuple(items)
+        self._sync_numeric_column_widths()
         self._resize_to_rows()
 
     def _set_presentation(
@@ -156,12 +183,22 @@ class GraphStatisticsTable(QTableWidget):
         color_text = str(color)
         swatch.setProperty("graphColor", color_text)
         swatch.setStyleSheet(
-            f"color: {color_text}; background-color: transparent; border: none;"
+            f"background-color: {color_text}; border-radius: 4px; border: none;"
         )
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._sync_numeric_column_widths()
 
     def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
         """Let the Graphs page scroll; this table never owns a vertical viewport."""
         event.ignore()
+
+    def _sync_numeric_column_widths(self) -> None:
+        available = max(self.viewport().width(), 1)
+        numeric = max(_NUMERIC_COLUMN_MIN, min(128, available // 6))
+        for column in range(1, 4):
+            self.setColumnWidth(column, numeric)
 
     def _resize_to_rows(self) -> None:
         visible_rows = max(self.rowCount(), 1)

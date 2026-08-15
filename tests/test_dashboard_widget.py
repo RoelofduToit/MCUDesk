@@ -16,6 +16,7 @@ from serialscope.ui.channel_tile import (
 from serialscope.ui.channel_selector import ChannelToggle
 from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
 from serialscope.ui.dashboard_widget import DashboardWidget
+from serialscope.ui.graphs_widget import GraphsWidget
 from serialscope.data import AlarmLimits, ChannelKey, ChannelMetadataRegistry, GridPosition
 
 
@@ -275,6 +276,46 @@ def test_deselect_leaves_other_explicit_positions_unchanged() -> None:
     assert widget.tile_position("C") == GridPosition(3, 2)
     assert widget.tile_position("B") == GridPosition(0, 1)
     widget.close()
+    application.processEvents()
+
+
+def test_tile_display_layer_forwards_mouse_from_entire_surface() -> None:
+    application = QApplication.instance() or QApplication([])
+    tile = ChannelTile("TC1")
+    tile.setFixedSize(180, 180)
+    tile.show()
+    application.processEvents()
+
+    for child in (
+        tile.name_label,
+        tile.value_label,
+        tile.unit_label,
+        tile.status_label,
+        tile.source_label,
+        tile.sparkline,
+    ):
+        assert child.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+    assert tile.cursor().shape() == Qt.CursorShape.OpenHandCursor
+    from PySide6.QtTest import QTest
+
+    for child in (
+        tile.name_label,
+        tile.value_label,
+        tile.status_label,
+        tile.sparkline,
+    ):
+        tile._drag_start = None
+        local = child.geometry().center()
+        QTest.mousePress(tile, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, local)
+        assert tile._drag_start == local
+        QTest.mouseRelease(tile, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, local)
+        assert tile._drag_start is None
+
+    empty = QPoint(8, tile.height() - 8)
+    QTest.mousePress(tile, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, empty)
+    assert tile._drag_start == empty
+    tile.close()
     application.processEvents()
 
 
@@ -601,6 +642,57 @@ def test_sparkline_skips_non_finite_samples() -> None:
 @pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])
 def test_sparkline_theme_color_is_centralized(stylesheet: str) -> None:
     assert "QWidget#dashboardTileSparkline" in stylesheet
-    assert "qproperty-lineColor:" in stylesheet.split(
-        "QWidget#dashboardTileSparkline {", 1
-    )[1].split("}", 1)[0]
+    rule = stylesheet.split("QWidget#dashboardTileSparkline {", 1)[1].split("}", 1)[0]
+    assert "background-color: transparent" in rule
+    assert "qproperty-lineColor:" not in rule
+
+
+def test_tile_sparkline_matches_graph_series_color() -> None:
+    application = QApplication.instance() or QApplication([])
+    names = ("TC1", "RPM", "FLOW")
+    graphs = GraphsWidget()
+    dashboard = DashboardWidget()
+    graphs.update_channels(ChannelUpdate(names, (1, 2, 3)))
+    dashboard.update_channels(ChannelUpdate(names, (1, 2, 3)))
+    for name in names:
+        graphs.set_channel_selected(name, True)
+        dashboard.set_channel_selected(name, True)
+
+    tile_colors = []
+    for name in names:
+        graph_color = graphs._series[name].opts["pen"].color()
+        tile_color = dashboard._tiles[name].sparkline.lineColor
+        assert tile_color.hue() == graph_color.hue()
+        assert tile_color.name() == graph_color.name()
+        tile_colors.append(tile_color.name())
+    assert len(set(tile_colors)) == len(names)
+    graphs.close()
+    dashboard.close()
+    application.processEvents()
+
+
+def test_multi_source_tile_sparkline_matches_that_device_graph() -> None:
+    application = QApplication.instance() or QApplication([])
+    graphs = GraphsWidget()
+    dashboard = DashboardWidget()
+    graphs.update_channels(ChannelUpdate(("TEMP", "RPM"), (25.0, 1500)))
+    dashboard.update_source("pico", "Pico", ChannelUpdate(("TEMP", "RPM"), (25.0, 1500)))
+    dashboard.update_source("arduino", "Arduino", ChannelUpdate(("A",), (1.0,)))
+    graphs.set_channel_selected("TEMP", True)
+    graphs.set_channel_selected("RPM", True)
+    dashboard.set_channel_selected("pico\x1fTEMP", True)
+    dashboard.set_channel_selected("pico\x1fRPM", True)
+    dashboard.set_channel_selected("arduino\x1fA", True)
+
+    temp_color = graphs._series["TEMP"].opts["pen"].color()
+    rpm_color = graphs._series["RPM"].opts["pen"].color()
+    pico_temp = dashboard._tiles["pico\x1fTEMP"].sparkline.lineColor
+    pico_rpm = dashboard._tiles["pico\x1fRPM"].sparkline.lineColor
+    arduino_a = dashboard._tiles["arduino\x1fA"].sparkline.lineColor
+    assert pico_temp.name() == temp_color.name()
+    assert pico_rpm.name() == rpm_color.name()
+    assert pico_temp.name() != pico_rpm.name()
+    assert arduino_a.name() == temp_color.name()
+    graphs.close()
+    dashboard.close()
+    application.processEvents()

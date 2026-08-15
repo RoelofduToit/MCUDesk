@@ -5,14 +5,18 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QWheelEvent
-from PySide6.QtWidgets import QApplication, QSizePolicy
+from PySide6.QtWidgets import QApplication, QLabel, QSizePolicy, QWidget
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.ui.graphs_widget import GraphsWidget, visible_x_range
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
 from serialscope.ui.channel_selector import ChannelToggle
 from serialscope.ui.graph_display import format_cursor_time
-from serialscope.ui.theme import DARK_GRAPH_PALETTE, LIGHT_GRAPH_PALETTE
+from serialscope.ui.theme import (
+    DARK_GRAPH_PALETTE,
+    LIGHT_GRAPH_PALETTE,
+    apply_application_theme,
+)
 from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
 from serialscope.data import AlarmLimits, ChannelMetadataRegistry, EventMarker
 
@@ -320,6 +324,43 @@ def test_display_processing_controls_have_safe_defaults() -> None:
     assert widget.moving_average_spin.value() == 5
     assert widget.ema_alpha_spin.value() == pytest.approx(0.2)
     assert not widget.measured_points_checkbox.isChecked()
+    assert not widget.density_combo.isEnabled()
+    assert not widget.max_gap_combo.isEnabled()
+    assert not widget.density_label.isEnabled()
+    assert not widget.max_gap_label.isEnabled()
+    widget.close()
+    application.processEvents()
+
+
+def test_graph_settings_groups_stay_readable_at_narrow_and_wide_widths() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget()
+    panel = widget.findChild(QWidget, "graphSettingsPanel")
+    view = widget.findChild(QWidget, "graphControls")
+    interpolation = widget.findChild(QWidget, "graphProcessingControls")
+    smoothing = widget.findChild(QWidget, "graphSmoothingControls")
+    assert panel is not None
+    widget.resize(1100, 780)
+    widget.show()
+    application.processEvents()
+
+    for group in (view, interpolation, smoothing):
+        assert group.isVisibleTo(widget)
+        assert group.height() < 110
+        assert group.geometry().right() <= panel.width()
+
+    widget.resize(520, 780)
+    application.processEvents()
+    assert panel.height() >= view.height()
+    assert interpolation.geometry().top() >= view.geometry().top()
+    assert widget.pause_button.isVisibleTo(widget)
+    assert widget.time_window_combo.isVisibleTo(widget)
+    assert widget.interpolation_combo.isVisibleTo(widget)
+    assert widget.smoothing_combo.isVisibleTo(widget)
+    widget.interpolation_combo.setCurrentText("Linear")
+    assert widget.density_combo.isEnabled()
+    assert widget.max_gap_combo.isEnabled()
+    assert widget.density_label.isEnabled()
     widget.close()
     application.processEvents()
 
@@ -572,6 +613,13 @@ def test_statistics_table_expands_with_rows_and_does_not_scroll_internally() -> 
     )
     assert widget.statistics_table.verticalScrollBar().maximum() == 0
     assert widget.page_scroll.verticalScrollBar().maximum() > 0
+    min_width = widget.statistics_table.columnWidth(1)
+    assert min_width == widget.statistics_table.columnWidth(2)
+    assert min_width == widget.statistics_table.columnWidth(3)
+    assert min_width >= 88
+    widget.resize(700, 800)
+    application.processEvents()
+    assert widget.statistics_table.columnWidth(1) == widget.statistics_table.columnWidth(3)
     widget.close()
     application.processEvents()
 
@@ -611,11 +659,15 @@ def test_graph_page_scrolls_vertically_with_graph_before_detail_tables() -> None
     assert widget.page_scroll.verticalScrollBarPolicy() == (
         Qt.ScrollBarPolicy.ScrollBarAsNeeded
     )
-    assert layout.indexOf(widget.plot_widget) < layout.indexOf(widget.cursor_heading)
-    assert layout.indexOf(widget.cursor_heading) < layout.indexOf(widget.cursor_table)
-    assert layout.indexOf(widget.cursor_table) < layout.indexOf(widget.statistics_heading)
-    assert layout.indexOf(widget.statistics_heading) < layout.indexOf(
-        widget.statistics_table
+    assert layout.indexOf(widget.plot_widget) < layout.indexOf(widget.cursor_panel)
+    assert layout.indexOf(widget.cursor_panel) < layout.indexOf(widget.statistics_panel)
+    cursor_layout = widget.cursor_panel.layout()
+    statistics_layout = widget.statistics_panel.layout()
+    assert cursor_layout.indexOf(widget.cursor_heading) < cursor_layout.indexOf(
+        widget.cursor_table
+    )
+    assert statistics_layout.indexOf(widget.statistics_heading) < (
+        statistics_layout.indexOf(widget.statistics_table)
     )
     assert widget.plot_widget.minimumHeight() == 500
     assert widget.plot_widget.sizePolicy().verticalPolicy() == (
@@ -850,6 +902,9 @@ def test_cursor_table_displays_existing_alarm_states(
     widget._update_cursor_values(0.0)
 
     assert widget.cursor_table.status_text("A") == expected
+    badge = widget.cursor_table._status_labels["A"]
+    assert badge.objectName() == "graphCursorStatus"
+    assert badge.property("alarmKind") == expected
     widget.close()
     application.processEvents()
 
@@ -913,6 +968,33 @@ def test_cursor_table_expands_with_rows_and_does_not_scroll_internally() -> None
     assert widget.cursor_table.verticalScrollBar().maximum() == 0
     assert widget.cursor_table.horizontalScrollBar().maximum() == 0
     assert widget.page_scroll.verticalScrollBar().maximum() > 0
+    widget.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_cursor_table_status_badges_fit_vertically(theme: str) -> None:
+    application = QApplication.instance() or QApplication([])
+    apply_application_theme(application, theme)
+    names = ("A", "B", "C")
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(names, (1.0, 2.0, 3.0)))
+    for name in names:
+        widget.set_channel_selected(name, True)
+    widget._update_cursor_values(0.0)
+    widget.show()
+    application.processEvents()
+
+    table = widget.cursor_table
+    last = table.rowCount() - 1
+    for row in (0, last // 2, last):
+        cell = table.cellWidget(row, 2)
+        badge = cell.findChild(QLabel, "graphCursorStatus")
+        assert badge is not None
+        in_cell = badge.mapTo(cell, QPoint(0, 0))
+        assert in_cell.y() >= 1
+        assert in_cell.y() + badge.height() <= cell.height()
+        assert table.rowHeight(row) >= badge.height() + 8
     widget.close()
     application.processEvents()
 

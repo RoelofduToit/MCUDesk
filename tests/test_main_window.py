@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QPoint, QRect, QSettings, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -96,6 +96,46 @@ def test_connection_status_is_prominent_and_explicit_in_both_themes(
     assert window.connection_bar.status_label.text() == "CONNECTION ERROR"
     assert window.connection_bar.status_indicator.property("connectionState") == "error"
 
+    window.close()
+    application.processEvents()
+
+
+def test_connection_bar_does_not_clip_controls_at_normal_widths() -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(port_scanner=lambda: [])
+    bar = window.connection_bar
+    window.resize(960, 640)
+    window.show()
+    application.processEvents()
+
+    required = (
+        bar.status_label,
+        bar.connect_button,
+        bar.port_label,
+        bar.port_combo,
+        bar.profile_label,
+        bar.profile_combo,
+        bar.baud_label,
+        bar.baud_combo,
+        bar.refresh_button,
+    )
+    bounds = bar.rect()
+    for widget in required:
+        assert widget.isVisibleTo(bar)
+        geometry = QRect(widget.mapTo(bar, QPoint(0, 0)), widget.size())
+        assert bounds.contains(geometry)
+        assert geometry.width() > 8
+        assert geometry.height() > 8
+    assert bar.profile_status_label.isHidden()
+    assert bar.status_label.text() == "DISCONNECTED"
+    assert bar.connect_button.text() == "Connect"
+    assert "PORT" in bar.port_label.text()
+    window.resize(800, 600)
+    application.processEvents()
+    bounds = bar.rect()
+    for widget in required:
+        geometry = QRect(widget.mapTo(bar, QPoint(0, 0)), widget.size())
+        assert bounds.contains(geometry)
     window.close()
     application.processEvents()
 
@@ -967,7 +1007,7 @@ def test_raw_logging_writes_exact_rx_and_stops_without_disconnect(
     readers[0].bytes_received.emit(b"valid\n")
     readers[0].bytes_received.emit(b"\xff\x00binary")
 
-    assert window.side_panel.logging_status_label.text() == "Recording"
+    assert window.side_panel.logging_status_label.text() == "RECORDING"
     assert window.side_panel.logging_status_dot.property("recordingState") == "active"
     assert window.side_panel.logging_filename_label.text() == "Test run"
     assert window.side_panel.logged_bytes_label.text() == "Logged: 14 B"
