@@ -18,7 +18,7 @@ def test_package_metadata_uses_authoritative_runtime_version() -> None:
     assert 'dynamic = ["version"]' in configuration
     assert '\nversion = "' not in configuration
     assert 'version = {attr = "serialscope.__version__"}' in configuration
-    assert __version__ == "0.11.0"
+    assert __version__ == "0.11.1"
     assert '[project.gui-scripts]' in configuration
     assert 'serialscope = "serialscope.app:main"' in configuration
 
