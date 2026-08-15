@@ -29,6 +29,10 @@ from serialscope.data import (
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
 from serialscope.ui.elapsed_time_axis import ElapsedTimeAxis
+from serialscope.ui.graph_statistics_table import (
+    GraphStatisticsRow,
+    GraphStatisticsTable,
+)
 from serialscope.ui.channel_selector import ChannelSelector, ChannelToggle
 from serialscope.ui.theme import DARK_GRAPH_PALETTE, GraphPalette
 
@@ -193,6 +197,7 @@ class GraphsWidget(QWidget):
         self.plot_widget = pg.PlotWidget(
             axisItems={"bottom": self.elapsed_time_axis}
         )
+        self.plot_widget.plotItem.layout.setContentsMargins(0, 0, 24, 0)
         self.plot_widget.setObjectName("livePlot")
         self.plot_widget.setBackground("#0a1016")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.18)
@@ -205,10 +210,14 @@ class GraphsWidget(QWidget):
         self.cursor_readout.setObjectName("graphCursorReadout")
         self.cursor_readout.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.cursor_readout)
-        self.statistics_label = QLabel("Statistics: select a channel")
-        self.statistics_label.setObjectName("graphStatisticsLabel")
-        self.statistics_label.setWordWrap(True)
-        layout.addWidget(self.statistics_label)
+        self.statistics_heading = QLabel("Statistics")
+        self.statistics_heading.setObjectName("graphStatisticsHeading")
+        layout.addWidget(self.statistics_heading)
+        self.statistics_table = GraphStatisticsTable()
+        layout.addWidget(self.statistics_table)
+        self.statistics_empty_label = QLabel("Select a channel to view statistics.")
+        self.statistics_empty_label.setObjectName("graphStatisticsEmptyLabel")
+        layout.addWidget(self.statistics_empty_label)
         self.apply_theme(DARK_GRAPH_PALETTE)
         self._apply_x_range(0.0)
 
@@ -310,6 +319,11 @@ class GraphsWidget(QWidget):
                 presentation.display_name,
                 tooltip=f"Source: {source_name}",
             )
+            self.statistics_table.update_presentation(
+                source_name,
+                presentation.display_name,
+                presentation.unit,
+            )
             series = self._series.get(source_name)
             if series is not None:
                 series.opts["name"] = presentation.display_name
@@ -388,7 +402,9 @@ class GraphsWidget(QWidget):
             series.setData([], [])
         for series in self._measured_series.values():
             series.setData([], [])
-        self.statistics_label.setText("Statistics: no measured data")
+        self.statistics_table.clear_statistics()
+        self.statistics_empty_label.setText("No measured data in the visible range.")
+        self.statistics_empty_label.show()
         self._apply_x_range(0.0)
 
     def apply_theme(self, palette: GraphPalette) -> None:
@@ -428,7 +444,9 @@ class GraphsWidget(QWidget):
         if self._cursor_line is not None:
             self._cursor_line.hide()
         self.cursor_readout.setText("Move over the graph to inspect measured values.")
-        self.statistics_label.setText("Statistics: select a channel")
+        self.statistics_table.clear_statistics()
+        self.statistics_empty_label.setText("Select a channel to view statistics.")
+        self.statistics_empty_label.show()
         self._apply_x_range(0.0)
 
     def reset_zoom(self) -> None:
@@ -441,6 +459,7 @@ class GraphsWidget(QWidget):
         self.plot_widget.enableAutoRange(axis="y", enable=True)
 
     def _apply_x_range(self, latest_time: float) -> None:
+        self.elapsed_time_axis.set_time_window(self.time_window_seconds)
         lower, upper = visible_x_range(latest_time, self.time_window_seconds)
         self.plot_widget.setXRange(lower, upper, padding=0)
 
@@ -580,9 +599,23 @@ class GraphsWidget(QWidget):
             statistics = calculate_statistics(x_values, y_values, lower, upper)
             if statistics is not None:
                 presentation = self._metadata.get(name)
-                unit = f" {presentation.unit}" if presentation.unit else ""
+                pen = self._series[name].opts["pen"]
                 rows.append(
-                    f"{presentation.display_name}  Min {statistics.minimum:g}{unit}  "
-                    f"Max {statistics.maximum:g}{unit}  Avg {statistics.average:g}{unit}"
+                    GraphStatisticsRow(
+                        source_name=name,
+                        display_name=presentation.display_name,
+                        unit=presentation.unit,
+                        color=pen.color().name(),
+                        minimum=statistics.minimum,
+                        average=statistics.average,
+                        maximum=statistics.maximum,
+                    )
                 )
-        self.statistics_label.setText("   |   ".join(rows) if rows else "Statistics: no measured data")
+        self.statistics_table.set_statistics(tuple(rows))
+        self.statistics_empty_label.setVisible(not rows)
+        if not rows:
+            self.statistics_empty_label.setText(
+                "No measured data in the visible range."
+                if self._series
+                else "Select a channel to view statistics."
+            )

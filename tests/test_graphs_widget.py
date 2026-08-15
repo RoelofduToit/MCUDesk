@@ -214,6 +214,7 @@ def test_time_window_options_preserve_selection(label: str, seconds: float) -> N
     widget.time_window_combo.setCurrentText(label)
 
     assert widget.time_window_seconds == seconds
+    assert widget.elapsed_time_axis.window_seconds == seconds
     assert widget.selected_channels == ("TC1",)
     assert widget.plot_widget.viewRange()[0] == pytest.approx([0.0, seconds])
     widget.close()
@@ -258,6 +259,7 @@ def test_pause_freezes_series_while_history_continues_then_resume_catches_up() -
     widget.set_channel_selected("TC1", True)
     widget.toggle_pause()
     displayed_before_pause = widget._series["TC1"].getData()[1].tolist()
+    statistics_before_pause = widget.statistics_table.value_text("TC1", "avg")
     range_before_pause = widget.plot_widget.viewRange()[0]
 
     widget.update_channels(ChannelUpdate(("TC1",), (101.2,)))
@@ -267,12 +269,14 @@ def test_pause_freezes_series_while_history_continues_then_resume_catches_up() -
     assert widget.pause_button.text() == "Resume"
     assert widget.history.points("TC1")[1] == (100.4, 101.2)
     assert widget._series["TC1"].getData()[1].tolist() == displayed_before_pause
+    assert widget.statistics_table.value_text("TC1", "avg") == statistics_before_pause
     assert widget.plot_widget.viewRange()[0] == pytest.approx(range_before_pause)
 
     widget.toggle_pause()
     assert not widget.is_paused
     assert widget.pause_button.text() == "Pause"
     assert widget._series["TC1"].getData()[1].tolist() == [100.4, 101.2]
+    assert widget.statistics_table.value_text("TC1", "avg") == "100.80"
     assert widget.plot_widget.viewRange()[0] == pytest.approx([0.0, 60.0])
     widget.close()
     application.processEvents()
@@ -345,9 +349,10 @@ def test_cursor_and_statistics_use_measured_values() -> None:
     widget.interpolation_combo.setCurrentText("Linear")
 
     assert widget.inspect_at(3.0) == {"A": (2.0, 8)}
-    assert "Min 2" in widget.statistics_label.text()
-    assert "Max 8" in widget.statistics_label.text()
-    assert "Avg 5" in widget.statistics_label.text()
+    assert widget.statistics_table.source_names == ("A",)
+    assert widget.statistics_table.value_text("A", "min") == "2.00"
+    assert widget.statistics_table.value_text("A", "avg") == "5.00"
+    assert widget.statistics_table.value_text("A", "max") == "8.00"
     widget.close()
     application.processEvents()
 
@@ -432,6 +437,34 @@ def test_replay_processing_always_regenerates_from_recorded_measurements(tmp_pat
     application.processEvents()
 
 
+def test_replay_uses_the_same_structured_statistics_table(tmp_path) -> None:
+    import csv
+    import json
+    from serialscope.replay import load_replay_session
+
+    application = QApplication.instance() or QApplication([])
+    directory = tmp_path / "session"
+    directory.mkdir()
+    (directory / "session.json").write_text(
+        json.dumps({"structured_data_delimiter": ","}), encoding="utf-8"
+    )
+    with (directory / "data.csv").open("w", encoding="utf-8", newline="") as stream:
+        csv.writer(stream).writerows(
+            [["elapsed_s", "A"], ["0", "1.25"], ["60", "2.5"], ["120", "3.75"]]
+        )
+    widget = GraphsWidget()
+    widget.load_replay(load_replay_session(directory))
+    widget.time_window_combo.setCurrentText("5 min")
+    widget.set_channel_selected("A", True)
+
+    assert widget.statistics_table.source_names == ("A",)
+    assert widget.statistics_table.value_text("A", "min") == "1.25"
+    assert widget.statistics_table.value_text("A", "avg") == "2.50"
+    assert widget.statistics_table.value_text("A", "max") == "3.75"
+    widget.close()
+    application.processEvents()
+
+
 def test_graph_inspection_elements_remain_functional_in_both_themes() -> None:
     application = QApplication.instance() or QApplication([])
     widget = GraphsWidget()
@@ -443,6 +476,8 @@ def test_graph_inspection_elements_remain_functional_in_both_themes() -> None:
         assert widget.selected_channels == ("A",)
         assert widget.inspect_at(0.0) == {"A": (0.0, 1)}
         assert widget.cursor_line.pen.color().name() == palette.cursor
+        assert widget.statistics_table.source_names == ("A",)
+        assert widget.statistics_table.value_text("A", "avg") == "1.00"
 
     widget.close()
     application.processEvents()
@@ -471,7 +506,71 @@ def test_alias_and_unit_update_legend_cursor_statistics_without_reset() -> None:
     assert presentation.display_name == "Reactor Temperature"
     assert nearest == (1.0, 104.6)
     assert "Reactor Temperature: 104.6 °C" in widget.cursor_text_at(1.1)
-    assert "Reactor Temperature" in widget.statistics_label.text()
-    assert "°C" in widget.statistics_label.text()
+    assert widget.statistics_table.channel_text("TC1") == "Reactor Temperature (°C)"
+    assert widget.statistics_table.value_text("TC1", "min") == "98.40"
+    assert widget.statistics_table.value_text("TC1", "avg") == "101.20"
+    assert widget.statistics_table.value_text("TC1", "max") == "104.60"
+    widget.close()
+    application.processEvents()
+
+
+def test_statistics_table_contains_only_selected_channels_and_line_colors() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(("A", "B"), (1.234, 99.0)))
+    widget.set_channel_selected("A", True)
+
+    assert widget.statistics_table.source_names == ("A",)
+    assert widget.statistics_table.value_text("A", "min") == "1.23"
+    assert widget.statistics_table.value_text("B", "min") is None
+    assert widget.statistics_table.swatch_color("A") == widget._series[
+        "A"
+    ].opts["pen"].color().name()
+    assert widget.statistics_table.horizontalScrollBarPolicy() == (
+        Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    widget.close()
+    application.processEvents()
+
+
+def test_statistics_table_is_bounded_and_scrolls_for_many_channels() -> None:
+    application = QApplication.instance() or QApplication([])
+    names = tuple(f"Channel {index}" for index in range(1, 10))
+    widget = GraphsWidget(clock=lambda: 10.0)
+    widget.update_channels(ChannelUpdate(names, tuple(range(1, 10))))
+    for name in names:
+        widget.set_channel_selected(name, True)
+    widget.resize(900, 800)
+    widget.show()
+    application.processEvents()
+
+    expected_maximum_height = (
+        max(widget.statistics_table.horizontalHeader().sizeHint().height(), 28)
+        + 6 * widget.statistics_table.verticalHeader().defaultSectionSize()
+        + widget.statistics_table.frameWidth() * 2
+    )
+    assert widget.statistics_table.rowCount() == 9
+    assert widget.statistics_table.height() == expected_maximum_height
+    assert widget.statistics_table.verticalScrollBar().maximum() > 0
+    widget.close()
+    application.processEvents()
+
+
+def test_multi_source_statistics_remain_isolated() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = MultiSourceGraphsWidget()
+    pico = widget.ensure_source("pico", "Pico")
+    arduino = widget.ensure_source("arduino", "Arduino")
+    pico.update_channels(ChannelUpdate(("TEMP",), (25.0,)))
+    arduino.update_channels(ChannelUpdate(("RPM",), (1_500,)))
+    pico.set_channel_selected("TEMP", True)
+    arduino.set_channel_selected("RPM", True)
+
+    assert pico.statistics_table.source_names == ("TEMP",)
+    assert pico.statistics_table.value_text("TEMP", "avg") == "25.00"
+    assert pico.statistics_table.value_text("RPM", "avg") is None
+    assert arduino.statistics_table.source_names == ("RPM",)
+    assert arduino.statistics_table.value_text("RPM", "avg") == "1500.00"
+    assert arduino.statistics_table.value_text("TEMP", "avg") is None
     widget.close()
     application.processEvents()

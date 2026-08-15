@@ -108,12 +108,20 @@ QLabel#replayModeBanner {
     padding: 7px 10px;
     font-weight: 600;
 }
-QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
+QLabel#graphCursorReadout {
     color: #aebdca;
     background-color: #182630;
     border: 1px solid #293f4d;
     border-radius: 4px;
     padding: 6px 9px;
+}
+QLabel#graphStatisticsHeading {
+    color: #aebdca;
+    font-weight: 600;
+}
+QLabel#graphStatisticsEmptyLabel {
+    color: #718399;
+    padding: 2px 6px;
 }
 QScrollArea#channelSelector {
     color: #c6d2dc;
@@ -307,7 +315,7 @@ QPlainTextEdit#terminalOutput {
     padding: 14px;
     selection-background-color: #255b72;
 }
-QTableWidget#channelDataTable {
+QTableWidget#channelDataTable, QTableWidget#graphStatisticsTable {
     color: #d9e2ec;
     background-color: #0e151d;
     alternate-background-color: #111b25;
@@ -315,7 +323,11 @@ QTableWidget#channelDataTable {
     gridline-color: #263442;
     selection-background-color: #255b72;
 }
-QTableWidget#channelDataTable QHeaderView::section {
+QWidget#graphStatisticsChannel,
+QLabel#graphStatisticsChannelLabel,
+QLabel#graphStatisticsSwatch { background-color: transparent; }
+QTableWidget#channelDataTable QHeaderView::section,
+QTableWidget#graphStatisticsTable QHeaderView::section {
     color: #aebdca;
     background-color: #18232e;
     border: 0;
@@ -460,12 +472,20 @@ QLabel#replayModeBanner {
     padding: 7px 10px;
     font-weight: 600;
 }
-QLabel#graphCursorReadout, QLabel#graphStatisticsLabel {
+QLabel#graphCursorReadout {
     color: #374f5e;
     background-color: #e4edf2;
     border: 1px solid #c1d2da;
     border-radius: 4px;
     padding: 6px 9px;
+}
+QLabel#graphStatisticsHeading {
+    color: #374f5e;
+    font-weight: 600;
+}
+QLabel#graphStatisticsEmptyLabel {
+    color: #718399;
+    padding: 2px 6px;
 }
 QScrollArea#channelSelector {
     color: #374b5b;
@@ -622,7 +642,7 @@ QPlainTextEdit#terminalOutput {
     padding: 14px;
     selection-background-color: #9bc9dd;
 }
-QTableWidget#channelDataTable {
+QTableWidget#channelDataTable, QTableWidget#graphStatisticsTable {
     color: #263442;
     background-color: #ffffff;
     alternate-background-color: #f1f4f6;
@@ -630,7 +650,11 @@ QTableWidget#channelDataTable {
     gridline-color: #d7dee4;
     selection-background-color: #9bc9dd;
 }
-QTableWidget#channelDataTable QHeaderView::section {
+QWidget#graphStatisticsChannel,
+QLabel#graphStatisticsChannelLabel,
+QLabel#graphStatisticsSwatch { background-color: transparent; }
+QTableWidget#channelDataTable QHeaderView::section,
+QTableWidget#graphStatisticsTable QHeaderView::section {
     color: #374b5b;
     background-color: #e4e9ed;
     border: 0;
