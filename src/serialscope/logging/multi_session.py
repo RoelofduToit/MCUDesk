@@ -20,6 +20,10 @@ from serialscope.logging.structured_csv_logger import (
     StructuredCsvLoggerError,
 )
 from serialscope.parsing import ChannelUpdate
+from serialscope.logging.recovery import (
+    remove_in_progress_marker,
+    write_in_progress_marker,
+)
 from serialscope.storage import atomic_write_json
 
 
@@ -203,6 +207,7 @@ class MultiSourceRecordingSession:
         self._events = []
         self._metadata = {
             "serialscope_version": __version__,
+            "session_id": uuid.uuid4().hex,
             "session_name": session_name,
             "recording_start_local": started_local.isoformat(),
             "recording_start_utc": started_local.astimezone(timezone.utc).isoformat(),
@@ -221,6 +226,7 @@ class MultiSourceRecordingSession:
         }
         try:
             self._write_metadata()
+            self._write_in_progress_marker()
         except RecordingSessionError:
             for item in self._sources.values():
                 try:
@@ -254,6 +260,22 @@ class MultiSourceRecordingSession:
             raise RecordingSessionError(
                 f"Logging failed for {item.config.display_name}: {error}"
             ) from error
+
+    def flush(self) -> None:
+        """Flush every active source log so a crash loses at most one timer interval."""
+        if not self.is_recording:
+            return
+        for item in self._sources.values():
+            if not item.active:
+                continue
+            try:
+                item.raw.flush()
+                item.structured.flush()
+            except (RawLoggerError, StructuredCsvLoggerError) as error:
+                raise RecordingSessionError(
+                    f"Logging failed for {item.config.display_name}: {error}"
+                ) from error
+        self._checkpoint_metadata()
 
     def write_structured(self, source_id: str, update: ChannelUpdate) -> None:
         try:
@@ -332,6 +354,8 @@ class MultiSourceRecordingSession:
         except RecordingSessionError as error:
             errors.append(error)
         finally:
+            if self._directory is not None:
+                remove_in_progress_marker(self._directory)
             self._clear_active_state()
         if errors:
             raise RecordingSessionError(str(errors[0])) from errors[0]
@@ -417,6 +441,32 @@ class MultiSourceRecordingSession:
             except FileExistsError:
                 candidate = parent / f"{base}_{suffix}"
                 suffix += 1
+
+    def _checkpoint_metadata(self) -> None:
+        if not self.is_recording:
+            return
+        self._metadata["last_checkpoint_utc"] = (
+            self._now().astimezone(timezone.utc).isoformat()
+        )
+        self._metadata["devices"] = [
+            self._device_metadata(item) for item in self._sources.values()
+        ]
+        self._write_metadata()
+        self._write_in_progress_marker()
+
+    def _write_in_progress_marker(self) -> None:
+        if self._directory is None:
+            return
+        write_in_progress_marker(
+            self._directory,
+            {
+                "schema": 1,
+                "session_id": self._metadata.get("session_id", ""),
+                "session_name": self._session_name,
+                "started_local": self._metadata.get("recording_start_local", ""),
+                "last_checkpoint_utc": self._metadata.get("last_checkpoint_utc", ""),
+            },
+        )
 
     def _write_metadata(self) -> None:
         if self._directory is None:

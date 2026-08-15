@@ -1,6 +1,8 @@
 """Validated persistent application preferences."""
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from PySide6.QtCore import QSettings
 
@@ -70,3 +72,37 @@ class ApplicationSettings:
         value = checked_at.astimezone(timezone.utc).isoformat()
         self._backend.setValue("updates/last_automatic_check_utc", value)
         self._backend.sync()
+
+    def in_progress_sessions(self) -> tuple[str, ...]:
+        value = self._backend.value("recording/in_progress_sessions", "")
+        paths = self._parse_path_list(value)
+        return tuple(dict.fromkeys(paths))
+
+    def add_in_progress_session(self, directory: Path) -> None:
+        path = str(Path(directory))
+        current = [item for item in self.in_progress_sessions() if item != path]
+        current.append(path)
+        self._store_path_list(current)
+
+    def remove_in_progress_session(self, directory: Path) -> None:
+        path = str(Path(directory))
+        current = [item for item in self.in_progress_sessions() if item != path]
+        self._store_path_list(current)
+
+    def _store_path_list(self, paths: list[str]) -> None:
+        self._backend.setValue("recording/in_progress_sessions", json.dumps(paths))
+        self._backend.sync()
+
+    @staticmethod
+    def _parse_path_list(value: object) -> list[str]:
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        if not isinstance(value, str) or not value.strip():
+            return []
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return [value]
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed if str(item).strip()]
+        return [str(parsed)] if parsed else []

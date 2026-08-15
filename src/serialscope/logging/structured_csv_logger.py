@@ -107,6 +107,18 @@ class StructuredCsvLogger:
             ) from error
         self._row_count += 1
 
+    def flush(self) -> None:
+        """Push buffered CSV rows to the OS without closing the file."""
+        if self._file is None:
+            return
+        try:
+            self._file.flush()
+        except (OSError, ValueError) as error:
+            self._close_after_failure()
+            raise StructuredCsvLoggerError(
+                f"Could not flush structured data file: {error}"
+            ) from error
+
     def stop(self) -> None:
         """Flush, close, and release the structured CSV file."""
         if self._file is None:

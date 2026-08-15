@@ -30,6 +30,9 @@ class SerialReaderWorker(QObject):
         except SerialConnectionError as error:
             if not self._stop_requested.is_set():
                 self.failed.emit(str(error))
+        except Exception as error:
+            if not self._stop_requested.is_set():
+                self.failed.emit(f"Serial reader failed: {error}")
         finally:
             self.finished.emit()
 
@@ -64,8 +67,8 @@ class SerialReader(QObject):
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop the reader and wait for its thread to finish."""
+        """Stop the reader and wait briefly for its thread to finish."""
         self._worker.request_stop()
         if self._thread.isRunning():
             self._thread.quit()
-            self._thread.wait()
+            self._thread.wait(3_000)

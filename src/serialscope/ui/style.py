@@ -315,9 +315,15 @@ QFrame#connectionStatusIndicator[connectionState="connected"] {
     background-color: #16251e;
     border-color: #315f48;
 }
-QFrame#connectionStatusIndicator[connectionState="error"] {
+QFrame#connectionStatusIndicator[connectionState="error"],
+QFrame#connectionStatusIndicator[connectionState="lost"],
+QFrame#connectionStatusIndicator[connectionState="reconnecting"] {
     background-color: #2b1c20;
     border-color: #7a454d;
+}
+QFrame#connectionStatusIndicator[connectionState="connecting"] {
+    background-color: #241f18;
+    border-color: #7a6a3a;
 }
 QLabel#connectionStatusDot {
     color: #bd6e76;
@@ -325,7 +331,10 @@ QLabel#connectionStatusDot {
     font-size: 10pt;
 }
 QLabel#connectionStatusDot[connectionState="connected"] { color: #43b97b; }
-QLabel#connectionStatusDot[connectionState="error"] { color: #dd6973; }
+QLabel#connectionStatusDot[connectionState="error"],
+QLabel#connectionStatusDot[connectionState="lost"],
+QLabel#connectionStatusDot[connectionState="reconnecting"] { color: #dd6973; }
+QLabel#connectionStatusDot[connectionState="connecting"] { color: #d4c07a; }
 QLabel#connectionStatusLabel {
     color: #d3a1a6;
     background-color: transparent;
@@ -334,7 +343,10 @@ QLabel#connectionStatusLabel {
     letter-spacing: 0.4px;
 }
 QLabel#connectionStatusLabel[connectionState="connected"] { color: #9bd9b8; }
-QLabel#connectionStatusLabel[connectionState="error"] { color: #ee9aa1; }
+QLabel#connectionStatusLabel[connectionState="error"],
+QLabel#connectionStatusLabel[connectionState="lost"],
+QLabel#connectionStatusLabel[connectionState="reconnecting"] { color: #ee9aa1; }
+QLabel#connectionStatusLabel[connectionState="connecting"] { color: #e0d3a0; }
 QFrame#loggingStatusIndicator {
     min-height: 34px;
     background-color: #18232e;
@@ -1063,9 +1075,15 @@ QFrame#connectionStatusIndicator[connectionState="connected"] {
     background-color: #D9E8DF;
     border-color: #8FB39C;
 }
-QFrame#connectionStatusIndicator[connectionState="error"] {
+QFrame#connectionStatusIndicator[connectionState="error"],
+QFrame#connectionStatusIndicator[connectionState="lost"],
+QFrame#connectionStatusIndicator[connectionState="reconnecting"] {
     background-color: #EBD5D8;
     border-color: #C79298;
+}
+QFrame#connectionStatusIndicator[connectionState="connecting"] {
+    background-color: #EDE6D0;
+    border-color: #C4B27A;
 }
 QLabel#connectionStatusDot {
     color: #9A4E57;
@@ -1073,7 +1091,10 @@ QLabel#connectionStatusDot {
     font-size: 10pt;
 }
 QLabel#connectionStatusDot[connectionState="connected"] { color: #22724B; }
-QLabel#connectionStatusDot[connectionState="error"] { color: #B03A46; }
+QLabel#connectionStatusDot[connectionState="error"],
+QLabel#connectionStatusDot[connectionState="lost"],
+QLabel#connectionStatusDot[connectionState="reconnecting"] { color: #B03A46; }
+QLabel#connectionStatusDot[connectionState="connecting"] { color: #8A6E20; }
 QLabel#connectionStatusLabel {
     color: #7A4249;
     background-color: transparent;
@@ -1082,7 +1103,10 @@ QLabel#connectionStatusLabel {
     letter-spacing: 0.4px;
 }
 QLabel#connectionStatusLabel[connectionState="connected"] { color: #215F43; }
-QLabel#connectionStatusLabel[connectionState="error"] { color: #92323C; }
+QLabel#connectionStatusLabel[connectionState="error"],
+QLabel#connectionStatusLabel[connectionState="lost"],
+QLabel#connectionStatusLabel[connectionState="reconnecting"] { color: #92323C; }
+QLabel#connectionStatusLabel[connectionState="connecting"] { color: #6E5110; }
 QFrame#loggingStatusIndicator {
     min-height: 34px;
     background-color: #E4E9EE;

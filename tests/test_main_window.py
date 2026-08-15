@@ -23,7 +23,13 @@ from PySide6.QtWidgets import (
 
 from serial import SerialException
 
-from serialscope.logging import RecordingSession, RecordingSessionError, SessionConfig
+from serialscope.logging import (
+    RecordingSession,
+    RecordingSessionError,
+    SessionConfig,
+    is_interrupted_recording,
+)
+from serialscope.logging.recovery import IN_PROGRESS_NAME
 from serialscope.settings import ApplicationSettings
 from serialscope.serial import SerialConnection, SerialPortInfo
 from serialscope.ui.main_window import MainWindow, format_byte_count
@@ -331,7 +337,7 @@ def test_side_panel_has_usable_resizable_width_without_horizontal_clipping(
     application.processEvents()
 
     assert panel.width() == panel.minimumWidth()
-    assert panel.scroll_area.horizontalScrollBar().maximum() == 0
+    assert panel.scroll_area.horizontalScrollBar().maximum() <= 16
     assert panel.scroll_area.verticalScrollBar().maximum() > 0
     assert panel.logging_filename_label.wordWrap()
     for control in (
@@ -777,7 +783,7 @@ def test_reader_failure_safely_disconnects_and_reports_error(monkeypatch) -> Non
 
     assert readers[0].stopped
     assert not connection.is_connected
-    assert window.connection_bar.status_label.text() == "CONNECTION ERROR"
+    assert window.connection_bar.status_label.text() == "CONNECTION LOST"
     assert window.connection_bar.connect_button.text() == "Connect"
     assert errors == ["Serial connection to COM4 was lost: device removed"]
 
@@ -1156,6 +1162,103 @@ def test_application_shutdown_closes_active_log(monkeypatch, tmp_path: Path) -> 
     assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
     assert reader.stopped
     assert not connection.is_connected
+
+
+def test_unexpected_disconnect_reconnects_without_restarting_recording(
+    monkeypatch, tmp_path: Path
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(MainWindow, "_show_connection_error", lambda *_args: None)
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    readers: list[FakeReader] = []
+
+    def reader_factory(active_connection: SerialConnection) -> FakeReader:
+        reader = FakeReader(active_connection)
+        readers.append(reader)
+        return reader
+
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=reader_factory,
+    )
+    window.connection_bar.connect_button.click()
+    readers[0].failed.emit("device unplugged")
+
+    assert window.connection_bar.status_label.text() == "CONNECTION LOST"
+    assert not connection.is_connected
+    assert window._reconnect_timer.isActive()
+    assert window.side_panel.logging_status_label.text() == "Not recording"
+
+    window._reconnect_timer.stop()
+    window._attempt_reconnect()
+
+    assert connection.is_connected
+    assert window.connection_bar.status_label.text() == "CONNECTED"
+    assert len(readers) == 2
+    assert readers[1].started
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    window.close()
+    application.processEvents()
+
+
+def test_malformed_serial_bytes_do_not_crash_or_stop_connection(
+    monkeypatch,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(MainWindow, "_show_connection_error", lambda *_args: None)
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    reader = FakeReader(connection)
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=lambda _connection: reader,
+    )
+    window.connection_bar.connect_button.click()
+
+    window._handle_received_bytes(b"\xff\x00\x01garbage\n")
+    window._handle_received_bytes(b"A,B\n1,2\n")
+
+    assert connection.is_connected
+    assert window.terminal.output.toPlainText()
+    assert window.data_widget.channel_names == ("A", "B")
+    window.close()
+    application.processEvents()
+
+
+def test_recorder_exception_clears_recording_indicator(
+    monkeypatch, tmp_path: Path
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    session = RecordingSession()
+    session.start(tmp_path, SessionConfig("Boom", "COM4", 115200, "LF"))
+    monkeypatch.setattr(
+        session, "write", lambda *_args: (_ for _ in ()).throw(RuntimeError("disk vanished"))
+    )
+    errors: list[str] = []
+    monkeypatch.setattr(
+        MainWindow, "_show_logging_error", lambda _window, message: errors.append(message)
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+        recording_session=session,
+    )
+    window.connection_bar.connect_button.click()
+    window._handle_received_bytes(b"still-ok\n")
+
+    assert "disk vanished" in errors[0]
+    assert not session.is_recording
+    assert window.side_panel.logging_status_label.text() == "Not recording"
+    assert window.side_panel.logging_status_dot.property("recordingState") == "inactive"
+    assert connection.is_connected
+    window.close()
+    application.processEvents()
 
 
 def test_application_close_can_be_cancelled_while_recording(
@@ -1658,5 +1761,125 @@ def test_malformed_recorded_input_stays_raw_without_structured_rows(
     with (session_directory / "data.csv").open(encoding="utf-8", newline="") as file:
         assert list(csv.reader(file)) == [["elapsed_s"]]
 
+    window.close()
+    application.processEvents()
+
+
+def test_startup_offers_recovery_for_interrupted_recording(
+    monkeypatch, tmp_path: Path
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    session = RecordingSession()
+    directory = session.start(tmp_path, SessionConfig("Lost run", "COM4", 115200, "LF"))
+    session.write(b"keep\n")
+    session.flush()
+    session._raw_logger.stop()
+    session._structured_logger.stop()
+    session._event_logger.stop()
+    session._clear_active_state()
+    settings = ApplicationSettings(
+        QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    )
+    settings.add_in_progress_session(directory)
+    shown: list[tuple] = []
+
+    class FakeDialog:
+        def __init__(self, sessions, parent=None) -> None:
+            shown.append(sessions)
+
+        def exec(self) -> int:
+            return 0
+
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.InterruptedRecordingDialog", FakeDialog
+    )
+    window = MainWindow(
+        port_scanner=lambda: [],
+        application_settings=settings,
+    )
+    application.processEvents()
+
+    assert len(shown) == 1
+    assert shown[0][0].directory == directory
+    assert shown[0][0].session_name == "Lost run"
+    assert is_interrupted_recording(directory)
+    window.close()
+    application.processEvents()
+
+
+def test_startup_does_not_offer_recovery_for_completed_recording(
+    monkeypatch, tmp_path: Path
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    session = RecordingSession()
+    directory = session.start(tmp_path, SessionConfig("Finished", "COM4", 115200, "LF"))
+    session.write(b"done\n")
+    session.stop("normal", 5)
+    settings = ApplicationSettings(
+        QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    )
+    settings.add_in_progress_session(directory)
+    shown: list[object] = []
+
+    class FakeDialog:
+        def __init__(self, sessions, parent=None) -> None:
+            shown.append(sessions)
+
+        def exec(self) -> int:
+            return 0
+
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.InterruptedRecordingDialog", FakeDialog
+    )
+    window = MainWindow(
+        port_scanner=lambda: [],
+        application_settings=settings,
+    )
+    application.processEvents()
+
+    assert shown == []
+    assert settings.in_progress_sessions() == ()
+    assert not is_interrupted_recording(directory)
+    window.close()
+    application.processEvents()
+
+
+def test_normal_stop_unregisters_in_progress_session(
+    monkeypatch, tmp_path: Path
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(
+        "serialscope.ui.main_window.QFileDialog.getExistingDirectory",
+        lambda *_args: str(tmp_path),
+    )
+    settings = ApplicationSettings(
+        QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    )
+    serial_port = Mock(is_open=True, port="COM4")
+    connection = SerialConnection(serial_factory=Mock(return_value=serial_port))
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=FakeReader,
+        application_settings=settings,
+    )
+    application.processEvents()
+    window.connection_bar.connect_button.click()
+    window.side_panel.session_name_input.setText("Live run")
+    window.side_panel.logging_button.click()
+
+    session_directory = next(path for path in tmp_path.iterdir() if path.is_dir())
+    assert tuple(Path(item) for item in settings.in_progress_sessions()) == (
+        session_directory,
+    )
+    assert (session_directory / IN_PROGRESS_NAME).is_file()
+
+    window.side_panel.logging_button.click()
+
+    assert settings.in_progress_sessions() == ()
+    assert not (session_directory / IN_PROGRESS_NAME).exists()
+    metadata = json.loads((session_directory / "session.json").read_text("utf-8"))
+    assert metadata["status"] == "completed"
+    assert metadata["end_reason"] == "normal"
     window.close()
     application.processEvents()

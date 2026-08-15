@@ -63,6 +63,20 @@ def test_logger_write_failure_stops_and_closes(monkeypatch, tmp_path: Path) -> N
     log_file.close.assert_called_once_with()
 
 
+def test_logger_flush_failure_stops_recording(monkeypatch, tmp_path: Path) -> None:
+    log_file = Mock()
+    log_file.flush.side_effect = OSError("disk full")
+    monkeypatch.setattr(Path, "open", lambda *_args, **_kwargs: log_file)
+    logger = RawLogger()
+    logger.start(tmp_path / "raw.log")
+
+    with pytest.raises(RawLoggerError, match="disk full"):
+        logger.flush()
+
+    assert not logger.is_recording
+    log_file.close.assert_called()
+
+
 def test_unexpectedly_closed_file_is_handled(monkeypatch, tmp_path: Path) -> None:
     log_file = Mock()
     log_file.write.side_effect = ValueError("write to closed file")

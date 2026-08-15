@@ -16,6 +16,15 @@ from serialscope.logging.multi_session import (
     MultiSourceRecordingSession,
     RecordingSourceConfig,
 )
+from serialscope.logging.recovery import (
+    InterruptedRecording,
+    RecordingRecoveryError,
+    discard_interrupted_recording,
+    find_interrupted_recordings,
+    inspect_interrupted_recording,
+    is_interrupted_recording,
+    recover_interrupted_recording,
+)
 
 __all__ = [
     "RawLogger",
@@ -30,4 +39,11 @@ __all__ = [
     "sanitize_session_name",
     "MultiSourceRecordingSession",
     "RecordingSourceConfig",
+    "InterruptedRecording",
+    "RecordingRecoveryError",
+    "discard_interrupted_recording",
+    "find_interrupted_recordings",
+    "inspect_interrupted_recording",
+    "is_interrupted_recording",
+    "recover_interrupted_recording",
 ]

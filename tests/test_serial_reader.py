@@ -47,3 +47,15 @@ def test_reader_reports_serial_failure() -> None:
     worker.run()
 
     assert errors == ["Device disconnected"]
+
+
+def test_reader_reports_unexpected_exceptions_without_killing_silently() -> None:
+    connection = Mock()
+    connection.read.side_effect = RuntimeError("native adapter crashed")
+    worker = SerialReaderWorker(connection)
+    errors: list[str] = []
+    worker.failed.connect(errors.append)
+
+    worker.run()
+
+    assert errors == ["Serial reader failed: native adapter crashed"]

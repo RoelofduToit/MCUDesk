@@ -19,6 +19,10 @@ from serialscope.logging.structured_csv_logger import (
     StructuredCsvLoggerError,
 )
 from serialscope.parsing import ChannelUpdate
+from serialscope.logging.recovery import (
+    remove_in_progress_marker,
+    write_in_progress_marker,
+)
 from serialscope.storage import atomic_write_json
 
 
@@ -193,8 +197,10 @@ class RecordingSession:
         self._started_at = started_at
         self._started_monotonic = started_monotonic
         self._events = []
+        self._session_id = uuid.uuid4().hex
         self._metadata = {
             "serialscope_version": __version__,
+            "session_id": self._session_id,
             "session_name": config.session_name,
             "recording_start_local": started_at.isoformat(),
             "recording_start_utc": started_at.astimezone(timezone.utc).isoformat(),
@@ -230,6 +236,7 @@ class RecordingSession:
             }
         try:
             self._write_metadata()
+            self._write_in_progress_marker()
         except RecordingSessionError:
             try:
                 self._raw_logger.stop()
@@ -295,6 +302,17 @@ class RecordingSession:
         except StructuredCsvLoggerError as error:
             raise RecordingSessionError(str(error)) from error
 
+    def flush(self) -> None:
+        """Flush raw and structured logs so a crash loses at most one timer interval."""
+        if not self.is_recording:
+            return
+        try:
+            self._raw_logger.flush()
+            self._structured_logger.flush()
+            self._checkpoint_metadata()
+        except (RawLoggerError, StructuredCsvLoggerError) as error:
+            raise RecordingSessionError(str(error)) from error
+
     def stop(self, end_reason: str, total_rx_bytes: int) -> None:
         """Close raw data and finalize metadata for the active session."""
         if not self.is_recording:
@@ -344,6 +362,8 @@ class RecordingSession:
         except RecordingSessionError as error:
             metadata_error = error
         finally:
+            if self._directory is not None:
+                remove_in_progress_marker(self._directory)
             self._clear_active_state()
 
         if metadata_error is not None:
@@ -371,6 +391,32 @@ class RecordingSession:
             except FileExistsError:
                 candidate = parent / f"{base_name}_{suffix}"
                 suffix += 1
+
+    def _checkpoint_metadata(self) -> None:
+        if not self.is_recording:
+            return
+        self._metadata["logged_byte_count"] = self.bytes_written
+        self._metadata["structured_row_count"] = self._structured_logger.row_count
+        self._metadata["structured_columns"] = list(self._structured_logger.columns)
+        self._metadata["last_checkpoint_utc"] = (
+            self._now().astimezone(timezone.utc).isoformat()
+        )
+        self._write_metadata()
+        self._write_in_progress_marker()
+
+    def _write_in_progress_marker(self) -> None:
+        if self._directory is None:
+            return
+        write_in_progress_marker(
+            self._directory,
+            {
+                "schema": 1,
+                "session_id": self._metadata.get("session_id", ""),
+                "session_name": self._metadata.get("session_name", ""),
+                "started_local": self._metadata.get("recording_start_local", ""),
+                "last_checkpoint_utc": self._metadata.get("last_checkpoint_utc", ""),
+            },
+        )
 
     def _write_metadata(self) -> None:
         if self._directory is None:

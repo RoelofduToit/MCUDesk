@@ -86,3 +86,23 @@ def test_invalid_last_update_timestamp_is_ignored(tmp_path: Path) -> None:
     backend = QSettings(str(path), QSettings.Format.IniFormat)
     backend.setValue("updates/last_automatic_check_utc", "not a date")
     assert _settings(path).last_automatic_update_check is None
+
+
+def test_in_progress_sessions_are_registered_and_removed(tmp_path: Path) -> None:
+    path = tmp_path / "settings.ini"
+    settings = _settings(path)
+    first = tmp_path / "session_a"
+    second = tmp_path / "session_b"
+
+    settings.add_in_progress_session(first)
+    settings.add_in_progress_session(second)
+    settings.add_in_progress_session(first)
+
+    assert tuple(Path(item) for item in settings.in_progress_sessions()) == (
+        second,
+        first,
+    )
+    settings.remove_in_progress_session(first)
+    assert tuple(Path(item) for item in settings.in_progress_sessions()) == (second,)
+    settings.remove_in_progress_session(second)
+    assert settings.in_progress_sessions() == ()

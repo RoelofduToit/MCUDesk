@@ -132,6 +132,9 @@ class SidePanel(QFrame):
         self.logging_status_indicator = QFrame()
         self.logging_status_indicator.setObjectName("loggingStatusIndicator")
         self.logging_status_indicator.setProperty("recordingState", "inactive")
+        self.logging_status_indicator.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         status_layout = QHBoxLayout(self.logging_status_indicator)
         status_layout.setContentsMargins(10, 6, 12, 6)
         status_layout.setSpacing(8)
@@ -145,6 +148,7 @@ class SidePanel(QFrame):
         self.logging_status_label = QLabel("Not recording")
         self.logging_status_label.setObjectName("loggingStatusLabel")
         self.logging_status_label.setProperty("recordingState", "inactive")
+        self.logging_status_label.setWordWrap(True)
         status_layout.addWidget(self.logging_status_label, 1)
         layout.addWidget(self.logging_status_indicator)
 

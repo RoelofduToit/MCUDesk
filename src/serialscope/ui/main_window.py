@@ -28,6 +28,8 @@ from serialscope.logging import (
     RecordingSessionError,
     RecordingSourceConfig,
     SessionConfig,
+    find_interrupted_recordings,
+    is_interrupted_recording,
 )
 from serialscope.parsing import ChannelUpdate, SerialStreamParser
 from serialscope.data import (
@@ -64,6 +66,7 @@ from serialscope.ui.event_dialogs import AddEventDialog, EventListDialog
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
 from serialscope.ui.preferences_dialog import PreferencesDialog
 from serialscope.ui.profile_dialogs import ProfileNameDialog
+from serialscope.ui.recovery_dialog import InterruptedRecordingDialog
 from serialscope.ui.side_panel import SidePanel
 from serialscope.ui.terminal_widget import TerminalWidget
 from serialscope.ui.theme import apply_application_theme
@@ -156,7 +159,14 @@ class MainWindow(QMainWindow):
         self._live_channel_metadata: dict[str, dict[str, str]] | None = None
         self._recording_timer = QTimer(self)
         self._recording_timer.setInterval(1_000)
-        self._recording_timer.timeout.connect(self._update_recording_presentation)
+        self._recording_timer.timeout.connect(self._on_recording_timer)
+        self._shutting_down = False
+        self._manual_disconnect = False
+        self._reconnect_source_id: str | None = None
+        self._reconnect_attempts = 0
+        self._reconnect_timer = QTimer(self)
+        self._reconnect_timer.setSingleShot(True)
+        self._reconnect_timer.timeout.connect(self._attempt_reconnect)
         self.setObjectName("mainWindow")
         self.setWindowTitle("SerialScope")
         self.setMinimumSize(800, 520)
@@ -257,6 +267,7 @@ class MainWindow(QMainWindow):
         self._source_manager.source_failed.connect(self._handle_source_failure)
         self._refresh_source_selectors()
         self.refresh_ports()
+        QTimer.singleShot(0, self._offer_interrupted_recording_recovery)
         if self._profile_store.load_error:
             self.connection_bar.set_profile_controls_enabled(False)
             self.connection_bar.set_profile_status("Unavailable")
@@ -996,6 +1007,9 @@ class MainWindow(QMainWindow):
             return
 
         baud_rate = int(self.connection_bar.baud_combo.currentText())
+        self._manual_disconnect = False
+        self._cancel_reconnect()
+        self.connection_bar.set_connection_state("connecting")
         try:
             self._source_manager.connect(self._selected_source_id, port.device, baud_rate)
         except SerialConnectionError as error:
@@ -1041,6 +1055,8 @@ class MainWindow(QMainWindow):
     def _handle_source_bytes(
         self, source_id: str, data: bytes, *, parse_legacy: bool = False
     ) -> None:
+        if self._shutting_down:
+            return
         source = self._source_manager.get(source_id)
         if parse_legacy:
             source.rx_bytes += len(data)
@@ -1054,11 +1070,18 @@ class MainWindow(QMainWindow):
                     self._recording_session.write(data)
             except RecordingSessionError as error:
                 self._handle_recording_source_failure(source_id, error)
+            except Exception as error:
+                self._handle_recording_source_failure(
+                    source_id, RecordingSessionError(str(error))
+                )
             else:
                 self._update_recording_presentation()
         if parse_legacy:
-            for update in source.parser.feed(data):
-                self._handle_source_update(source_id, update)
+            try:
+                for update in source.parser.feed(data):
+                    self._handle_source_update(source_id, update)
+            except Exception:
+                pass
         self.terminal.append_source_bytes(source_id, data)
 
     def _handle_source_update(self, source_id: str, update: object) -> None:
@@ -1093,6 +1116,10 @@ class MainWindow(QMainWindow):
                     self._recording_session.write_structured(logged)
             except RecordingSessionError as error:
                 self._handle_recording_source_failure(source_id, error)
+            except Exception as error:
+                self._handle_recording_source_failure(
+                    source_id, RecordingSessionError(str(error))
+                )
 
     def _evaluate_calculated_channels(self, source_id: str) -> ChannelUpdate | None:
         channels = self._calculated_store.for_source(source_id)
@@ -1200,13 +1227,15 @@ class MainWindow(QMainWindow):
             else:
                 self._stop_recording("serial_disconnected")
         if source_id == self._selected_source_id:
-            self.connection_bar.set_connection_state("error")
+            self.connection_bar.set_connection_state("lost")
             self.terminal.set_connected(False)
             if len(self._source_manager.sources) == 1:
                 self._reset_channels()
         self.side_panel.set_connected(bool(self._source_manager.connected_sources))
         self._update_profile_control_state()
         self._show_connection_error(message)
+        if not self._manual_disconnect and not self._shutting_down:
+            self._schedule_reconnect(source_id)
 
     def send_command(self) -> None:
         """Encode and transmit the current command through the serial layer."""
@@ -1324,10 +1353,15 @@ class MainWindow(QMainWindow):
         self._recording_timer.start()
         self.side_panel.set_events(())
         self.graphs_widget.set_events(())
+        if self._recording_session.directory is not None:
+            self._application_settings.add_in_progress_session(
+                self._recording_session.directory
+            )
         self._update_recording_presentation()
         self.side_panel.set_connected(True)
 
     def _stop_recording(self, end_reason: str, show_error: bool = True) -> None:
+        directory = self._recording_session.directory
         try:
             if isinstance(self._recording_session, MultiSourceRecordingSession):
                 self._recording_session.stop(
@@ -1343,9 +1377,21 @@ class MainWindow(QMainWindow):
             if show_error:
                 self._show_logging_error(str(error))
         finally:
+            if directory is not None:
+                self._application_settings.remove_in_progress_session(directory)
             self._recording_timer.stop()
             self._update_recording_presentation()
             self.side_panel.set_connected(bool(self._source_manager.connected_sources))
+
+    def _on_recording_timer(self) -> None:
+        if self._recording_session.is_recording:
+            try:
+                self._recording_session.flush()
+            except RecordingSessionError as error:
+                source_id = self._selected_source_id
+                self._handle_recording_source_failure(source_id, error)
+                return
+        self._update_recording_presentation()
 
     def _update_recording_presentation(self) -> None:
         self.side_panel.set_logging_state(
@@ -1397,6 +1443,8 @@ class MainWindow(QMainWindow):
         self._update_profile_control_state()
 
     def _disconnect_serial_port(self) -> None:
+        self._manual_disconnect = True
+        self._cancel_reconnect()
         source_id = self._selected_source_id
         if self._recording_session.is_recording:
             if isinstance(self._recording_session, MultiSourceRecordingSession):
@@ -1441,24 +1489,94 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Event logging error", message)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-        """Release an open serial port before the window is destroyed."""
+        """Stop recording cleanly, then release serial workers and ports."""
         if self._recording_session.is_recording:
             response = QMessageBox.question(
                 self,
                 "Recording in progress",
-                "A recording is active. Stop recording and exit?",
+                "Recording is currently active. Stop recording and exit?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
             if response != QMessageBox.StandardButton.Yes:
                 event.ignore()
                 return
+        self._shutting_down = True
+        self._cancel_reconnect()
+        for source in tuple(self._source_manager.sources):
+            reader = source.reader
+            if reader is not None:
+                reader.stop()
+                source.reader = None
         self._stop_recording("application_closed", show_error=False)
         self._update_controller.shutdown()
         self._source_manager.disconnect_all()
         for graph in self.graphs_widget._widgets.values():
             graph._refresh_timer.stop()
         event.accept()
+
+    def _offer_interrupted_recording_recovery(self) -> None:
+        """Offer recovery for sessions that never finalized."""
+        registered = tuple(
+            Path(path) for path in self._application_settings.in_progress_sessions()
+        )
+        for path in registered:
+            if not is_interrupted_recording(path):
+                self._application_settings.remove_in_progress_session(path)
+        found = find_interrupted_recordings(
+            tuple(Path(path) for path in self._application_settings.in_progress_sessions())
+        )
+        if not found:
+            return
+        dialog = InterruptedRecordingDialog(found, self)
+        dialog.exec()
+        for path in tuple(self._application_settings.in_progress_sessions()):
+            if not is_interrupted_recording(Path(path)):
+                self._application_settings.remove_in_progress_session(Path(path))
+
+    def _cancel_reconnect(self) -> None:
+        self._reconnect_timer.stop()
+        self._reconnect_attempts = 0
+        self._reconnect_source_id = None
+
+    def _schedule_reconnect(self, source_id: str) -> None:
+        """Retry an unexpected disconnect; never auto-restart recording."""
+        if self._shutting_down or self._manual_disconnect:
+            return
+        if self._reconnect_attempts >= 5:
+            if source_id == self._selected_source_id:
+                self.connection_bar.set_connection_state("error")
+            return
+        self._reconnect_source_id = source_id
+        delay = min(800 * (2 ** self._reconnect_attempts), 8_000)
+        if source_id == self._selected_source_id:
+            self.connection_bar.set_connection_state("lost")
+        self._reconnect_timer.start(delay)
+
+    def _attempt_reconnect(self) -> None:
+        source_id = self._reconnect_source_id
+        if source_id is None or self._shutting_down or self._manual_disconnect:
+            return
+        source = self._source_manager.get(source_id)
+        if source.is_connected or not source.port:
+            self._cancel_reconnect()
+            return
+        if source_id == self._selected_source_id:
+            self.connection_bar.set_connection_state("reconnecting")
+        try:
+            self._source_manager.connect(source_id, source.port, source.baud_rate)
+        except SerialConnectionError:
+            self._reconnect_attempts += 1
+            self._schedule_reconnect(source_id)
+            return
+        self._cancel_reconnect()
+        if source_id == self._selected_source_id:
+            self.connection_bar.set_connected(True)
+            self.terminal.set_connected(True)
+            self.terminal.reset_stream_decoder()
+            self._serial_reader = source.reader
+        self.side_panel.set_connected(True)
+        self._update_profile_control_state()
 
     def _build_status_bar(self) -> None:
         status = self.statusBar()

@@ -320,24 +320,33 @@ class ConnectionBar(QFrame):
         self.set_connection_state("connected" if connected else "disconnected")
 
     def set_connection_state(self, state: str) -> None:
-        """Present connected, disconnected, or error state."""
+        """Present the current connection lifecycle state."""
         connected = state == "connected"
+        busy = state in {"connecting", "reconnecting"}
         self.connect_button.setText("Disconnect" if connected else "Connect")
+        self.connect_button.setEnabled(not busy)
         labels = {
             "connected": "CONNECTED",
             "disconnected": "DISCONNECTED",
+            "connecting": "CONNECTING",
+            "lost": "CONNECTION LOST",
+            "reconnecting": "RECONNECTING",
             "error": "CONNECTION ERROR",
         }
         self.status_label.setText(labels[state])
         tooltips = {
             "connected": "Serial device is connected",
             "disconnected": "Serial device is disconnected",
+            "connecting": "Opening the serial port",
+            "lost": "The serial connection was lost",
+            "reconnecting": "Trying to reopen the serial port",
             "error": "The serial connection failed",
         }
         self.status_indicator.setToolTip(tooltips[state])
-        self.port_combo.setEnabled(not connected)
-        self.baud_combo.setEnabled(not connected)
-        self.refresh_button.setEnabled(not connected)
+        ports_locked = state in {"connected", "connecting", "reconnecting"}
+        self.port_combo.setEnabled(not ports_locked)
+        self.baud_combo.setEnabled(not ports_locked)
+        self.refresh_button.setEnabled(not ports_locked)
 
         for widget in (self.status_indicator, self.status_dot, self.status_label):
             widget.setProperty("connectionState", state)

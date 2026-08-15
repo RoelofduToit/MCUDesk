@@ -58,6 +58,16 @@ class RawLogger:
         self._bytes_written += written
         return written
 
+    def flush(self) -> None:
+        """Push buffered bytes to the OS without closing the file."""
+        if self._file is None:
+            return
+        try:
+            self._file.flush()
+        except (OSError, ValueError) as error:
+            self._close_after_failure()
+            raise RawLoggerError(f"Could not flush log file: {error}") from error
+
     def stop(self) -> None:
         """Flush, close, and release the current log file."""
         if self._file is None:

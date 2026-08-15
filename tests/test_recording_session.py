@@ -157,6 +157,17 @@ def test_disconnect_end_reason_is_recorded(tmp_path: Path) -> None:
     assert metadata["status"] == "completed"
 
 
+def test_session_flush_makes_raw_bytes_visible(tmp_path: Path) -> None:
+    session = RecordingSession()
+    directory = session.start(tmp_path, _config("Flush test"))
+    session.write(b"abc")
+    session.flush()
+
+    assert (directory / "raw.log").read_bytes() == b"abc"
+    assert session.is_recording
+    session.stop("normal", 3)
+
+
 def test_session_snapshots_profile_reference_without_profile_dependency(tmp_path: Path) -> None:
     session = RecordingSession()
     config = SessionConfig(
