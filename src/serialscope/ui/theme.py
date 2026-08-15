@@ -1,7 +1,9 @@
 """Centralized application and graph theme application."""
 
 from dataclasses import dataclass
+from pathlib import Path
 
+from PySide6.QtCore import QStandardPaths
 from PySide6.QtWidgets import QApplication
 
 from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
@@ -18,7 +20,7 @@ class GraphPalette:
 
 
 LIGHT_GRAPH_PALETTE = GraphPalette(
-    "#f5f7fa", "#263442", "#46697c", "#e4edf2", "#b4681c", "#854800"
+    "#e8edf2", "#202833", "#3e6a80", "#edf1f5", "#9a6110", "#7a4a08"
 )
 DARK_GRAPH_PALETTE = GraphPalette(
     "#0a1016", "#aebdca", "#7ba9bf", "#182630", "#e0a04b", "#ffd089"
@@ -28,7 +30,27 @@ DARK_GRAPH_PALETTE = GraphPalette(
 def apply_application_theme(application: QApplication, theme: str) -> GraphPalette:
     """Apply one validated theme and return its matching graph palette."""
     if theme == "light":
-        application.setStyleSheet(LIGHT_STYLE)
+        application.setStyleSheet(_with_combo_chevron(LIGHT_STYLE, "#586574"))
         return LIGHT_GRAPH_PALETTE
-    application.setStyleSheet(DARK_STYLE)
+    application.setStyleSheet(_with_combo_chevron(DARK_STYLE, "#8fa3b8"))
     return DARK_GRAPH_PALETTE
+
+
+def _with_combo_chevron(stylesheet: str, color: str) -> str:
+    return stylesheet.replace("__COMBO_CHEVRON__", _combo_chevron_url(color))
+
+
+def _combo_chevron_url(color: str) -> str:
+    """Write a tiny chevron SVG and return a QSS-safe filesystem path."""
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6">'
+        f'<path d="M1 1.2 L5 4.8 L9 1.2" fill="none" stroke="{color}" '
+        'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+        "</svg>"
+    )
+    root = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)
+    directory = Path(root or ".") / "serialscope"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"combo_chevron_{color.lstrip('#')}.svg"
+    path.write_text(svg, encoding="utf-8")
+    return path.resolve().as_posix()

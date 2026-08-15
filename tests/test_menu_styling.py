@@ -6,6 +6,7 @@ from serialscope import __version__
 from serialscope.ui.about_dialog import AboutDialog, APPLICATION_AUTHOR, GITHUB_URL
 from serialscope.ui.main_window import MainWindow
 from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
+from serialscope.ui.theme import apply_application_theme
 
 
 @pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])
@@ -39,6 +40,47 @@ def test_file_actions_keep_functionality_across_theme_switches() -> None:
 def test_theme_has_semantic_warning_and_alarm_tile_states(stylesheet: str) -> None:
     assert 'alarmState="warning"' in stylesheet
     assert 'alarmState="alarm"' in stylesheet
+
+
+def test_light_theme_avoids_pure_white_surfaces() -> None:
+    lowered = LIGHT_STYLE.lower()
+    assert "background-color: #e8edf2;" in lowered
+    assert "background-color: #f3f6f8;" in lowered
+    assert "background-color: #f7f9fa;" in lowered
+    assert "QLineEdit#channelSettingsAlias" in LIGHT_STYLE
+    assert "QGroupBox#channelSettingsSection" in LIGHT_STYLE
+    assert "QGroupBox#channelSettingsSection" in DARK_STYLE
+    assert "background-color: #ffffff;" not in lowered
+
+
+def test_applied_theme_resolves_combo_chevron_image() -> None:
+    application = QApplication.instance() or QApplication([])
+    apply_application_theme(application, "dark")
+    assert "__COMBO_CHEVRON__" not in application.styleSheet()
+    assert "combo_chevron_" in application.styleSheet()
+    apply_application_theme(application, "light")
+    assert "__COMBO_CHEVRON__" not in application.styleSheet()
+
+
+@pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])
+def test_combo_boxes_keep_a_cohesive_dropdown_chevron(stylesheet: str) -> None:
+    assert "QComboBox::drop-down" in stylesheet
+    assert "QComboBox::down-arrow" in stylesheet
+    assert "padding-right: 28px" in stylesheet
+    assert "background: transparent" in stylesheet.split(
+        "QComboBox::drop-down {", 1
+    )[1].split("}", 1)[0]
+
+
+@pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])
+def test_theme_styles_horizontal_and_vertical_scrollbars(stylesheet: str) -> None:
+    assert "QScrollBar:vertical" in stylesheet
+    assert "QScrollBar:horizontal" in stylesheet
+    assert "QScrollBar::handle:vertical:hover" in stylesheet
+    assert "QScrollBar::handle:horizontal:hover" in stylesheet
+    assert "QScrollBar::handle:vertical:pressed" in stylesheet
+    assert "QScrollBar::add-line:vertical" in stylesheet
+    assert "QScrollBar::add-line:horizontal" in stylesheet
 
 
 @pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])

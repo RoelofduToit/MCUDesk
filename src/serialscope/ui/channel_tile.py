@@ -1,11 +1,24 @@
 """A simple HMI-style presentation tile for one structured channel."""
 
+from collections import deque
 import math
 
-from PySide6.QtCore import QMimeData, QPoint, Qt
-from PySide6.QtGui import QDrag, QMouseEvent, QPainter, QPixmap, QResizeEvent, QShowEvent
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Property, QMimeData, QPoint, QPointF, Qt
+from PySide6.QtGui import (
+    QColor,
+    QDrag,
+    QMouseEvent,
+    QPainter,
+    QPen,
+    QPixmap,
+    QResizeEvent,
+    QShowEvent,
+)
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from serialscope.data import AlarmState, ChannelPresentation
+
+
+SPARKLINE_MAX_SAMPLES = 48
 
 
 def format_dashboard_value(value: int | float) -> str:
@@ -19,6 +32,87 @@ def format_dashboard_value(value: int | float) -> str:
     if numeric == 0 or 0.0001 <= magnitude < 1_000_000_000:
         return f"{numeric:.6f}".rstrip("0").rstrip(".")
     return f"{numeric:.6g}"
+
+
+class SparklineWidget(QWidget):
+    """Compact line of recent samples with no axes or labels."""
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        max_samples: int = SPARKLINE_MAX_SAMPLES,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("dashboardTileSparkline")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(28)
+        self._values: deque[float] = deque(maxlen=max_samples)
+        self._line_color = QColor("#4db3d9")
+
+    def lineColor(self) -> QColor:  # noqa: N802
+        return QColor(self._line_color)
+
+    def setLineColor(self, color: QColor) -> None:  # noqa: N802
+        self._line_color = QColor(color)
+        self.update()
+
+    lineColor = Property(QColor, lineColor, setLineColor)
+
+    @property
+    def values(self) -> tuple[float, ...]:
+        return tuple(self._values)
+
+    def add_sample(self, value: int | float) -> None:
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            return
+        self._values.append(numeric)
+        self.update()
+
+    def set_samples(self, values: tuple[int | float, ...]) -> None:
+        self._values.clear()
+        for value in values:
+            numeric = float(value)
+            if math.isfinite(numeric):
+                self._values.append(numeric)
+        self.update()
+
+    def clear(self) -> None:
+        self._values.clear()
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.contentsRect().adjusted(1, 4, -1, -4)
+        if rect.width() < 2 or rect.height() < 2:
+            return
+        samples = self.values
+        if not samples:
+            return
+        if len(samples) == 1:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self._line_color)
+            painter.drawEllipse(QPointF(rect.right() - 1, rect.center().y()), 2.0, 2.0)
+            return
+        lowest = min(samples)
+        span = max(samples) - lowest
+        last_index = len(samples) - 1
+        points = []
+        for index, value in enumerate(samples):
+            x = rect.left() + (rect.width() * index / last_index)
+            if span == 0:
+                y = rect.center().y()
+            else:
+                y = rect.bottom() - ((value - lowest) / span) * rect.height()
+            points.append(QPointF(x, y))
+        pen = QPen(self._line_color, 1.6)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.drawPolyline(points)
 
 
 class ChannelTile(QFrame):
@@ -72,11 +166,20 @@ class ChannelTile(QFrame):
         self.source_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.source_label)
 
+        self.sparkline = SparklineWidget()
+        layout.addWidget(self.sparkline)
+
     def set_source_name(self, source_name: str) -> None:
         self.source_label.setText(source_name)
 
-    def set_value(self, value: int | float) -> None:
+    def set_value(self, value: int | float, *, record: bool = True) -> None:
         self.value_label.setText(format_dashboard_value(value))
+        if record:
+            self.sparkline.add_sample(value)
+
+    def set_sparkline_samples(self, values: tuple[int | float, ...]) -> None:
+        """Replace the visible trend without changing the current value label."""
+        self.sparkline.set_samples(values)
 
     def set_presentation(self, presentation: ChannelPresentation) -> None:
         self.name_label.setText(presentation.display_name)

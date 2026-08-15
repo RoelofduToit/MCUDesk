@@ -18,6 +18,27 @@ from serialscope.data.graph_processing import (
 from serialscope.data.engineering_units import ENGINEERING_UNITS, is_builtin_unit
 from serialscope.data.channel_key import ChannelKey
 from serialscope.data.event_marker import EventMarker
+from serialscope.data.expression import (
+    ALLOWED_FUNCTIONS,
+    ExpressionError,
+    evaluate_expression,
+    expression_names,
+    parse_expression,
+)
+from serialscope.data.calculated import (
+    CalculatedChannel,
+    CalculatedChannelError,
+    CalculatedEvaluation,
+    bindings_for_expression,
+    default_bindings,
+    evaluate_calculated_channels,
+    identifier_for,
+    topological_order,
+)
+from serialscope.data.calculated_store import (
+    CalculatedChannelStore,
+    CalculatedChannelStoreError,
+)
 
 __all__ = [
     "ChannelHistory",
@@ -38,4 +59,19 @@ __all__ = [
     "is_builtin_unit",
     "ChannelKey",
     "EventMarker",
+    "ALLOWED_FUNCTIONS",
+    "ExpressionError",
+    "evaluate_expression",
+    "expression_names",
+    "parse_expression",
+    "CalculatedChannel",
+    "CalculatedChannelError",
+    "CalculatedEvaluation",
+    "bindings_for_expression",
+    "default_bindings",
+    "evaluate_calculated_channels",
+    "identifier_for",
+    "topological_order",
+    "CalculatedChannelStore",
+    "CalculatedChannelStoreError",
 ]

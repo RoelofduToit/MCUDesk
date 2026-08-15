@@ -19,15 +19,16 @@ from PySide6.QtWidgets import (
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.data import (
+    ChannelHistory,
     ChannelKey,
     ChannelMetadataRegistry,
     DashboardLayout,
     GridPosition,
     evaluate_alarm,
 )
+from serialscope.ui.channel_tile import SPARKLINE_MAX_SAMPLES, ChannelTile
 from serialscope.replay import ReplaySession
 from serialscope.ui.channel_selector import ChannelSelector, ChannelToggle
-from serialscope.ui.channel_tile import ChannelTile
 
 
 class DashboardWidget(QWidget):
@@ -46,6 +47,10 @@ class DashboardWidget(QWidget):
         self._available_names: list[str] = []
         self._items: dict[str, ChannelToggle] = {}
         self._latest_values: dict[str, int | float] = {}
+        self._trend = ChannelHistory(
+            window_seconds=3_600.0,
+            max_points_per_channel=SPARKLINE_MAX_SAMPLES,
+        )
         self._tiles: dict[str, ChannelTile] = {}
         self.layout_model = DashboardLayout(columns=4)
         self._column_count = 1
@@ -131,6 +136,7 @@ class DashboardWidget(QWidget):
         if update.replace_channels and self.channel_names != update.names:
             self.reset()
         self._add_channels(update.names)
+        self._trend.add_update(update)
         for name, value in zip(update.names, update.values, strict=True):
             self._latest_values[name] = value
             tile = self._tiles.get(name)
@@ -174,6 +180,10 @@ class DashboardWidget(QWidget):
         self.reset()
         self._add_channels(session.channel_names)
         self._latest_values.update(session.latest_values)
+        for name in session.channel_names:
+            _times, values = session.points(name)
+            for value in values[-SPARKLINE_MAX_SAMPLES:]:
+                self._trend.add_update(ChannelUpdate((name,), (value,), False))
 
     def reset(self) -> None:
         """Clear all availability, selections, values, and tiles."""
@@ -181,12 +191,14 @@ class DashboardWidget(QWidget):
             self._available_names.clear()
             self._items.clear()
             self._latest_values.clear()
+            self._trend.reset()
             self._tiles.clear()
             self.layout_model.reset()
             return
         self.channel_selector.clear_channels()
         self._available_names.clear()
         self._latest_values.clear()
+        self._trend.reset()
         for tile in self._tiles.values():
             tile.setParent(None)
         self._tiles.clear()
@@ -289,9 +301,12 @@ class DashboardWidget(QWidget):
                     source_name=self._source_names.get(name, ""),
                 )
                 tile.set_presentation(self._metadata.get(name))
+                history = self._trend.points(name)[1]
+                if history:
+                    tile.set_sparkline_samples(history)
                 value = self._latest_values.get(name)
                 if value is not None:
-                    tile.set_value(value)
+                    tile.set_value(value, record=not history)
                 tile.set_alarm_state(
                     evaluate_alarm(value, self._metadata.get(name).alarms)
                 )

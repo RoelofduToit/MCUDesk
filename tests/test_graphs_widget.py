@@ -549,7 +549,7 @@ def test_statistics_table_contains_only_selected_channels_and_line_colors() -> N
     application.processEvents()
 
 
-def test_statistics_table_is_bounded_and_scrolls_for_many_channels() -> None:
+def test_statistics_table_expands_with_rows_and_does_not_scroll_internally() -> None:
     application = QApplication.instance() or QApplication([])
     names = tuple(f"Channel {index}" for index in range(1, 10))
     widget = GraphsWidget(clock=lambda: 10.0)
@@ -560,14 +560,18 @@ def test_statistics_table_is_bounded_and_scrolls_for_many_channels() -> None:
     widget.show()
     application.processEvents()
 
-    expected_maximum_height = (
+    expected_height = (
         max(widget.statistics_table.horizontalHeader().sizeHint().height(), 28)
-        + 6 * widget.statistics_table.verticalHeader().defaultSectionSize()
+        + 9 * widget.statistics_table.verticalHeader().defaultSectionSize()
         + widget.statistics_table.frameWidth() * 2
     )
     assert widget.statistics_table.rowCount() == 9
-    assert widget.statistics_table.height() == expected_maximum_height
-    assert widget.statistics_table.verticalScrollBar().maximum() > 0
+    assert widget.statistics_table.height() == expected_height
+    assert widget.statistics_table.verticalScrollBarPolicy() == (
+        Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    assert widget.statistics_table.verticalScrollBar().maximum() == 0
+    assert widget.page_scroll.verticalScrollBar().maximum() > 0
     widget.close()
     application.processEvents()
 
@@ -884,7 +888,7 @@ def test_cursor_table_uses_placeholders_for_non_finite_measurements() -> None:
     application.processEvents()
 
 
-def test_cursor_table_is_bounded_and_scrolls_for_many_selected_channels() -> None:
+def test_cursor_table_expands_with_rows_and_does_not_scroll_internally() -> None:
     application = QApplication.instance() or QApplication([])
     names = tuple(f"Channel {index}" for index in range(1, 10))
     widget = GraphsWidget(clock=lambda: 10.0)
@@ -896,15 +900,19 @@ def test_cursor_table_is_bounded_and_scrolls_for_many_selected_channels() -> Non
     widget.show()
     application.processEvents()
 
-    expected_maximum_height = (
+    expected_height = (
         max(widget.cursor_table.horizontalHeader().sizeHint().height(), 28)
-        + 6 * widget.cursor_table.verticalHeader().defaultSectionSize()
+        + 9 * widget.cursor_table.verticalHeader().defaultSectionSize()
         + widget.cursor_table.frameWidth() * 2
     )
     assert widget.cursor_table.rowCount() == 9
-    assert widget.cursor_table.height() == expected_maximum_height
-    assert widget.cursor_table.verticalScrollBar().maximum() > 0
+    assert widget.cursor_table.height() == expected_height
+    assert widget.cursor_table.verticalScrollBarPolicy() == (
+        Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    assert widget.cursor_table.verticalScrollBar().maximum() == 0
     assert widget.cursor_table.horizontalScrollBar().maximum() == 0
+    assert widget.page_scroll.verticalScrollBar().maximum() > 0
     widget.close()
     application.processEvents()
 

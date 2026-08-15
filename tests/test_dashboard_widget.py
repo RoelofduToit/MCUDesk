@@ -7,7 +7,12 @@ from PySide6.QtWidgets import QApplication
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import load_replay_session
-from serialscope.ui.channel_tile import ChannelTile, format_dashboard_value
+from serialscope.ui.channel_tile import (
+    SPARKLINE_MAX_SAMPLES,
+    ChannelTile,
+    SparklineWidget,
+    format_dashboard_value,
+)
 from serialscope.ui.channel_selector import ChannelToggle
 from serialscope.ui.style import DARK_STYLE, LIGHT_STYLE
 from serialscope.ui.dashboard_widget import DashboardWidget
@@ -530,3 +535,72 @@ def test_identical_channel_names_from_two_sources_have_independent_tiles() -> No
     assert widget.tile_value_text(arduino.storage_key) == "20"
     widget.close()
     application.processEvents()
+
+
+def test_tile_sparkline_tracks_recent_samples_for_that_channel() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("A", "B"), (1.0, 10.0), False))
+    widget.set_channel_selected("A", True)
+    widget.set_channel_selected("B", True)
+
+    widget.update_channels(ChannelUpdate(("A", "B"), (2.0, 20.0), False))
+    widget.update_channels(ChannelUpdate(("A",), (3.0,), False))
+
+    assert widget._tiles["A"].sparkline.values == (1.0, 2.0, 3.0)
+    assert widget._tiles["B"].sparkline.values == (10.0, 20.0)
+    assert widget.tile_value_text("A") == "3"
+    assert widget._tiles["A"].name_label.isVisibleTo(widget._tiles["A"])
+    assert widget._tiles["A"].status_label.isVisibleTo(widget._tiles["A"])
+    widget.close()
+    application.processEvents()
+
+
+def test_tile_sparkline_uses_a_bounded_rolling_window() -> None:
+    application = QApplication.instance() or QApplication([])
+    tile = ChannelTile("A")
+    for index in range(SPARKLINE_MAX_SAMPLES + 7):
+        tile.set_value(float(index))
+
+    assert tile.sparkline.values == tuple(
+        float(index) for index in range(7, SPARKLINE_MAX_SAMPLES + 7)
+    )
+    assert len(tile.sparkline.values) == SPARKLINE_MAX_SAMPLES
+    tile.close()
+    application.processEvents()
+
+
+def test_late_dashboard_selection_seeds_sparkline_from_recent_history() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("A",), (1.0,), False))
+    widget.update_channels(ChannelUpdate(("A",), (2.0,), False))
+    widget.update_channels(ChannelUpdate(("A",), (3.0,), False))
+
+    widget.set_channel_selected("A", True)
+
+    assert widget._tiles["A"].sparkline.values == (1.0, 2.0, 3.0)
+    assert widget.tile_value_text("A") == "3"
+    widget.close()
+    application.processEvents()
+
+
+def test_sparkline_skips_non_finite_samples() -> None:
+    application = QApplication.instance() or QApplication([])
+    sparkline = SparklineWidget()
+    sparkline.add_sample(1.0)
+    sparkline.add_sample(float("nan"))
+    sparkline.add_sample(float("inf"))
+    sparkline.add_sample(2.0)
+
+    assert sparkline.values == (1.0, 2.0)
+    sparkline.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize("stylesheet", [DARK_STYLE, LIGHT_STYLE])
+def test_sparkline_theme_color_is_centralized(stylesheet: str) -> None:
+    assert "QWidget#dashboardTileSparkline" in stylesheet
+    assert "qproperty-lineColor:" in stylesheet.split(
+        "QWidget#dashboardTileSparkline {", 1
+    )[1].split("}", 1)[0]

@@ -30,7 +30,12 @@ from serialscope.logging import (
     SessionConfig,
 )
 from serialscope.parsing import ChannelUpdate, SerialStreamParser
-from serialscope.data import ChannelMetadataRegistry
+from serialscope.data import (
+    CalculatedChannelStore,
+    CalculatedChannelStoreError,
+    ChannelMetadataRegistry,
+    evaluate_calculated_channels,
+)
 from serialscope.profiles import (
     DeviceIdentity,
     DeviceMatchStatus,
@@ -95,6 +100,7 @@ class MainWindow(QMainWindow):
         application_settings: ApplicationSettings | None = None,
         source_manager: SerialSourceManager | None = None,
         profile_store: ProfileStore | None = None,
+        calculated_store: CalculatedChannelStore | None = None,
     ) -> None:
         super().__init__()
         self._port_scanner = port_scanner or discover_recommended_serial_ports
@@ -128,6 +134,17 @@ class MainWindow(QMainWindow):
             lambda: self._recording_session.is_recording,
         )
         self._profile_store = profile_store or ProfileStore()
+        self._calculated_store = calculated_store or CalculatedChannelStore()
+        self._calculated_errors: dict[str, dict[str, str]] = {}
+        for source in self._source_manager.sources:
+            registry = self._source_metadata.setdefault(
+                source.source_id, ChannelMetadataRegistry()
+            )
+            for channel in self._calculated_store.for_source(source.source_id):
+                existing = registry.get(channel.name)
+                registry.set(
+                    channel.name, existing.alias, channel.unit or existing.unit, existing.alarms
+                )
         self._source_profiles: dict[str, str | None] = {
             source.source_id: None for source in self._source_manager.sources
         }
@@ -358,33 +375,72 @@ class MainWindow(QMainWindow):
         return self._update_controller.check_automatically_if_due()
 
     def _show_channel_settings(self) -> None:
-        dialog = ChannelSettingsDialog(self._channel_metadata, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            dialog.apply()
-            self._apply_channel_metadata()
+        self._sanitize_source_metadata()
+        source_id = self._selected_source_id
+        calculated_names = self._calculated_store.all_names(source_id)
+        physical_names = tuple(
+            name
+            for name in (
+                *self._selected_source.latest_values,
+                *self._channel_metadata.source_names,
+            )
+            if name not in calculated_names
+        )
+        dialog = ChannelSettingsDialog(
+            self._channel_metadata,
+            self,
+            calculated_channels=self._calculated_store.for_source(source_id),
+            available_names=tuple(dict.fromkeys((*physical_names, *calculated_names))),
+            latest_values=self._selected_source.latest_values,
+            calculated_errors=self._calculated_errors.get(source_id, {}),
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        dialog.apply()
+        previous = set(self._calculated_store.all_names(source_id))
+        try:
+            self._calculated_store.replace_source(source_id, dialog.calculated_channels)
+        except CalculatedChannelStoreError as error:
+            QMessageBox.warning(self, "Calculated channels", str(error))
+            return
+        current = set(self._calculated_store.all_names(source_id))
+        registry = self._source_metadata[source_id]
+        for removed in previous - current:
+            registry.discard(removed)
+        for channel in dialog.calculated_channels:
+            existing = registry.get(channel.name)
+            registry.set(channel.name, existing.alias, channel.unit, existing.alarms)
+        self._apply_channel_metadata()
+        self._refresh_calculated_channels(source_id)
+
+    def _sanitize_source_metadata(self) -> None:
+        """Keep per-source registries on parser names only."""
+        for registry in self._source_metadata.values():
+            registry.discard_composite_identities()
 
     def _apply_channel_metadata(self) -> None:
+        self._sanitize_source_metadata()
         if len(self._source_manager.sources) == 1:
             self.data_widget.set_channel_metadata(self._channel_metadata)
             self.graphs_widget.set_channel_metadata(self._channel_metadata)
             self.dashboard_widget.set_channel_metadata(self._channel_metadata)
-            combined = self._channel_metadata
         else:
             combined = ChannelMetadataRegistry()
-        for source_id, registry in self._source_metadata.items():
-            for channel_name in registry.source_names:
-                item = registry.get(channel_name)
-                combined.set(
-                    f"{source_id}\x1f{channel_name}",
-                    item.alias or channel_name,
-                    item.unit,
-                    item.alarms,
-                )
-            if source_id in self.graphs_widget._widgets:
-                self.graphs_widget.set_source_metadata(source_id, registry)
-        if len(self._source_manager.sources) > 1:
+            for source_id, registry in self._source_metadata.items():
+                for channel_name in registry.source_names:
+                    item = registry.get(channel_name)
+                    combined.set(
+                        f"{source_id}\x1f{channel_name}",
+                        item.alias or channel_name,
+                        item.unit,
+                        item.alarms,
+                    )
             self.data_widget.set_channel_metadata(combined)
             self.dashboard_widget.set_channel_metadata(combined)
+        for source_id, registry in self._source_metadata.items():
+            if source_id in self.graphs_widget._widgets:
+                self.graphs_widget.set_source_metadata(source_id, registry)
+        self._mark_calculated_selectors()
         if self._recording_session.is_recording:
             try:
                 if hasattr(self._recording_session, "set_channel_metadata"):
@@ -1008,30 +1064,91 @@ class MainWindow(QMainWindow):
         if not hasattr(update, "names"):
             return
         source = self._source_manager.get(source_id)
+        source.latest_values.update(
+            zip(update.names, update.values, strict=True)
+        )
         registry = self._source_metadata[source_id]
         known_channels = registry.source_names
         registry.ensure(update.names)
-        if source_id == self._selected_source_id:
-            self.side_panel.channels_widget.update_channels(update)
-        single_source = len(self._source_manager.sources) == 1
-        if single_source:
-            self.data_widget.update_channels(update)
-            self.graphs_widget.update_channels(update)
-            self.dashboard_widget.update_channels(update)
-        else:
-            self.data_widget.update_source(source_id, source.display_name, update)
-            self.graphs_widget.update_source(source_id, source.display_name, update)
-            self.dashboard_widget.update_source(source_id, source.display_name, update)
-        if registry.source_names != known_channels and source_id == self._selected_source_id:
+        calculated = self._evaluate_calculated_channels(source_id)
+        self._present_structured_update(source_id, update)
+        if calculated is not None:
+            registry.ensure(calculated.names)
+            self._present_structured_update(source_id, calculated)
+        if registry.source_names != known_channels:
             self._apply_channel_metadata()
+        logged = update
+        if calculated is not None and calculated.names:
+            logged = ChannelUpdate(
+                (*update.names, *calculated.names),
+                (*update.values, *calculated.values),
+                False,
+            )
         if self._recording_session.is_recording:
             try:
                 if isinstance(self._recording_session, MultiSourceRecordingSession):
-                    self._recording_session.write_structured(source_id, update)
+                    self._recording_session.write_structured(source_id, logged)
                 else:
-                    self._recording_session.write_structured(update)
+                    self._recording_session.write_structured(logged)
             except RecordingSessionError as error:
                 self._handle_recording_source_failure(source_id, error)
+
+    def _evaluate_calculated_channels(self, source_id: str) -> ChannelUpdate | None:
+        channels = self._calculated_store.for_source(source_id)
+        if not channels:
+            self._calculated_errors[source_id] = {}
+            return None
+        source = self._source_manager.get(source_id)
+        result = evaluate_calculated_channels(channels, source.latest_values)
+        self._calculated_errors[source_id] = dict(result.errors)
+        if result.update is not None:
+            source.latest_values.update(
+                zip(result.update.names, result.update.values, strict=True)
+            )
+        return result.update
+
+    def _refresh_calculated_channels(self, source_id: str) -> None:
+        """Recompute calculated channels after definitions or metadata change."""
+        update = self._evaluate_calculated_channels(source_id)
+        if update is None:
+            return
+        self._source_metadata[source_id].ensure(update.names)
+        self._present_structured_update(source_id, update)
+
+    def _present_structured_update(self, source_id: str, update: ChannelUpdate) -> None:
+        source = self._source_manager.get(source_id)
+        if source_id == self._selected_source_id:
+            self.side_panel.channels_widget.update_channels(update)
+        if len(self._source_manager.sources) == 1:
+            self.data_widget.update_channels(update)
+            self.graphs_widget.update_channels(update)
+            self.dashboard_widget.update_channels(update)
+            return
+        self.data_widget.update_source(source_id, source.display_name, update)
+        self.graphs_widget.update_source(source_id, source.display_name, update)
+        self.dashboard_widget.update_source(source_id, source.display_name, update)
+
+    def _mark_calculated_selectors(self) -> None:
+        calculated_by_source = {
+            source.source_id: set(self._calculated_store.all_names(source.source_id))
+            for source in self._source_manager.sources
+        }
+        for source_id, widget in getattr(self.graphs_widget, "_widgets", {}).items():
+            names = calculated_by_source.get(source_id, set())
+            for key in widget.channel_selector.toggles:
+                widget.channel_selector.set_channel_calculated(key, key in names)
+        if not getattr(self.dashboard_widget, "_built", False):
+            return
+        for key in self.dashboard_widget.channel_selector.toggles:
+            if "\x1f" in key:
+                source_id, _separator, channel_name = key.partition("\x1f")
+                names = calculated_by_source.get(source_id, set())
+                calculated = channel_name in names
+            else:
+                calculated = any(key in names for names in calculated_by_source.values())
+            self.dashboard_widget.channel_selector.set_channel_calculated(
+                key, calculated
+            )
 
     def _handle_recording_source_failure(
         self, source_id: str, error: RecordingSessionError

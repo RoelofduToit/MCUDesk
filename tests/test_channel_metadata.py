@@ -36,6 +36,37 @@ def test_replace_ignores_unknown_and_supports_old_empty_metadata() -> None:
     assert registry.get("A").display_name == "A"
 
 
+def test_discard_composite_identities_keeps_parser_names_and_merges_metadata() -> None:
+    registry = ChannelMetadataRegistry()
+    registry.ensure(("Channel 1", "Channel 2"))
+    registry.set("default\x1fChannel 1", "Reactor", "°C", AlarmLimits(high=90))
+    registry.set("default\x1fChannel 3", "Spare", "V")
+
+    registry.discard_composite_identities()
+
+    assert registry.source_names == ("Channel 1", "Channel 2", "Channel 3")
+    assert all("\x1f" not in name for name in registry.source_names)
+    assert registry.get("Channel 1").alias == "Reactor"
+    assert registry.get("Channel 1").unit == "°C"
+    assert registry.get("Channel 1").alarms == AlarmLimits(high=90)
+    assert registry.get("Channel 3").alias == "Spare"
+
+
+def test_replace_normalizes_leaked_storage_keys() -> None:
+    registry = ChannelMetadataRegistry()
+    registry.replace(
+        {
+            "default\x1fChannel 1": {"alias": "From storage", "unit": "°C"},
+            "Channel 1": {"alias": "From parser", "unit": "K"},
+        },
+        ("Channel 1",),
+    )
+
+    assert registry.source_names == ("Channel 1",)
+    assert registry.get("Channel 1").alias == "From parser"
+    assert registry.get("Channel 1").unit == "K"
+
+
 def test_alarm_metadata_round_trips_without_changing_alias_or_unit() -> None:
     registry = ChannelMetadataRegistry()
     limits = AlarmLimits(low_low=80, low=90, high=110, high_high=120)

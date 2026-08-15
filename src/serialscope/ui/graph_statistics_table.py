@@ -3,20 +3,19 @@
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QWidget,
 )
 
 from serialscope.ui.graph_display import format_graph_value
-
-
-MAX_VISIBLE_STATISTIC_ROWS = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +42,8 @@ class GraphStatisticsTable(QTableWidget):
         self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.verticalHeader().hide()
         self.verticalHeader().setDefaultSectionSize(26)
         header = self.horizontalHeader()
@@ -159,8 +159,12 @@ class GraphStatisticsTable(QTableWidget):
             f"color: {color_text}; background-color: transparent; border: none;"
         )
 
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
+        """Let the Graphs page scroll; this table never owns a vertical viewport."""
+        event.ignore()
+
     def _resize_to_rows(self) -> None:
-        visible_rows = min(max(self.rowCount(), 1), MAX_VISIBLE_STATISTIC_ROWS)
+        visible_rows = max(self.rowCount(), 1)
         header_height = max(self.horizontalHeader().sizeHint().height(), 28)
         frame = self.frameWidth() * 2
         self.setFixedHeight(

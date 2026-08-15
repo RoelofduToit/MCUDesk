@@ -31,8 +31,8 @@ class ChannelToggle(QFrame):
         )
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(7, 3, 9, 3)
-        layout.setSpacing(6)
+        layout.setContentsMargins(10, 4, 12, 4)
+        layout.setSpacing(7)
 
         self.indicator = QCheckBox("")
         self.indicator.setObjectName("channelToggleIndicator")
@@ -43,6 +43,12 @@ class ChannelToggle(QFrame):
             self.indicator,
             alignment=Qt.AlignmentFlag.AlignVCenter,
         )
+
+        self.badge = QLabel("ƒx")
+        self.badge.setObjectName("channelToggleBadge")
+        self.badge.setVisible(False)
+        self.badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(self.badge, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self.label = QLabel(text)
         self.label.setObjectName("channelToggleLabel")
@@ -119,8 +125,8 @@ class ChannelSelector(QScrollArea):
         self._content.setObjectName("channelSelectorContent")
         self._layout = QHBoxLayout(self._content)
         self._layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
-        self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(8)
+        self._layout.setContentsMargins(2, 2, 2, 2)
+        self._layout.setSpacing(10)
         self._layout.addStretch()
         self.setWidget(self._content)
 
@@ -171,3 +177,13 @@ class ChannelSelector(QScrollArea):
 
     def set_channel_checked(self, key: str, selected: bool) -> None:
         self.toggles[key].setChecked(selected)
+
+    def set_channel_calculated(self, key: str, calculated: bool) -> None:
+        toggle = self.toggles.get(key)
+        if toggle is None:
+            return
+        toggle.badge.setVisible(calculated)
+        toggle.setProperty("calculated", calculated)
+        toggle.style().unpolish(toggle)
+        toggle.style().polish(toggle)
+        toggle.updateGeometry()
