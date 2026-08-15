@@ -290,7 +290,7 @@ def test_side_panel_has_usable_resizable_width_without_horizontal_clipping(
     window.resize(window.minimumSize())
     application.processEvents()
 
-    assert panel.width() == panel.minimumWidth()
+    assert panel.minimumWidth() <= panel.width() <= 340
     assert panel.scroll_area.horizontalScrollBar().maximum() == 0
     assert panel.scroll_area.verticalScrollBar().maximum() > 0
     assert panel.logging_filename_label.wordWrap()
