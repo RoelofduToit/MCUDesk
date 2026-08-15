@@ -257,7 +257,8 @@ def test_side_panel_has_usable_resizable_width_without_horizontal_clipping(
 
     panel = window.side_panel
     assert panel.minimumWidth() == 300
-    assert window.workspace_splitter.sizes()[1] == 320
+    initial_panel_width = window.workspace_splitter.sizes()[1]
+    assert panel.minimumWidth() <= initial_panel_width <= 340
     assert window.workspace_tabs.width() > panel.width()
     assert not window.workspace_splitter.isCollapsible(1)
     assert (

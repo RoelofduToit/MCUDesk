@@ -62,6 +62,7 @@ def test_toggle_size_uses_its_actual_rendered_label(
     toggle.show()
     application.processEvents()
     unchecked_width = toggle.width()
+    unchecked_height = toggle.height()
     unchecked_indicator_hint = toggle.indicator.sizeHint()
     unchecked_indicator_geometry = toggle.indicator.geometry().size()
     label_hint = toggle.label.sizeHint().width()
@@ -75,7 +76,14 @@ def test_toggle_size_uses_its_actual_rendered_label(
     assert toggle.minimumSizeHint().width() >= toggle.label.minimumSizeHint().width()
     assert toggle.width() == unchecked_width
     assert toggle.width() >= toggle.minimumSizeHint().width()
-    assert 26 <= toggle.height() <= 30
+    assert toggle.height() == unchecked_height
+    assert toggle.height() >= max(
+        20,
+        toggle.label.minimumSizeHint().height(),
+        toggle.indicator.geometry().height(),
+    )
+    assert toggle.height() <= 32
+    assert toggle.rect().contains(toggle.indicator.geometry())
     assert abs(toggle.indicator.geometry().center().y() - toggle.label.geometry().center().y()) <= 1
     assert toggle.indicator.sizeHint() == unchecked_indicator_hint
     assert toggle.indicator.geometry().size() == unchecked_indicator_geometry

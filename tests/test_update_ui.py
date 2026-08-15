@@ -272,7 +272,7 @@ def test_install_handoff_opens_verified_deb_when_not_recording(
     monkeypatch.setattr(QMessageBox, "information", lambda *_args: None)
 
     assert controller.install_downloaded_update(package)
-    assert opened == [str(package)]
+    assert [Path(path) for path in opened] == [package]
     parent.close()
 
 

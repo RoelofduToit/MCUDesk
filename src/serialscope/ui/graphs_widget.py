@@ -5,13 +5,15 @@ import math
 import time
 
 import pyqtgraph as pg
-from PySide6.QtCore import QEvent, QObject, QSize, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, QTimer, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
+    QLayoutItem,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -52,6 +54,74 @@ TIME_WINDOWS = {
     "30 min": 1_800.0,
     "1 hour": 3_600.0,
 }
+
+
+class _FlowLayout(QLayout):
+    """Lay controls left-to-right and wrap only when width requires it."""
+
+    def __init__(self, parent: QWidget | None = None, spacing: int = 8) -> None:
+        super().__init__(parent)
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(spacing)
+        self._items: list[QLayoutItem] = []
+
+    def addItem(self, item: QLayoutItem) -> None:  # noqa: N802
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:  # noqa: N802
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:  # noqa: N802
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self) -> Qt.Orientation:  # noqa: N802
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # noqa: N802
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        left, top, right, bottom = self.getContentsMargins()
+        return size + QSize(left + right, top + bottom)
+
+    def _do_layout(self, rect: QRect, *, test_only: bool) -> int:
+        left, top, right, bottom = self.getContentsMargins()
+        effective = rect.adjusted(left, top, -right, -bottom)
+        x = effective.x()
+        y = effective.y()
+        line_height = 0
+        spacing = self.spacing()
+
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width() + spacing
+            if line_height and next_x - spacing > effective.right() + 1:
+                x = effective.x()
+                y += line_height + spacing
+                next_x = x + hint.width() + spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = next_x
+            line_height = max(line_height, hint.height())
+
+        return y + line_height - rect.y() + bottom
 
 
 def visible_x_range(latest_time: float, window_seconds: float) -> tuple[float, float]:
@@ -117,9 +187,7 @@ class GraphsWidget(QWidget):
 
         controls = QWidget()
         controls.setObjectName("graphControls")
-        controls_layout = QHBoxLayout(controls)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(8)
+        controls_layout = _FlowLayout(controls)
 
         self.pause_button = QPushButton("Pause")
         self.pause_button.setObjectName("graphPauseButton")
@@ -135,7 +203,6 @@ class GraphsWidget(QWidget):
         self.reset_zoom_button.setObjectName("graphResetZoomButton")
         self.reset_zoom_button.clicked.connect(self.reset_zoom)
         controls_layout.addWidget(self.reset_zoom_button)
-        controls_layout.addStretch()
 
         window_label = QLabel("Time Window")
         window_label.setObjectName("graphTimeWindowLabel")
@@ -152,9 +219,7 @@ class GraphsWidget(QWidget):
 
         processing = QWidget()
         processing.setObjectName("graphProcessingControls")
-        processing_layout = QHBoxLayout(processing)
-        processing_layout.setContentsMargins(0, 0, 0, 0)
-        processing_layout.setSpacing(8)
+        processing_layout = _FlowLayout(processing)
 
         processing_layout.addWidget(QLabel("Interpolation"))
         self.interpolation_combo = QComboBox()
@@ -183,14 +248,11 @@ class GraphsWidget(QWidget):
         self.measured_points_checkbox = QCheckBox("Show measured points")
         self.measured_points_checkbox.setObjectName("graphMeasuredPointsCheckBox")
         processing_layout.addWidget(self.measured_points_checkbox)
-        processing_layout.addStretch()
         layout.addWidget(processing)
 
         smoothing = QWidget()
         smoothing.setObjectName("graphSmoothingControls")
-        smoothing_layout = QHBoxLayout(smoothing)
-        smoothing_layout.setContentsMargins(0, 0, 0, 0)
-        smoothing_layout.setSpacing(8)
+        smoothing_layout = _FlowLayout(smoothing)
         smoothing_layout.addWidget(QLabel("Smoothing"))
         self.smoothing_combo = QComboBox()
         self.smoothing_combo.setObjectName("graphSmoothingCombo")
@@ -214,7 +276,6 @@ class GraphsWidget(QWidget):
         self.ema_alpha_spin.setDecimals(2)
         self.ema_alpha_spin.setValue(0.2)
         smoothing_layout.addWidget(self.ema_alpha_spin)
-        smoothing_layout.addStretch()
         layout.addWidget(smoothing)
         self._update_processing_control_state()
 
@@ -246,6 +307,7 @@ class GraphsWidget(QWidget):
         layout.addWidget(self.cursor_table)
         self.cursor_empty_label = QLabel("Select a channel and move over the graph.")
         self.cursor_empty_label.setObjectName("graphCursorEmptyLabel")
+        self.cursor_empty_label.setWordWrap(True)
         layout.addWidget(self.cursor_empty_label)
         self.statistics_heading = QLabel("Statistics")
         self.statistics_heading.setObjectName("graphStatisticsHeading")
@@ -254,6 +316,7 @@ class GraphsWidget(QWidget):
         layout.addWidget(self.statistics_table)
         self.statistics_empty_label = QLabel("Select a channel to view statistics.")
         self.statistics_empty_label.setObjectName("graphStatisticsEmptyLabel")
+        self.statistics_empty_label.setWordWrap(True)
         layout.addWidget(self.statistics_empty_label)
         self.page_scroll.setWidget(self.page_content)
         outer_layout.addWidget(self.page_scroll)

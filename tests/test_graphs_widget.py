@@ -624,6 +624,12 @@ def test_graph_page_scrolls_vertically_with_graph_before_detail_tables() -> None
         widget.plot_widget.viewport(),
         QEvent(QEvent.Type.Wheel),
     )
+
+    widget.resize(600, 650)
+    application.processEvents()
+
+    assert widget.page_scroll.horizontalScrollBar().maximum() == 0
+    assert widget.page_content.width() <= widget.page_scroll.viewport().width()
     widget.close()
     application.processEvents()
 

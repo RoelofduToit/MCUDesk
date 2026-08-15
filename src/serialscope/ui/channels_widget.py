@@ -23,6 +23,7 @@ class ChannelsWidget(QWidget):
 
         self.empty_label = QLabel("No channels detected")
         self.empty_label.setObjectName("channelsEmptyLabel")
+        self.empty_label.setWordWrap(True)
         layout.addWidget(self.empty_label)
 
         self.scroll_area = QScrollArea()

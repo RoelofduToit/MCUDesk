@@ -157,7 +157,7 @@ class SidePanel(QFrame):
         self.logged_bytes_label.setObjectName("loggedBytesLabel")
         layout.addWidget(self.logged_bytes_label)
 
-        event_row = QHBoxLayout()
+        event_row = QVBoxLayout()
         event_row.setSpacing(8)
         self.add_event_button = QPushButton("+ Add Event")
         self.add_event_button.setObjectName("addEventButton")
