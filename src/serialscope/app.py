@@ -6,6 +6,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from serialscope import __version__
+from serialscope.resources import apply_application_icon
 from serialscope.settings import ApplicationSettings
 from serialscope.ui.main_window import MainWindow
 
@@ -20,6 +21,7 @@ def main() -> int:
     application.setApplicationName("SerialScope")
     application.setApplicationVersion(__version__)
     application.setOrganizationName("SerialScope")
+    apply_application_icon(application)
     settings = ApplicationSettings()
     window = MainWindow(application_settings=settings)
     window.show()

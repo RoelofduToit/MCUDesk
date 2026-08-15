@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIRECTORY}/.." && pwd)"
 EXECUTABLE="${PROJECT_ROOT}/dist/SerialScope/SerialScope"
+ICON="${PROJECT_ROOT}/dist/SerialScope/_internal/assets/icons/serialscope.png"
 SMOKE_DIRECTORY="$(mktemp -d)"
 
 cleanup() {
@@ -13,6 +14,11 @@ trap cleanup EXIT
 
 if [[ ! -x "${EXECUTABLE}" ]]; then
     echo "Packaged executable not found: ${EXECUTABLE}" >&2
+    exit 1
+fi
+
+if [[ ! -f "${ICON}" ]]; then
+    echo "Packaged application icon not found: ${ICON}" >&2
     exit 1
 fi
 

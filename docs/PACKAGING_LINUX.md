@@ -1,6 +1,10 @@
 # Packaging SerialScope for Linux
 
-SerialScope's first standalone Linux development package is a PyInstaller one-folder bundle. It is deliberately inspectable and easier to diagnose than a compressed one-file executable. It is not yet an AppImage or distribution package.
+SerialScope's Linux distribution is built in two layers: an inspectable
+PyInstaller one-folder bundle, then a Debian package that installs that bundle
+as a normal desktop application. The `.deb` targets native amd64
+Debian-compatible systems, including suitably compatible Ubuntu and Linux Mint
+releases. It is not an AppImage.
 
 ## Prerequisites
 
@@ -21,6 +25,9 @@ python -m pip install -e ".[dev,packaging]"
 
 PyInstaller is a packaging-only dependency. It is not installed for ordinary SerialScope runtime use.
 
+The Debian build also requires the standard `dpkg`/`dpkg-deb` tools. If
+`desktop-file-validate` is installed, the build uses it automatically.
+
 ## Build
 
 From any working directory, run the repository script by path:
@@ -37,10 +44,85 @@ The output is:
 dist/SerialScope/
 ├── SerialScope
 └── _internal/
+    ├── assets/icons/serialscope.png
     └── bundled Python, Qt, PySide6, PyQtGraph, and PySerial files
 ```
 
-No repository documentation or source-tree resource is required at runtime. SerialScope currently has no application icon asset, so this first bundle uses the default executable presentation.
+`assets/icons/serialscope.png` is the authoritative application icon. Qt loads
+it through SerialScope's packaging-safe resource lookup, so source and bundled
+launches do not depend on the current working directory. PyInstaller includes
+the same PNG under `_internal/assets/icons/` in the one-folder bundle.
+
+PyInstaller cannot embed an icon in a Linux ELF executable. Complete desktop
+menu/taskbar integration will therefore belong to a future `.desktop`/`.deb`
+milestone, which should reuse this authoritative PNG in the hicolor hierarchy.
+A future Windows build may derive an `.ico` from the same artwork without
+changing application resource lookup.
+
+## Build the Debian package
+
+Run the maintained one-command build from the repository:
+
+```bash
+./scripts/build_linux_deb.sh
+```
+
+The script derives the Debian version directly from
+`serialscope.__version__`, rebuilds the PyInstaller bundle, stages the package
+under ignored `build/deb/`, validates it without root privileges, and writes:
+
+```text
+dist/serialscope_<version>_amd64.deb
+```
+
+The current version already conforms to Debian version syntax and is used
+unchanged. A future incompatible version string causes a clear build failure
+instead of silently introducing a second version source.
+
+The installed layout is:
+
+```text
+/opt/serialscope/                         complete PyInstaller bundle
+/usr/bin/serialscope                     command-line launcher
+/usr/share/applications/serialscope.desktop
+/usr/share/icons/hicolor/256x256/apps/serialscope.png
+```
+
+The 256×256 hicolor icon is generated during the build from the authoritative
+`assets/icons/serialscope.png`; it is not a separately maintained source asset.
+
+Install, launch, and remove the package with:
+
+```bash
+sudo apt install ./dist/serialscope_<version>_amd64.deb
+serialscope
+sudo apt remove serialscope
+```
+
+SerialScope also appears in a standards-compliant desktop application menu.
+The desktop entry launches without a terminal and resolves the icon through
+the hicolor hierarchy.
+
+Package upgrades replace `/opt/serialscope` and the system launchers normally.
+Application settings and Device Profiles remain in per-user configuration
+locations, while recordings remain wherever the user chose to create them.
+Removal and purge scripts never inspect or delete user home directories.
+
+The packaged application still depends on a small set of normal system runtime
+libraries: glibc 2.38 or newer, OpenGL/EGL loader libraries, and Wayland client
+libraries. Python, Qt, PySide6, PyQtGraph, PySerial, and the remaining bundled
+runtime are carried inside `/opt/serialscope`. The glibc baseline comes from
+the current build environment and binary set, so this package is not compatible
+with every historical Debian or Ubuntu release. Build on an older supported
+baseline when broader backward compatibility is required.
+
+Inspect an existing package without installing it:
+
+```bash
+./scripts/smoke_test_linux_deb.sh dist/serialscope_<version>_amd64.deb
+dpkg-deb --info dist/serialscope_<version>_amd64.deb
+dpkg-deb --contents dist/serialscope_<version>_amd64.deb
+```
 
 ## Launch
 
@@ -77,7 +159,7 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-## Manual package test
+## Manual application test
 
 Use the built executable—not `python main.py`—for the following checks:
 
@@ -105,8 +187,9 @@ Linux distributions commonly restrict `/dev/ttyUSB*` and `/dev/ttyACM*` access t
 
 ## Known limitations
 
-- This is a development bundle, not an installer, AppImage, `.deb`, or RPM.
 - The bundle is architecture- and Linux-ABI-specific. Build separately for each target architecture and sufficiently old target baseline.
 - Some distributions may require host X11/XCB, Wayland, OpenGL, font, or graphics-driver libraries compatible with Qt.
 - Hardware serial, browser integration, native file dialogs, and desktop drag/drop require manual testing on the target desktop.
-- There is no `.desktop` launcher, MIME association, application icon, code signing, or automatic updater yet.
+- The `.deb` provides a desktop launcher and hicolor icon, but taskbar behavior
+  can still vary between window managers. There is no MIME association, code
+  signing, automatic updater, AppImage, RPM, or ARM package yet.

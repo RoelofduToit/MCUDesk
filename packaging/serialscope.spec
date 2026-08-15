@@ -5,12 +5,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 SOURCE_ROOT = PROJECT_ROOT / "src"
+ICON_SOURCE = PROJECT_ROOT / "assets" / "icons" / "serialscope.png"
 
 analysis = Analysis(
     [str(SOURCE_ROOT / "serialscope" / "__main__.py")],
     pathex=[str(SOURCE_ROOT)],
     binaries=[],
-    datas=[],
+    datas=[(str(ICON_SOURCE), "assets/icons")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -38,6 +39,8 @@ executable = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    # Linux executables do not embed application icons. Qt loads the bundled
+    # PNG at runtime; a future .desktop file will provide desktop integration.
     icon=None,
 )
 

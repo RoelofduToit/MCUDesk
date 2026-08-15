@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SerialScope
+Comment=Serial data acquisition, logging and visualization
+Exec=serialscope
+Icon=serialscope
+Terminal=false
+Categories=Development;Engineering;
+StartupNotify=true
