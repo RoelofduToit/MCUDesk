@@ -2,7 +2,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QLabel
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.ui.channels_widget import ChannelsWidget
@@ -50,4 +51,30 @@ def test_partial_updates_add_channels_without_removing_missing_channels() -> Non
     assert widget.value_text("TEMP") == "25.7"
     assert widget.value_text("RPM") == "1487"
     assert widget.value_text("FLOW") == "0.42"
+    application.processEvents()
+
+
+def test_long_channel_names_wrap_without_horizontal_scrolling() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = ChannelsWidget()
+    widget.resize(238, 180)
+    widget.update_channels(
+        ChannelUpdate(
+            ("Reactor Temperature Sensor With A Long Engineering Alias",),
+            (24.7,),
+        )
+    )
+    widget.show()
+    application.processEvents()
+
+    name_labels = widget.findChildren(QLabel, "channelNameLabel")
+    assert len(name_labels) == 1
+    assert name_labels[0].wordWrap()
+    assert (
+        widget.scroll_area.horizontalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    assert widget.scroll_area.horizontalScrollBar().maximum() == 0
+
+    widget.close()
     application.processEvents()

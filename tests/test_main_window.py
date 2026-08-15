@@ -245,6 +245,72 @@ def test_main_window_constructs_ui_shell() -> None:
     application.processEvents()
 
 
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_side_panel_has_usable_resizable_width_without_horizontal_clipping(
+    theme: str,
+) -> None:
+    application = QApplication.instance() or QApplication([])
+    window = MainWindow(port_scanner=lambda: [])
+    window.apply_theme(theme)
+    window.show()
+    application.processEvents()
+
+    panel = window.side_panel
+    assert panel.minimumWidth() == 300
+    assert window.workspace_splitter.sizes()[1] == 320
+    assert window.workspace_tabs.width() > panel.width()
+    assert not window.workspace_splitter.isCollapsible(1)
+    assert (
+        panel.scroll_area.horizontalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    assert (
+        panel.channels_widget.scroll_area.horizontalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    for control in (
+        panel.session_name_input,
+        panel.data_delimiter_combo,
+        panel.add_event_button,
+        panel.view_events_button,
+        panel.logging_button,
+    ):
+        assert control.width() >= control.minimumSizeHint().width()
+
+    panel.session_name_input.setText(
+        "Long-running reactor commissioning session with operator notes"
+    )
+    panel.set_logging_state(
+        True,
+        filename="Long-running reactor commissioning session with operator notes",
+        byte_count="14.2 KB",
+        elapsed="00:02:41",
+    )
+    window.resize(window.minimumSize())
+    application.processEvents()
+
+    assert panel.width() == panel.minimumWidth()
+    assert panel.scroll_area.horizontalScrollBar().maximum() == 0
+    assert panel.scroll_area.verticalScrollBar().maximum() > 0
+    assert panel.logging_filename_label.wordWrap()
+    for control in (
+        panel.session_name_input,
+        panel.data_delimiter_combo,
+        panel.add_event_button,
+        panel.view_events_button,
+        panel.logging_button,
+    ):
+        assert control.width() >= control.minimumSizeHint().width()
+
+    window.resize(1120, 720)
+    window.workspace_splitter.setSizes([650, 420])
+    application.processEvents()
+    assert panel.width() > panel.minimumWidth()
+
+    window.close()
+    application.processEvents()
+
+
 def test_workspace_has_terminal_data_graphs_and_dashboard_tabs() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])

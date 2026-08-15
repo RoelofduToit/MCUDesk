@@ -1,5 +1,6 @@
 """Scrollable presentation of detected channel values."""
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFormLayout,
     QLabel,
@@ -28,12 +29,19 @@ class ChannelsWidget(QWidget):
         self.scroll_area.setObjectName("channelsScrollArea")
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
         self.scroll_area.setMaximumHeight(220)
 
         content = QWidget()
         self._form = QFormLayout(content)
         self._form.setContentsMargins(0, 0, 0, 0)
         self._form.setSpacing(7)
+        self._form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.scroll_area.setWidget(content)
         self.scroll_area.hide()
         layout.addWidget(self.scroll_area)
@@ -80,7 +88,10 @@ class ChannelsWidget(QWidget):
                 continue
             value_label = QLabel("—")
             value_label.setObjectName("channelValueLabel")
-            self._form.addRow(name, value_label)
+            name_label = QLabel(name)
+            name_label.setObjectName("channelNameLabel")
+            name_label.setWordWrap(True)
+            self._form.addRow(name_label, value_label)
             self._value_labels[name] = value_label
         self.empty_label.hide()
         self.scroll_area.show()

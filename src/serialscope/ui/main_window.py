@@ -217,7 +217,8 @@ class MainWindow(QMainWindow):
         self.workspace_splitter.addWidget(self.side_panel)
         self.workspace_splitter.setStretchFactor(0, 1)
         self.workspace_splitter.setStretchFactor(1, 0)
-        self.workspace_splitter.setSizes([820, 260])
+        self.workspace_splitter.setCollapsible(1, False)
+        self.workspace_splitter.setSizes([760, 320])
         root_layout.addWidget(self.workspace_splitter, 1)
 
         self.setCentralWidget(central_widget)

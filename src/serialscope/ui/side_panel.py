@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -19,13 +20,20 @@ from serialscope.ui.channels_widget import ChannelsWidget
 from serialscope.data import EventMarker
 
 
+SIDE_PANEL_MINIMUM_WIDTH = 300
+
+
 class SidePanel(QFrame):
     """Group future connection, channel, and session controls."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("sidePanel")
-        self.setMinimumWidth(230)
+        self.setMinimumWidth(SIDE_PANEL_MINIMUM_WIDTH)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
+        )
         self._connected = False
         self._recording = False
         self._events: tuple[EventMarker, ...] = ()
@@ -45,6 +53,10 @@ class SidePanel(QFrame):
         )
         content = QWidget()
         content.setObjectName("sidePanelContent")
+        content.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
@@ -96,6 +108,10 @@ class SidePanel(QFrame):
         self.session_name_input = QLineEdit()
         self.session_name_input.setObjectName("sessionNameInput")
         self.session_name_input.setPlaceholderText("Required")
+        self.session_name_input.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         layout.addWidget(self.session_name_input)
 
         delimiter_label = QLabel("Data delimiter")
@@ -106,6 +122,10 @@ class SidePanel(QFrame):
         self.data_delimiter_combo.addItem("Comma (,)", ",")
         self.data_delimiter_combo.addItem("Semicolon (;)", ";")
         self.data_delimiter_combo.addItem("Tab", "\t")
+        self.data_delimiter_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         layout.addWidget(self.data_delimiter_combo)
 
         status_row = QWidget()
@@ -138,16 +158,29 @@ class SidePanel(QFrame):
         layout.addWidget(self.logged_bytes_label)
 
         event_row = QHBoxLayout()
+        event_row.setSpacing(8)
         self.add_event_button = QPushButton("+ Add Event")
         self.add_event_button.setObjectName("addEventButton")
-        event_row.addWidget(self.add_event_button)
+        self.add_event_button.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        event_row.addWidget(self.add_event_button, 1)
         self.view_events_button = QPushButton("Events (0)")
         self.view_events_button.setObjectName("viewEventsButton")
-        event_row.addWidget(self.view_events_button)
+        self.view_events_button.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        event_row.addWidget(self.view_events_button, 1)
         layout.addLayout(event_row)
 
         self.logging_button = QPushButton("Start Logging")
         self.logging_button.setObjectName("loggingButton")
+        self.logging_button.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
         layout.addWidget(self.logging_button)
         return group
 
