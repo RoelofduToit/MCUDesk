@@ -4,10 +4,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout, QWidget
 
 from serialscope import __version__
+from serialscope.updates.model import REPOSITORY_URL
 
 
 APPLICATION_AUTHOR = "Roelof du Toit"
-GITHUB_URL = "https://github.com/RoelofduToit/SerialScope"
+GITHUB_URL = REPOSITORY_URL
 
 
 class AboutDialog(QDialog):

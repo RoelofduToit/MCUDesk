@@ -18,7 +18,7 @@ def test_package_metadata_uses_authoritative_runtime_version() -> None:
     assert 'dynamic = ["version"]' in configuration
     assert '\nversion = "' not in configuration
     assert 'version = {attr = "serialscope.__version__"}' in configuration
-    assert __version__ == "0.10.0"
+    assert __version__ == "0.11.0"
     assert '[project.gui-scripts]' in configuration
     assert 'serialscope = "serialscope.app:main"' in configuration
 
@@ -31,6 +31,7 @@ def test_runtime_dependencies_are_explicit_and_development_is_separate() -> None
     assert '"PySide6' in runtime
     assert '"pyqtgraph' in runtime
     assert '"pyserial' in runtime
+    assert '"packaging' in runtime
     assert '"pytest' not in runtime
     assert '"pytest>=8,<9"' in development
     assert '"pyinstaller>=6.10,<7"' in development

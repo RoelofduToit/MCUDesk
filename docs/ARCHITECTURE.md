@@ -4,7 +4,7 @@
 
 SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
 
-Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, version 0.9 hardened lifecycle, packaging, and experiment events, and version 0.10 adds persistent per-device profiles.
+Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, version 0.9 hardened lifecycle, packaging, and experiment events, version 0.10 added persistent per-device profiles, and version 0.11 adds verified application updates.
 
 ## Current structure
 
@@ -12,6 +12,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/app.py` owns the Qt application lifecycle.
 - `src/serialscope/settings.py` validates and persists small user preferences through `QSettings`.
 - `src/serialscope/profiles/` owns Device Profile models, deterministic port matching, and versioned atomic JSON persistence.
+- `src/serialscope/updates/` owns GitHub release parsing, version comparison, asynchronous checks, verified downloads, cancellation, and daily-check policy.
 - `src/serialscope/serial/port_scanner.py` discovers ports through PySerial and returns Qt-independent structured metadata.
 - `src/serialscope/serial/connection.py` owns the live PySerial object and its open/close lifecycle.
 - `src/serialscope/serial/reader.py` runs bounded serial reads in a dedicated `QThread` and emits raw byte chunks.
@@ -40,6 +41,8 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/ui/graphs_widget.py` owns graph-channel selection and PyQtGraph presentation.
 - `src/serialscope/ui/elapsed_time_axis.py` formats seconds-valued graph ticks as human-readable elapsed time without SI prefixes.
 - `src/serialscope/ui/preferences_dialog.py` provides the compact confirmed appearance settings UI.
+- `src/serialscope/ui/update_controller.py` coordinates updater state and presentation without performing HTTP or package writes itself.
+- `src/serialscope/ui/update_dialogs.py` presents release notes, byte progress, cancellation, and explicit installation handoff.
 - `src/serialscope/ui/theme.py` applies consistent Light and Dark application/graph palettes centrally.
 - `src/serialscope/ui/main_window.py` composes the top-level window and status bar.
 - `src/serialscope/ui/connection_bar.py` contains the inert connection controls.
@@ -51,6 +54,36 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `docs/` contains project documentation and architectural decisions.
 
 Future modules should be introduced only when their responsibilities are needed. Business and domain logic must live outside the GUI so it can be tested without constructing Qt widgets.
+
+## Version 0.11.0 application updates
+
+`serialscope.updates.model` is the single authority for the public
+`RoelofduToit/SerialScope` release location and Linux package convention.
+`UpdateChecker` requests only GitHub's latest stable release endpoint through
+QtNetwork, normalizes leading `v` tags with `packaging.version.Version`, rejects
+draft/prerelease metadata, and selects only the exact
+`serialscope_<version>_amd64.deb` asset. Requests contain only normal HTTP
+headers and the SerialScope version; there are no credentials, telemetry, or
+experiment/device data.
+
+`UpdateDownloader` streams the selected asset asynchronously into Qt's
+per-user cache beneath `updates/`. The incomplete filename ends in `.part` and
+is removed on cancellation, HTTP/write failure, incomplete transfer, or digest
+mismatch. SerialScope requires GitHub's valid `sha256:<hex>` metadata: only a
+fully flushed, size-checked, SHA-256-matching download is atomically renamed to
+its final `.deb` name and offered for installation. Missing, malformed, and
+unsupported digests have no bypass.
+
+The UI controller allows checks and downloads during acquisition/recording but
+blocks installation while recording remains active. It never stops logging or
+disconnects hardware. Installation opens the verified package through the
+desktop's default package installer; SerialScope never invokes `sudo`, stores a
+password, overwrites `/opt`, or forcibly restarts itself. Automatic checks are
+enabled by default, persisted through `QSettings`, scheduled after the main
+window appears, and rate-limited to approximately once per 24 hours. Automatic
+failures and current-version results remain silent, while manual checks always
+report a result. Closing the application aborts updater replies and cleans
+partial data without unmanaged worker threads.
 
 ## Architectural rules
 

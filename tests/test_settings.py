@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,8 @@ def test_default_preferences_are_dark_and_comma(tmp_path: Path) -> None:
 
     assert settings.theme == "dark"
     assert settings.structured_data_delimiter == ","
+    assert settings.automatically_check_for_updates
+    assert settings.last_automatic_update_check is None
 
 
 @pytest.mark.parametrize("theme", ["dark", "light"])
@@ -64,3 +67,22 @@ def test_invalid_delimiter_falls_back_to_comma(tmp_path: Path) -> None:
     backend.sync()
 
     assert _settings(path).structured_data_delimiter == ","
+
+
+def test_update_preferences_and_last_check_persist(tmp_path: Path) -> None:
+    path = tmp_path / "settings.ini"
+    settings = _settings(path)
+    checked_at = datetime(2026, 8, 15, 12, 30, tzinfo=timezone.utc)
+    settings.set_automatically_check_for_updates(False)
+    settings.set_last_automatic_update_check(checked_at)
+
+    restored = _settings(path)
+    assert not restored.automatically_check_for_updates
+    assert restored.last_automatic_update_check == checked_at
+
+
+def test_invalid_last_update_timestamp_is_ignored(tmp_path: Path) -> None:
+    path = tmp_path / "settings.ini"
+    backend = QSettings(str(path), QSettings.Format.IniFormat)
+    backend.setValue("updates/last_automatic_check_utc", "not a date")
+    assert _settings(path).last_automatic_update_check is None

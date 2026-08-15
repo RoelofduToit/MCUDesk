@@ -2,7 +2,9 @@
 
 SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
 
-Version 0.10.0 adds persistent per-device profiles for serial settings, deterministic hardware matching, and channel presentation metadata. Profiles remain optional: the normal Custom workflow still selects a port and baud rate directly, and choosing a profile never connects hardware automatically.
+Version 0.11.0 adds asynchronous stable-release checking and verified Linux
+`.deb` downloads through the public GitHub Releases API. Installation remains
+an explicit handoff to the operating system package installer.
 
 Recordings use one parent experiment directory with `session.json` and `events.csv`, plus separate `raw.log` and `data.csv` files beneath each participating device directory. Operator events and structured device files share the same host-side monotonic session origin. Existing sessions without `events.csv` remain replayable.
 

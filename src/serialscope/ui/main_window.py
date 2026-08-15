@@ -62,6 +62,7 @@ from serialscope.ui.profile_dialogs import ProfileNameDialog
 from serialscope.ui.side_panel import SidePanel
 from serialscope.ui.terminal_widget import TerminalWidget
 from serialscope.ui.theme import apply_application_theme
+from serialscope.ui.update_controller import UpdateController
 
 
 def format_byte_count(byte_count: int) -> str:
@@ -121,6 +122,11 @@ class MainWindow(QMainWindow):
             default_source.source_id: ChannelMetadataRegistry()
         }
         self._application_settings = application_settings or ApplicationSettings()
+        self._update_controller = UpdateController(
+            self,
+            self._application_settings,
+            lambda: self._recording_session.is_recording,
+        )
         self._profile_store = profile_store or ProfileStore()
         self._source_profiles: dict[str, str | None] = {
             source.source_id: None for source in self._source_manager.sources
@@ -264,9 +270,18 @@ class MainWindow(QMainWindow):
         )
 
     def _show_preferences(self) -> None:
-        dialog = PreferencesDialog(self._selected_theme, self)
+        dialog = PreferencesDialog(
+            self._selected_theme,
+            self,
+            automatically_check_for_updates=(
+                self._application_settings.automatically_check_for_updates
+            ),
+        )
         if dialog.exec() == PreferencesDialog.DialogCode.Accepted:
             self._application_settings.set_theme(dialog.selected_theme)
+            self._application_settings.set_automatically_check_for_updates(
+                dialog.automatically_check_for_updates
+            )
             self.apply_theme(dialog.selected_theme)
 
     def _build_menu_bar(self) -> None:
@@ -290,8 +305,15 @@ class MainWindow(QMainWindow):
         )
 
         help_menu = self.menuBar().addMenu("Help")
+        self.check_updates_action = help_menu.addAction("Check for Updates...")
+        self.check_updates_action.triggered.connect(
+            self._update_controller.check_manually
+        )
+        help_menu.addSeparator()
         self.about_action = help_menu.addAction("About SerialScope")
         self.about_action.triggered.connect(self._show_about_dialog)
+        self.github_action = help_menu.addAction("GitHub")
+        self.github_action.triggered.connect(self._open_github)
         self._build_menu_information()
 
     def _build_menu_information(self) -> None:
@@ -329,6 +351,10 @@ class MainWindow(QMainWindow):
 
     def _show_about_dialog(self) -> None:
         AboutDialog(self).exec()
+
+    def check_for_updates_automatically(self) -> bool:
+        """Start the non-blocking daily check when application settings allow it."""
+        return self._update_controller.check_automatically_if_due()
 
     def _show_channel_settings(self) -> None:
         dialog = ChannelSettingsDialog(self._channel_metadata, self)
@@ -1309,6 +1335,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         self._stop_recording("application_closed", show_error=False)
+        self._update_controller.shutdown()
         self._source_manager.disconnect_all()
         for graph in self.graphs_widget._widgets.values():
             graph._refresh_timer.stop()

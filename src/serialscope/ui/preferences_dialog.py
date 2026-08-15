@@ -2,6 +2,7 @@
 
 from PySide6.QtWidgets import (
     QComboBox,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -13,7 +14,12 @@ from PySide6.QtWidgets import (
 class PreferencesDialog(QDialog):
     """Edit preferences that benefit from explicit confirmation."""
 
-    def __init__(self, current_theme: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        current_theme: str,
+        parent: QWidget | None = None,
+        automatically_check_for_updates: bool = True,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("preferencesDialog")
         self.setWindowTitle("Preferences")
@@ -33,6 +39,16 @@ class PreferencesDialog(QDialog):
         form.addRow("Theme", self.theme_combo)
         layout.addWidget(appearance)
 
+        updates = QGroupBox("Updates")
+        updates_layout = QVBoxLayout(updates)
+        self.automatic_update_checkbox = QCheckBox(
+            "Automatically check for updates"
+        )
+        self.automatic_update_checkbox.setObjectName("automaticUpdateCheck")
+        self.automatic_update_checkbox.setChecked(automatically_check_for_updates)
+        updates_layout.addWidget(self.automatic_update_checkbox)
+        layout.addWidget(updates)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
@@ -44,3 +60,7 @@ class PreferencesDialog(QDialog):
     @property
     def selected_theme(self) -> str:
         return self.theme_combo.currentData()
+
+    @property
+    def automatically_check_for_updates(self) -> bool:
+        return self.automatic_update_checkbox.isChecked()

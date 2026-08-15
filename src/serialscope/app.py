@@ -27,4 +27,6 @@ def main() -> int:
     window.show()
     if smoke_test:
         QTimer.singleShot(250, application.quit)
+    else:
+        QTimer.singleShot(0, window.check_for_updates_automatically)
     return application.exec()

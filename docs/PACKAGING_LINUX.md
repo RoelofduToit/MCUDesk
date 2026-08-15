@@ -124,6 +124,31 @@ dpkg-deb --info dist/serialscope_<version>_amd64.deb
 dpkg-deb --contents dist/serialscope_<version>_amd64.deb
 ```
 
+## Application updates
+
+SerialScope checks the public stable-release endpoint:
+
+```text
+https://api.github.com/repos/RoelofduToit/SerialScope/releases/latest
+```
+
+Linux amd64 updates must provide an asset named exactly
+`serialscope_<version>_amd64.deb`. Downloads use Qt's per-user cache location,
+never `/opt`, the source checkout, or `dist/`, and remain `<asset>.part` until
+complete. Installation is offered only when GitHub supplies a valid SHA-256
+digest and the downloaded bytes match it. There is no verification bypass.
+
+Automatic checks are enabled by default and limited to approximately once per
+24 hours. They use the public API without a token and send no serial, profile,
+recording, machine, or user data. Manual checks remain available in development
+launches as well as installed builds.
+
+After verification, SerialScope opens the `.deb` with the system package
+installer. It does not invoke `sudo`, run as root, replace files under `/opt`
+directly, or restart itself. Active recording blocks only the installation
+handoff; checking and downloading remain asynchronous and do not stop serial
+acquisition.
+
 ## Launch
 
 Launch directly, without activating the virtual environment:
@@ -192,4 +217,4 @@ Linux distributions commonly restrict `/dev/ttyUSB*` and `/dev/ttyACM*` access t
 - Hardware serial, browser integration, native file dialogs, and desktop drag/drop require manual testing on the target desktop.
 - The `.deb` provides a desktop launcher and hicolor icon, but taskbar behavior
   can still vary between window managers. There is no MIME association, code
-  signing, automatic updater, AppImage, RPM, or ARM package yet.
+  signing, AppImage, RPM, or ARM package yet.

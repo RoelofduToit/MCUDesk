@@ -24,3 +24,13 @@ def test_preferences_dialog_selects_supported_theme(label: str, theme: str) -> N
     ]
     dialog.close()
     application.processEvents()
+
+
+def test_preferences_dialog_edits_automatic_update_setting() -> None:
+    QApplication.instance() or QApplication([])
+    dialog = PreferencesDialog("dark", automatically_check_for_updates=False)
+
+    assert not dialog.automatically_check_for_updates
+    dialog.automatic_update_checkbox.setChecked(True)
+    assert dialog.automatically_check_for_updates
+    dialog.close()
