@@ -1,0 +1,153 @@
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build-windows-installer:
+    name: Build Windows installer from v0.13.0
+    runs-on: windows-latest
+    steps:
+      - name: Check out v0.13.0
+        uses: actions/checkout@v4
+        with:
+          ref: v0.13.0
+          fetch-tags: true
+
+      - name: Confirm v0.13.0 checkout
+        shell: pwsh
+        run: |
+          $ExpectedCommit = "ca7ddcfa95b0cb30c3e8ec8940060b8186464b24"
+          $Head = (git rev-parse HEAD).Trim()
+          $Describe = (git describe --tags --exact-match).Trim()
+          Write-Output "HEAD=$Head"
+          Write-Output "DESCRIBE=$Describe"
+          if ($Head -ne $ExpectedCommit) {
+            throw "Refusing to build: HEAD is $Head, expected $ExpectedCommit"
+          }
+          if ($Describe -ne "v0.13.0") {
+            throw "Refusing to build: checked out $Describe, expected v0.13.0"
+          }
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Create virtual environment
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath ".venv\Scripts\python.exe")) {
+            throw "Expected .venv\Scripts\python.exe was not created"
+          }
+
+      - name: Install project dependencies
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev,packaging]"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run pytest
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Windows application
+        shell: pwsh
+        run: |
+          .\scripts\build_windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke test Windows application
+        shell: pwsh
+        run: |
+          .\scripts\smoke_test_windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $IsccCandidates = @(
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $Iscc = $IsccCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $Iscc) {
+            throw "ISCC.exe not found after installing Inno Setup"
+          }
+          Write-Output "Inno Setup compiler: $Iscc"
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          .\scripts\build_windows_installer.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify installer and print SHA256
+        id: installer
+        shell: pwsh
+        run: |
+          $Installer = "dist\installer\SerialScope_0.13.0_Windows_x64_Setup.exe"
+          if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) {
+            throw "Installer not found: $Installer"
+          }
+          $Item = Get-Item -LiteralPath $Installer
+          $Hash = Get-FileHash -LiteralPath $Installer -Algorithm SHA256
+          Write-Output "Installer path: $($Item.FullName)"
+          Write-Output "Installer size: $($Item.Length) bytes"
+          Write-Output "Installer SHA256: $($Hash.Hash)"
+          "size=$($Item.Length)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256=$($Hash.Hash)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $Summary = @(
+            "## Windows installer"
+            "- Path: $($Item.FullName)"
+            "- Size: $($Item.Length) bytes"
+            "- SHA256: $($Hash.Hash)"
+          ) -join [Environment]::NewLine
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $Summary
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SerialScope_0.13.0_Windows_x64_Setup
+          path: dist/installer/SerialScope_0.13.0_Windows_x64_Setup.exe
+          if-no-files-found: error
+
+      - name: Ensure GitHub CLI is available
+        shell: pwsh
+        run: |
+          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+            choco install gh --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          gh --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload installer to existing v0.13.0 draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $Installer = "dist\installer\SerialScope_0.13.0_Windows_x64_Setup.exe"
+          gh release view v0.13.0 --json isDraft,tagName,assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $Release = gh release view v0.13.0 --json isDraft | ConvertFrom-Json
+          if (-not $Release.isDraft) {
+            throw "Refusing to upload: v0.13.0 is not a draft"
+          }
+          gh release upload v0.13.0 $Installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release view v0.13.0 --json isDraft,tagName,assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
