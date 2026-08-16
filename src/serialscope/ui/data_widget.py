@@ -15,7 +15,12 @@ from PySide6.QtWidgets import (
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
-from serialscope.data import ChannelKey, ChannelMetadataRegistry, evaluate_alarm
+from serialscope.data import (
+    AlarmState,
+    ChannelKey,
+    ChannelMetadataRegistry,
+    evaluate_alarm,
+)
 from serialscope.ui.status_badge import (
     apply_status_row_height,
     make_status_badge,
@@ -147,6 +152,23 @@ class DataWidget(QWidget):
         self.table.hide()
         self.empty_label.show()
 
+    def remove_channel(self, name: str | ChannelKey) -> None:
+        if isinstance(name, ChannelKey):
+            name = name.storage_key
+        row = self._rows.pop(name, None)
+        if row is None:
+            return
+        self.table.removeRow(row)
+        self._latest_values.pop(name, None)
+        self._source_names.pop(name, None)
+        self._rows = {
+            existing: (index if index < row else index - 1)
+            for existing, index in self._rows.items()
+        }
+        if not self._rows:
+            self.table.hide()
+            self.empty_label.show()
+
     def load_replay(self, session: ReplaySession) -> None:
         """Show the latest available value for every recorded channel."""
         self.reset()
@@ -247,6 +269,20 @@ class DataWidget(QWidget):
     def status_text(self, name: str) -> str | None:
         row = self._rows.get(name)
         return self.table.item(row, 3).text() if row is not None else None
+
+    def mark_value_unavailable(self, name: str | ChannelKey) -> None:
+        """Keep the last number but mark the row as not currently measured."""
+        if isinstance(name, ChannelKey):
+            name = name.storage_key
+        if name not in self._rows:
+            return
+        label, style_state, kind = status_presentation(AlarmState.UNKNOWN)
+        item = self.table.item(self._rows[name], 3)
+        item.setText(label)
+        item.setData(Qt.ItemDataRole.UserRole, style_state)
+        self.table.setCellWidget(
+            self._rows[name], 3, _status_badge(label, style_state, kind)
+        )
 
     def _update_status(self, source_name: str) -> None:
         row = self._rows.get(source_name)

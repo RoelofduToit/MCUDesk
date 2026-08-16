@@ -417,8 +417,7 @@ class MainWindow(QMainWindow):
             return
         current = set(self._calculated_store.all_names(source_id))
         registry = self._source_metadata[source_id]
-        for removed in previous - current:
-            registry.discard(removed)
+        self._remove_calculated_channels(source_id, previous - current)
         for channel in dialog.calculated_channels:
             existing = registry.get(channel.name)
             registry.set(channel.name, existing.alias, channel.unit, existing.alarms)
@@ -1095,19 +1094,14 @@ class MainWindow(QMainWindow):
         known_channels = registry.source_names
         registry.ensure(update.names)
         calculated = self._evaluate_calculated_channels(source_id)
-        self._present_structured_update(source_id, update)
         if calculated is not None:
             registry.ensure(calculated.names)
-            self._present_structured_update(source_id, calculated)
+        presented = self._merge_calculated_update(source_id, update, calculated)
+        self._present_structured_update(source_id, presented)
+        self._apply_calculated_evaluation_status(source_id)
         if registry.source_names != known_channels:
             self._apply_channel_metadata()
-        logged = update
-        if calculated is not None and calculated.names:
-            logged = ChannelUpdate(
-                (*update.names, *calculated.names),
-                (*update.values, *calculated.values),
-                False,
-            )
+        logged = presented
         if self._recording_session.is_recording:
             try:
                 if isinstance(self._recording_session, MultiSourceRecordingSession):
@@ -1120,6 +1114,47 @@ class MainWindow(QMainWindow):
                 self._handle_recording_source_failure(
                     source_id, RecordingSessionError(str(error))
                 )
+
+    def _merge_calculated_update(
+        self,
+        source_id: str,
+        physical: ChannelUpdate,
+        calculated: ChannelUpdate | None,
+    ) -> ChannelUpdate:
+        """Keep calculated names in the live set instead of replacing it."""
+        if not self._calculated_store.for_source(source_id):
+            return physical
+        if calculated is None:
+            return ChannelUpdate(physical.names, physical.values, False)
+        return ChannelUpdate(
+            (*physical.names, *calculated.names),
+            (*physical.values, *calculated.values),
+            False,
+        )
+
+    def _view_channel_name(self, source_id: str, name: str) -> str:
+        if len(self._source_manager.sources) == 1:
+            return name
+        return f"{source_id}\x1f{name}"
+
+    def _apply_calculated_evaluation_status(self, source_id: str) -> None:
+        """Show UNKNOWN when a calculated channel did not produce this sample."""
+        for name in self._calculated_errors.get(source_id, {}):
+            view_name = self._view_channel_name(source_id, name)
+            self.dashboard_widget.mark_value_unavailable(view_name)
+            self.data_widget.mark_value_unavailable(view_name)
+
+    def _remove_calculated_channels(self, source_id: str, names: set[str]) -> None:
+        """Drop deleted calculated definitions from live views and metadata."""
+        registry = self._source_metadata[source_id]
+        source = self._source_manager.get(source_id)
+        for name in names:
+            registry.discard(name)
+            source.latest_values.pop(name, None)
+            view_name = self._view_channel_name(source_id, name)
+            self.dashboard_widget.remove_channel(view_name)
+            self.data_widget.remove_channel(view_name)
+            self.graphs_widget.remove_channel(view_name)
 
     def _evaluate_calculated_channels(self, source_id: str) -> ChannelUpdate | None:
         channels = self._calculated_store.for_source(source_id)
@@ -1138,10 +1173,10 @@ class MainWindow(QMainWindow):
     def _refresh_calculated_channels(self, source_id: str) -> None:
         """Recompute calculated channels after definitions or metadata change."""
         update = self._evaluate_calculated_channels(source_id)
-        if update is None:
-            return
-        self._source_metadata[source_id].ensure(update.names)
-        self._present_structured_update(source_id, update)
+        if update is not None:
+            self._source_metadata[source_id].ensure(update.names)
+            self._present_structured_update(source_id, update)
+        self._apply_calculated_evaluation_status(source_id)
 
     def _present_structured_update(self, source_id: str, update: ChannelUpdate) -> None:
         source = self._source_manager.get(source_id)

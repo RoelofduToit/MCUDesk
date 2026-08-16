@@ -480,6 +480,13 @@ class GraphsWidget(QWidget):
     def set_channel_selected(self, name: str, selected: bool) -> None:
         self.channel_selector.set_channel_checked(name, selected)
 
+    def remove_channel(self, name: str) -> None:
+        if name not in self._selectors:
+            return
+        if self._selectors[name].isChecked():
+            self.set_channel_selected(name, False)
+        self.channel_selector.remove_channel(name)
+
     def has_series(self, name: str) -> bool:
         return name in self._series
 

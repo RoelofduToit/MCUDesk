@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.data import (
+    AlarmState,
     ChannelHistory,
     ChannelKey,
     ChannelMetadataRegistry,
@@ -135,8 +136,11 @@ class DashboardWidget(QWidget):
 
     def update_channels(self, update: ChannelUpdate) -> None:
         """Consume one existing structured update without parsing raw input."""
-        if update.replace_channels and self.channel_names != update.names:
-            self.reset()
+        # Parser replace updates list only the physical header. Calculated
+        # channels are appended afterwards, so treating that header as the
+        # complete dashboard set would destroy selected tiles on the next
+        # sample. Availability is additive; tiles leave only on deselect or
+        # an explicit remove_channel() when a definition is deleted.
         self._add_channels(update.names)
         self._trend.add_update(update)
         for name, value in zip(update.names, update.values, strict=True):
@@ -228,9 +232,40 @@ class DashboardWidget(QWidget):
         key = name.storage_key if isinstance(name, ChannelKey) else name
         self.channel_selector.set_channel_checked(key, selected)
 
+    def remove_channel(self, name: str | ChannelKey) -> None:
+        """Drop one channel after its definition is deleted, including its tile."""
+        key = name.storage_key if isinstance(name, ChannelKey) else name
+        if key not in self._available_names:
+            return
+        if self._built and key in self._items and self._items[key].isChecked():
+            self.channel_selector.set_channel_checked(key, False)
+        if self._built:
+            self.channel_selector.remove_channel(key)
+        self._available_names.remove(key)
+        tile = self._tiles.pop(key, None)
+        if tile is not None:
+            tile.setParent(None)
+        self.layout_model.remove(key)
+        self._latest_values.pop(key, None)
+        self._source_names.pop(key, None)
+        if self._built:
+            self.empty_label.setVisible(not self._tiles)
+            self._apply_sparkline_colors()
+            self._reflow(force=True)
+
     def tile_value_text(self, name: str) -> str | None:
         tile = self._tiles.get(name)
         return tile.value_label.text() if tile is not None else None
+
+    def tile_status_text(self, name: str) -> str | None:
+        tile = self._tiles.get(name)
+        return tile.status_label.text() if tile is not None else None
+
+    def mark_value_unavailable(self, name: str) -> None:
+        """Keep the last number but show it is not a current measurement."""
+        tile = self._tiles.get(name)
+        if tile is not None:
+            tile.set_alarm_state(AlarmState.UNKNOWN)
 
     def set_channel_metadata(self, registry: ChannelMetadataRegistry) -> None:
         self._metadata = registry

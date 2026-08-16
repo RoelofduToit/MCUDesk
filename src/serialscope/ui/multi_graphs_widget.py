@@ -158,6 +158,15 @@ class MultiSourceGraphsWidget(QWidget):
     def set_channel_selected(self, name: str, selected: bool) -> None:
         self.active_widget.set_channel_selected(name, selected)
 
+    def remove_channel(self, name: str) -> None:
+        if "\x1f" in name:
+            source_id, _separator, channel_name = name.partition("\x1f")
+            widget = self._widgets.get(source_id)
+            if widget is not None:
+                widget.remove_channel(channel_name)
+            return
+        self.active_widget.remove_channel(name)
+
     def has_series(self, name: str) -> bool:
         return self.active_widget.has_series(name)
 

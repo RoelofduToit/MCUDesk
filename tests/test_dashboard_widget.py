@@ -125,6 +125,60 @@ def test_partial_updates_preserve_existing_values_and_selection() -> None:
     application.processEvents()
 
 
+def test_csv_replace_update_does_not_drop_selected_calculated_tile() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("A", "B"), (1.0, 2.0)))
+    widget.update_channels(ChannelUpdate(("SUM",), (3.0,), replace_channels=False))
+    widget.set_channel_selected("A", True)
+    widget.set_channel_selected("SUM", True)
+
+    widget.update_channels(ChannelUpdate(("A", "B"), (4.0, 5.0)))
+
+    assert widget.selected_channels == ("A", "SUM")
+    assert widget.tile_count == 2
+    assert widget.tile_value_text("A") == "4"
+    assert widget.tile_value_text("SUM") == "3"
+    widget.update_channels(ChannelUpdate(("SUM",), (9.0,), replace_channels=False))
+    assert widget.tile_value_text("SUM") == "9"
+    widget.close()
+    application.processEvents()
+
+
+def test_missing_calculated_value_does_not_delete_selected_tile() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("A", "B"), (1.0, 2.0)))
+    widget.update_channels(ChannelUpdate(("SUM",), (3.0,), replace_channels=False))
+    widget.set_channel_selected("SUM", True)
+
+    widget.update_channels(ChannelUpdate(("A", "B"), (8.0, 1.0)))
+
+    assert widget.selected_channels == ("SUM",)
+    assert widget.tile_value_text("SUM") == "3"
+    widget.mark_value_unavailable("SUM")
+    assert widget.tile_status_text("SUM") == "UNKNOWN"
+    assert widget.tile_value_text("SUM") == "3"
+    widget.close()
+    application.processEvents()
+
+
+def test_remove_channel_drops_selected_calculated_tile() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("A", "SUM"), (1.0, 3.0)))
+    widget.set_channel_selected("SUM", True)
+    widget.set_channel_selected("A", True)
+
+    widget.remove_channel("SUM")
+
+    assert "SUM" not in widget.channel_names
+    assert widget.selected_channels == ("A",)
+    assert widget.tile_count == 1
+    widget.close()
+    application.processEvents()
+
+
 def test_many_channels_use_vertical_scroll_without_horizontal_scroll() -> None:
     application = QApplication.instance() or QApplication([])
     widget = DashboardWidget()
