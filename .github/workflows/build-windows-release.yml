@@ -33,10 +33,10 @@ jobs:
             throw "Refusing to build: checked out $Describe, expected v0.13.0"
           }
 
-      - name: Set up Python 3.13
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.12"
 
       - name: Create virtual environment
         shell: pwsh
@@ -56,6 +56,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run pytest
+        env:
+          QT_QPA_PLATFORM: windows
+          QT_OPENGL: software
+          QT_ENABLE_HIGHDPI_SCALING: "0"
         shell: pwsh
         run: |
           .\.venv\Scripts\python.exe -m pytest
