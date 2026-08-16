@@ -59,7 +59,7 @@ class SidePanel(QFrame):
             QSizePolicy.Policy.Preferred,
         )
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(8, 12, 8, 12)
         layout.setSpacing(12)
 
         heading = QLabel("DEVICE")
@@ -79,7 +79,7 @@ class SidePanel(QFrame):
         group = QGroupBox("Connection")
         group.setObjectName("connectionSection")
         form = QFormLayout(group)
-        form.setContentsMargins(12, 16, 12, 12)
+        form.setContentsMargins(10, 16, 10, 12)
         form.setSpacing(9)
         form.addRow("Data bits", QLabel("8"))
         form.addRow("Parity", QLabel("None"))
@@ -91,7 +91,7 @@ class SidePanel(QFrame):
         group = QGroupBox("Channels")
         group.setObjectName("channelsSection")
         layout = QVBoxLayout(group)
-        layout.setContentsMargins(12, 16, 12, 12)
+        layout.setContentsMargins(10, 16, 10, 12)
 
         self.channels_widget = ChannelsWidget()
         layout.addWidget(self.channels_widget)
@@ -101,7 +101,7 @@ class SidePanel(QFrame):
         group = QGroupBox("Session / logging")
         group.setObjectName("sessionSection")
         layout = QVBoxLayout(group)
-        layout.setContentsMargins(12, 16, 12, 12)
+        layout.setContentsMargins(10, 16, 10, 12)
 
         session_name_label = QLabel("Session name")
         layout.addWidget(session_name_label)
@@ -149,6 +149,7 @@ class SidePanel(QFrame):
         self.logging_status_label.setObjectName("loggingStatusLabel")
         self.logging_status_label.setProperty("recordingState", "inactive")
         self.logging_status_label.setWordWrap(True)
+        self.logging_status_label.setMinimumWidth(0)
         status_layout.addWidget(self.logging_status_label, 1)
         layout.addWidget(self.logging_status_indicator)
 
@@ -167,6 +168,7 @@ class SidePanel(QFrame):
         self.logging_filename_label = QLabel("")
         self.logging_filename_label.setObjectName("loggingFilenameLabel")
         self.logging_filename_label.setWordWrap(True)
+        self.logging_filename_label.setMinimumWidth(0)
         layout.addWidget(self.logging_filename_label)
 
         self.recording_elapsed_label = QLabel("00:00:00")
