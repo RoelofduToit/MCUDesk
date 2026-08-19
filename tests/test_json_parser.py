@@ -1,4 +1,4 @@
-from serialscope.parsing import JsonChannelParser
+from serialscope.parsing import JsonChannelParser, ParserConfiguration, SerialStreamParser
 
 
 def test_valid_json_exposes_numeric_channels() -> None:
@@ -76,3 +76,15 @@ def test_reset_discards_an_incomplete_line() -> None:
     parser.reset()
 
     assert parser.feed(b'{"new":2}\n')[0].channels == {"new": 2}
+
+
+def test_forced_json_mode_keeps_existing_object_behavior() -> None:
+    parser = SerialStreamParser(ParserConfiguration(mode="json"))
+    updates = parser.feed(b'{"TC1":23.4,"TC2":25.1,"PRESSURE":101.3,"RPM":1450}\n')
+    assert updates[0].channels == {
+        "TC1": 23.4,
+        "TC2": 25.1,
+        "PRESSURE": 101.3,
+        "RPM": 1450,
+    }
+    assert parser.feed(b"23.4|25.1|101.3|1450\n") == []

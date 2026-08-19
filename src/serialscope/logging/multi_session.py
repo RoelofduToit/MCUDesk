@@ -37,6 +37,7 @@ class RecordingSourceConfig:
     profile_id: str | None = None
     profile_name: str | None = None
     line_ending: str = "LF"
+    parser_config: Mapping[str, object] | None = None
 
 
 @dataclass(slots=True)
@@ -415,6 +416,8 @@ class MultiSourceRecordingSession:
                 "profile_id": config.profile_id,
                 "profile_name": config.profile_name,
             }
+        if config.parser_config:
+            result["parser"] = dict(config.parser_config)
         if total_rx_bytes is not None:
             result["total_rx_byte_count"] = total_rx_bytes
         return result

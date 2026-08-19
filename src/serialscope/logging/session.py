@@ -45,6 +45,7 @@ class SessionConfig:
     channels: Mapping[str, Mapping[str, object]] | None = None
     profile_id: str | None = None
     profile_name: str | None = None
+    parser_config: Mapping[str, object] | None = None
 
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
@@ -234,6 +235,8 @@ class RecordingSession:
                 "profile_id": config.profile_id,
                 "profile_name": config.profile_name,
             }
+        if config.parser_config:
+            self._metadata["parser"] = dict(config.parser_config)
         try:
             self._write_metadata()
             self._write_in_progress_marker()

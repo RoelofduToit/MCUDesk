@@ -161,6 +161,13 @@ class TerminalWidget(QFrame):
         self.source_combo.setVisible(len(sources) >= 2)
         self._source_changed()
 
+    def recent_lines(self, source_id: str, limit: int = 20) -> str:
+        """Return the latest complete received lines for one source."""
+        raw = bytes(self._source_bytes.get(source_id, b""))
+        text = raw.decode("utf-8", errors="replace")
+        lines = [line for line in text.splitlines() if line.strip()]
+        return "\n".join(lines[-max(1, limit) :])
+
     def append_source_bytes(self, source_id: str, data: bytes) -> None:
         self._source_bytes.setdefault(source_id, bytearray()).extend(data)
         if source_id == self.selected_source_id:

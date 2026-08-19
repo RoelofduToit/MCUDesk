@@ -10,6 +10,7 @@ import uuid
 
 from PySide6.QtCore import QStandardPaths
 
+from serialscope.parsing.parser_config import ParserConfiguration
 from serialscope.profiles.model import (
     DeviceIdentity,
     DeviceProfile,
@@ -61,6 +62,7 @@ class ProfileStore:
         last_port: str | None = None,
         channels: Mapping[str, Mapping[str, object]] | None = None,
         profile_id: str | None = None,
+        parser_config: ParserConfiguration | Mapping[str, object] | None = None,
     ) -> DeviceProfile:
         self._ensure_writable()
         try:
@@ -72,6 +74,11 @@ class ProfileStore:
                 device_identity,
                 last_port,
                 channels or {},
+                parser_config=parser_config
+                if isinstance(parser_config, ParserConfiguration)
+                else ParserConfiguration.from_mapping(
+                    parser_config, default_mode=parser
+                ),
             )
         except (TypeError, ValueError) as error:
             raise ProfileStoreError(str(error)) from error
@@ -91,10 +98,20 @@ class ProfileStore:
         device_identity: DeviceIdentity,
         last_port: str | None,
         channels: Mapping[str, Mapping[str, object]],
+        parser_config: ParserConfiguration | Mapping[str, object] | None = None,
     ) -> DeviceProfile:
         self._ensure_writable()
         previous = self.get(profile_id)
         try:
+            resolved_config = (
+                parser_config
+                if isinstance(parser_config, ParserConfiguration)
+                else ParserConfiguration.from_mapping(
+                    parser_config, default_mode=parser
+                )
+                if parser_config is not None
+                else ParserConfiguration(mode=parser)
+            )
             updated = replace(
                 previous,
                 serial=serial,
@@ -102,6 +119,7 @@ class ProfileStore:
                 device_identity=device_identity,
                 last_port=last_port,
                 channels=channels,
+                parser_config=resolved_config,
             )
         except (TypeError, ValueError) as error:
             raise ProfileStoreError(str(error)) from error

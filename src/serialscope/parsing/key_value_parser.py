@@ -1,4 +1,4 @@
-"""Incremental parser for comma-separated numeric key/value streams."""
+"""Incremental parser for numeric key/value streams."""
 
 import math
 import re
@@ -13,8 +13,23 @@ _INTEGER_PATTERN = re.compile(r"^[+-]?\d+$")
 class KeyValueChannelParser:
     """Parse complete key/value lines from arbitrarily chunked bytes."""
 
-    def __init__(self, max_line_bytes: int = DEFAULT_MAX_LINE_BYTES) -> None:
+    def __init__(
+        self,
+        max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
+        pair_separator: str = ",",
+        name_value_separator: str = "=",
+        min_pairs: int = 2,
+    ) -> None:
+        if not pair_separator or not name_value_separator:
+            raise ValueError("key/value separators must not be empty")
+        if pair_separator == name_value_separator:
+            raise ValueError("key/value separators must be different")
+        if min_pairs < 1:
+            raise ValueError("minimum pair count must be positive")
         self._lines = BoundedLineBuffer(max_line_bytes)
+        self._pair_separator = pair_separator
+        self._name_value_separator = name_value_separator
+        self._min_pairs = min_pairs
 
     def reset(self) -> None:
         self._lines.reset()
@@ -37,10 +52,11 @@ class KeyValueChannelParser:
         names: list[str] = []
         values: list[NumericValue] = []
         seen: set[str] = set()
-        for item in line.split(","):
-            if item.count("=") != 1:
+        for item in self._split_pairs(line):
+            separator = self._name_value_separator
+            if separator not in item:
                 continue
-            key, raw_value = (part.strip() for part in item.split("=", 1))
+            key, raw_value = (part.strip() for part in item.split(separator, 1))
             value = self._parse_number(raw_value)
             if not key or key in seen or value is None:
                 continue
@@ -48,9 +64,12 @@ class KeyValueChannelParser:
             names.append(key)
             values.append(value)
 
-        if len(names) < 2:
+        if len(names) < self._min_pairs:
             return None
         return ChannelUpdate(tuple(names), tuple(values), replace_channels=False)
+
+    def _split_pairs(self, line: str) -> list[str]:
+        return line.split(self._pair_separator)
 
     @staticmethod
     def _parse_number(value: str) -> NumericValue | None:

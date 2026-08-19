@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 from serialscope.data import AlarmLimits
+from serialscope.parsing.parser_config import (
+    ParserConfiguration,
+    ParserConfigurationError,
+)
 
 
 LINE_ENDINGS = ("None", "LF", "CR", "CRLF")
@@ -130,6 +134,7 @@ class DeviceProfile:
     device_identity: DeviceIdentity = DeviceIdentity()
     last_port: str | None = None
     channels: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    parser_config: ParserConfiguration = field(default_factory=ParserConfiguration)
 
     def __post_init__(self) -> None:
         profile_id = self.profile_id.strip()
@@ -138,10 +143,21 @@ class DeviceProfile:
             raise ValueError("Profile ID must not be empty.")
         if not name:
             raise ValueError("Profile name must not be empty.")
-        if self.parser != "auto":
-            raise ValueError("Only automatic parser detection is currently supported.")
+        try:
+            parser_config = self.parser_config
+            if not isinstance(parser_config, ParserConfiguration):
+                parser_config = ParserConfiguration.from_mapping(
+                    parser_config,
+                    default_mode=str(self.parser or "auto"),
+                )
+            elif parser_config.is_default and self.parser != "auto":
+                parser_config = ParserConfiguration(mode=str(self.parser))
+        except ParserConfigurationError as error:
+            raise ValueError(str(error)) from error
         object.__setattr__(self, "profile_id", profile_id)
         object.__setattr__(self, "name", name)
+        object.__setattr__(self, "parser_config", parser_config)
+        object.__setattr__(self, "parser", parser_config.mode)
         object.__setattr__(self, "last_port", _optional_text(self.last_port))
         object.__setattr__(self, "channels", _normalize_channels(self.channels))
 
@@ -151,6 +167,7 @@ class DeviceProfile:
             "name": self.name,
             "serial": self.serial.to_dict(),
             "parser": self.parser,
+            "parser_config": self.parser_config.to_dict(),
             "device_identity": self.device_identity.to_dict(),
             "last_port": self.last_port,
             "channels": self.channels,
@@ -161,10 +178,13 @@ class DeviceProfile:
         serial = value.get("serial", {})
         identity = value.get("device_identity", {})
         channels = value.get("channels", {})
+        parser_config = value.get("parser_config")
         if not isinstance(serial, Mapping) or not isinstance(identity, Mapping):
             raise ValueError("Profile configuration must contain JSON objects.")
         if not isinstance(channels, Mapping):
             raise ValueError("Profile channels must contain a JSON object.")
+        if parser_config is not None and not isinstance(parser_config, Mapping):
+            raise ValueError("Parser configuration must contain a JSON object.")
         return cls(
             profile_id=str(value.get("profile_id", "")),
             name=str(value.get("name", "")),
@@ -173,4 +193,8 @@ class DeviceProfile:
             device_identity=DeviceIdentity.from_mapping(identity),
             last_port=_optional_text(value.get("last_port")),
             channels=channels,
+            parser_config=ParserConfiguration.from_mapping(
+                parser_config,
+                default_mode=str(value.get("parser", "auto")),
+            ),
         )

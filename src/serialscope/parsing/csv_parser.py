@@ -10,6 +10,11 @@ from serialscope.parsing.line_buffer import (
     DEFAULT_MAX_LINE_BYTES,
     BoundedLineBuffer,
 )
+from serialscope.parsing.parser_config import (
+    ColumnMapping,
+    HEADER_MODES,
+    generic_channel_name,
+)
 
 
 NumericValue = int | float
@@ -36,10 +41,20 @@ class CsvChannelParser:
         self,
         headerless_confirmation_rows: int = 3,
         max_line_bytes: int = DEFAULT_MAX_LINE_BYTES,
+        delimiter: str = ",",
+        header_mode: str = "auto",
+        columns: tuple[ColumnMapping, ...] = (),
     ) -> None:
         if headerless_confirmation_rows < 1:
             raise ValueError("headerless confirmation rows must be positive")
+        if not delimiter or "\n" in delimiter or "\r" in delimiter:
+            raise ValueError("delimiter must be a non-empty single-line separator")
+        if header_mode not in HEADER_MODES:
+            raise ValueError("unsupported header mode")
         self._lines = BoundedLineBuffer(max_line_bytes)
+        self._delimiter = delimiter
+        self._header_mode = header_mode
+        self._columns = tuple(sorted(columns, key=lambda item: item.index))
         self._header: tuple[str, ...] | None = None
         self._header_is_generic = False
         self._headerless_confirmation_rows = headerless_confirmation_rows
@@ -72,22 +87,25 @@ class CsvChannelParser:
     def _parse_line(self, raw_line: bytes) -> ChannelUpdate | None:
         try:
             line = raw_line.decode("utf-8")
-            rows = list(csv.reader(io.StringIO(line), strict=True))
-        except (UnicodeDecodeError, csv.Error):
+            fields = self._read_fields(line)
+        except (UnicodeDecodeError, csv.Error, ValueError):
             if self._header is None:
                 self._reset_candidate()
             return None
-        if len(rows) != 1:
+        if fields is None:
             if self._header is None:
                 self._reset_candidate()
             return None
 
-        fields = tuple(field.strip() for field in rows[0])
+        if self._header_mode == "none" and self._columns:
+            return self._parse_mapped_row(fields)
+
         values = self._parse_values(fields)
 
         if self._header is not None:
             if (
-                self._header_is_generic
+                self._header_mode == "auto"
+                and self._header_is_generic
                 and len(fields) == len(self._header)
                 and self._is_valid_header(fields)
             ):
@@ -99,6 +117,23 @@ class CsvChannelParser:
 
             if len(fields) != len(self._header) or values is None:
                 return None
+            self._latest_values = values
+            return ChannelUpdate(self._header, values)
+
+        if self._header_mode == "present":
+            if self._is_explicit_header(fields):
+                self._header = fields
+                self._header_is_generic = False
+                self._reset_candidate()
+            return None
+
+        if self._header_mode == "none":
+            if values is None or not values:
+                return None
+            self._header = tuple(
+                generic_channel_name(index) for index in range(len(values))
+            )
+            self._header_is_generic = True
             self._latest_values = values
             return ChannelUpdate(self._header, values)
 
@@ -122,10 +157,38 @@ class CsvChannelParser:
         if self._candidate_count < self._headerless_confirmation_rows:
             return None
 
-        self._header = tuple(f"Channel {index}" for index in range(1, width + 1))
+        self._header = tuple(generic_channel_name(index) for index in range(width))
         self._header_is_generic = True
         self._reset_candidate()
         return ChannelUpdate(self._header, values)
+
+    def _parse_mapped_row(self, fields: tuple[str, ...]) -> ChannelUpdate | None:
+        names: list[str] = []
+        values: list[NumericValue] = []
+        for column in self._columns:
+            if not column.enabled:
+                continue
+            if column.index >= len(fields):
+                continue
+            value = self._parse_number(fields[column.index])
+            if value is None:
+                continue
+            names.append(column.name)
+            values.append(value)
+        if not names:
+            return None
+        return ChannelUpdate(tuple(names), tuple(values), replace_channels=False)
+
+    def _read_fields(self, line: str) -> tuple[str, ...] | None:
+        delimiter = self._delimiter
+        if len(delimiter) == 1:
+            rows = list(
+                csv.reader(io.StringIO(line), delimiter=delimiter, strict=True)
+            )
+            if len(rows) != 1:
+                return None
+            return tuple(field.strip() for field in rows[0])
+        return tuple(part.strip() for part in line.split(delimiter))
 
     def _reset_candidate(self) -> None:
         self._candidate_width = None
@@ -141,6 +204,10 @@ class CsvChannelParser:
             and cls._parse_values(fields) is None
             and all(cls._parse_number(field) is None for field in fields)
         )
+
+    @staticmethod
+    def _is_explicit_header(fields: tuple[str, ...]) -> bool:
+        return bool(fields) and all(fields) and len(set(fields)) == len(fields)
 
     @classmethod
     def _parse_values(

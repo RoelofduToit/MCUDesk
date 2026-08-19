@@ -31,7 +31,7 @@ from serialscope.logging import (
     find_interrupted_recordings,
     is_interrupted_recording,
 )
-from serialscope.parsing import ChannelUpdate, SerialStreamParser
+from serialscope.parsing import ChannelUpdate, ParserConfiguration, SerialStreamParser
 from serialscope.data import (
     CalculatedChannelStore,
     CalculatedChannelStoreError,
@@ -64,6 +64,7 @@ from serialscope.ui.data_widget import DataWidget
 from serialscope.ui.dashboard_widget import DashboardWidget
 from serialscope.ui.event_dialogs import AddEventDialog, EventListDialog
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
+from serialscope.ui.parser_configuration_dialog import ParserConfigurationDialog
 from serialscope.ui.preferences_dialog import PreferencesDialog
 from serialscope.ui.profile_dialogs import ProfileNameDialog
 from serialscope.ui.recovery_dialog import InterruptedRecordingDialog
@@ -314,6 +315,44 @@ class MainWindow(QMainWindow):
             )
             self.apply_theme(dialog.selected_theme)
 
+    def _show_parser_configuration(self) -> None:
+        source = self._selected_source
+        recording = self._recording_session.is_recording
+        dialog = ParserConfigurationDialog(
+            source.parser.configuration,
+            recent_sample=self.terminal.recent_lines(source.source_id),
+            apply_enabled=not recording,
+            apply_disabled_reason=(
+                "Stop recording before changing parser configuration."
+                if recording
+                else ""
+            ),
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        if self._recording_session.is_recording:
+            QMessageBox.warning(
+                self,
+                "Parser Configuration",
+                "Stop recording before changing parser configuration.",
+            )
+            return
+        self._apply_parser_configuration(dialog.configuration())
+
+    def _apply_parser_configuration(self, configuration: ParserConfiguration) -> None:
+        source = self._selected_source
+        self._source_manager.apply_parser_configuration(
+            source.source_id, configuration
+        )
+        profile_id = self._source_profiles.get(source.source_id)
+        if profile_id is None:
+            return
+        try:
+            self._profile_store.update(profile_id, **self._current_profile_values())
+        except ProfileStoreError as error:
+            self._show_profile_error(str(error))
+
     def _build_menu_bar(self) -> None:
         file_menu = self.menuBar().addMenu("File")
         self.open_session_action = file_menu.addAction("Open Session...")
@@ -325,6 +364,12 @@ class MainWindow(QMainWindow):
         settings_menu = self.menuBar().addMenu("Settings")
         self.preferences_action = settings_menu.addAction("Preferences")
         self.preferences_action.triggered.connect(self._show_preferences)
+        self.parser_configuration_action = settings_menu.addAction(
+            "Parser Configuration..."
+        )
+        self.parser_configuration_action.triggered.connect(
+            self._show_parser_configuration
+        )
 
         channels_menu = self.menuBar().addMenu("Channels")
         self.configure_channels_action = channels_menu.addAction(
@@ -686,7 +731,7 @@ class MainWindow(QMainWindow):
         source = self._selected_source
         source.baud_rate = profile.serial.baud_rate
         source.line_ending = profile.serial.line_ending
-        source.parser.reset()
+        source.parser.apply_configuration(profile.parser_config)
         self.connection_bar.baud_combo.setCurrentText(str(profile.serial.baud_rate))
         self.terminal.line_ending_combo.blockSignals(True)
         self.terminal.line_ending_combo.setCurrentText(profile.serial.line_ending)
@@ -762,7 +807,8 @@ class MainWindow(QMainWindow):
                 baud_rate=int(self.connection_bar.baud_combo.currentText()),
                 line_ending=source.line_ending,
             ),
-            "parser": "auto",
+            "parser": source.parser.configuration.mode,
+            "parser_config": source.parser.configuration,
             "device_identity": identity,
             "last_port": port.device if port else source.port,
             "channels": self._source_metadata[source.source_id].snapshot(),
@@ -1354,6 +1400,7 @@ class MainWindow(QMainWindow):
                         profile_id=self._profile_reference(source.source_id)[0],
                         profile_name=self._profile_reference(source.source_id)[1],
                         line_ending=source.line_ending,
+                        parser_config=source.parser.configuration.to_dict(),
                     )
                     for source in connected_sources
                 )
@@ -1378,6 +1425,7 @@ class MainWindow(QMainWindow):
                     channels=self._channel_metadata.snapshot(),
                     profile_id=profile_id,
                     profile_name=profile_name,
+                    parser_config=source.parser.configuration.to_dict(),
                 )
                 self._recording_session.start(Path(selected_directory), config)
         except RecordingSessionError as error:

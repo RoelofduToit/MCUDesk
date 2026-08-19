@@ -8,7 +8,7 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 
-from serialscope.parsing import ChannelUpdate, SerialStreamParser
+from serialscope.parsing import ChannelUpdate, ParserConfiguration, SerialStreamParser
 from serialscope.serial.connection import SerialConnection, SerialConnectionError
 from serialscope.serial.reader import SerialReader
 
@@ -208,6 +208,15 @@ class SerialSourceManager(QObject):
                 self.disconnect(source.source_id)
             except SerialConnectionError:
                 self.source_state_changed.emit(source.source_id, "error")
+
+    def apply_parser_configuration(
+        self, source_id: str, configuration: ParserConfiguration
+    ) -> None:
+        source = self.get(source_id)
+        source.parser.apply_configuration(configuration)
+        self.source_state_changed.emit(
+            source_id, "connected" if source.is_connected else "disconnected"
+        )
 
     def write(self, source_id: str, data: bytes) -> int:
         source = self.get(source_id)
