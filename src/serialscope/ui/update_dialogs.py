@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from serialscope import PRODUCT_NAME
 from serialscope.updates import UpdateInfo
 
 
@@ -25,12 +26,12 @@ class UpdateAvailableDialog(QDialog):
     def __init__(self, info: UpdateInfo, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("updateAvailableDialog")
-        self.setWindowTitle("SerialScope Update")
+        self.setWindowTitle(f"{PRODUCT_NAME} Update")
         self.setMinimumSize(520, 360)
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
 
-        title = QLabel(f"SerialScope {info.latest_version} is available")
+        title = QLabel(f"{PRODUCT_NAME} {info.latest_version} is available")
         title.setObjectName("updateAvailableTitle")
         layout.addWidget(title)
         versions = QLabel(
@@ -65,8 +66,8 @@ class UpdateAvailableDialog(QDialog):
 
         if info.asset is None:
             self.package_status.setText(
-                "A newer SerialScope version is available, but no compatible "
-                "Linux amd64 package was found."
+                f"A newer {PRODUCT_NAME} version is available, but no compatible "
+                "package was found for this system."
             )
             self.download_button.setEnabled(False)
         elif not info.asset.is_verifiable:
@@ -88,7 +89,7 @@ class DownloadProgressDialog(QDialog):
         self.setModal(False)
         self.setMinimumWidth(430)
         layout = QVBoxLayout(self)
-        self.status_label = QLabel(f"Downloading SerialScope {version}")
+        self.status_label = QLabel(f"Downloading {PRODUCT_NAME} {version}")
         layout.addWidget(self.status_label)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, max(0, total_bytes))

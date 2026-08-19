@@ -7,7 +7,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 
-APPLICATION_ICON = Path("assets/icons/serialscope.png")
+APPLICATION_ICON = Path("assets/icons/mcudesk.png")
 
 
 def resource_path(relative_path: str | Path) -> Path:

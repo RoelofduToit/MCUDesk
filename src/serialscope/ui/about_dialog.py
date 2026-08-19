@@ -3,7 +3,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout, QWidget
 
-from serialscope import __version__
+from serialscope import PRODUCT_NAME, __version__
 from serialscope.updates.model import REPOSITORY_URL
 
 
@@ -16,15 +16,15 @@ class AboutDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("aboutSerialScopeDialog")
-        self.setWindowTitle("About SerialScope")
+        self.setObjectName("aboutMCUDeskDialog")
+        self.setWindowTitle(f"About {PRODUCT_NAME}")
         self.setMinimumWidth(360)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 20, 22, 16)
         layout.setSpacing(14)
 
         self.information_label = QLabel(
-            "<h2>SerialScope</h2>"
+            f"<h2>{PRODUCT_NAME}</h2>"
             f"<p>Version {__version__}</p>"
             f"<p>Developed by:<br><b>{APPLICATION_AUTHOR}</b></p>"
             f'<p>GitHub:<br><a href="{GITHUB_URL}">{GITHUB_URL}</a></p>'

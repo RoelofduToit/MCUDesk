@@ -107,7 +107,7 @@ def test_menu_bar_shows_author_authoritative_version_and_updates_link(
     assert window.menu_version_label.text() == f"v{__version__}"
     assert window.github_updates_button.text() == "GitHub / Updates"
     assert "releases and updates" in window.github_updates_button.toolTip()
-    assert window.about_action.text() == "About SerialScope"
+    assert window.about_action.text() == "About MCUDesk"
     window.github_updates_button.click()
     assert opened == [QUrl(GITHUB_URL)]
 
@@ -125,8 +125,8 @@ def test_about_dialog_uses_shared_application_information() -> None:
     dialog = AboutDialog()
     text = dialog.information_label.text()
 
-    assert dialog.windowTitle() == "About SerialScope"
-    assert "SerialScope" in text
+    assert dialog.windowTitle() == "About MCUDesk"
+    assert "MCUDesk" in text
     assert f"Version {__version__}" in text
     assert APPLICATION_AUTHOR in text
     assert GITHUB_URL in text

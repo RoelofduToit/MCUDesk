@@ -66,7 +66,7 @@ def test_main_window_has_application_title() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])
 
-    assert window.windowTitle() == "SerialScope"
+    assert window.windowTitle() == "MCUDesk"
 
     window.close()
     application.processEvents()
@@ -212,7 +212,7 @@ def test_preferences_action_is_available() -> None:
     assert window.preferences_action.text() == "Preferences"
     assert window.configure_channels_action.text() == "Configure Channels..."
     assert window.check_updates_action.text() == "Check for Updates..."
-    assert window.about_action.text() == "About SerialScope"
+    assert window.about_action.text() == "About MCUDesk"
     assert window.github_action.text() == "GitHub"
 
     window.close()

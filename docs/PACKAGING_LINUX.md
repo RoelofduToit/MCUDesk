@@ -1,6 +1,6 @@
-# Packaging SerialScope for Linux
+# Packaging MCUDesk for Linux
 
-SerialScope's Linux distribution is built in two layers: an inspectable
+MCUDesk's Linux distribution is built in two layers: an inspectable
 PyInstaller one-folder bundle, then a Debian package that installs that bundle
 as a normal desktop application. The `.deb` targets native amd64
 Debian-compatible systems, including suitably compatible Ubuntu and Linux Mint
@@ -23,7 +23,7 @@ source .venv/bin/activate
 python -m pip install -e ".[dev,packaging]"
 ```
 
-PyInstaller is a packaging-only dependency. It is not installed for ordinary SerialScope runtime use.
+PyInstaller is a packaging-only dependency. It is not installed for ordinary MCUDesk runtime use.
 
 The Debian build also requires the standard `dpkg`/`dpkg-deb` tools. If
 `desktop-file-validate` is installed, the build uses it automatically.
@@ -41,23 +41,21 @@ The maintained configuration is `packaging/serialscope.spec`. It packages `src/s
 The output is:
 
 ```text
-dist/SerialScope/
-├── SerialScope
+dist/MCUDesk/
+├── MCUDesk
 └── _internal/
-    ├── assets/icons/serialscope.png
+    ├── assets/icons/mcudesk.png
     └── bundled Python, Qt, PySide6, PyQtGraph, and PySerial files
 ```
 
-`assets/icons/serialscope.png` is the authoritative application icon. Qt loads
-it through SerialScope's packaging-safe resource lookup, so source and bundled
+`assets/icons/mcudesk.png` is the authoritative application icon. Qt loads
+it through MCUDesk's packaging-safe resource lookup, so source and bundled
 launches do not depend on the current working directory. PyInstaller includes
 the same PNG under `_internal/assets/icons/` in the one-folder bundle.
 
-PyInstaller cannot embed an icon in a Linux ELF executable. Complete desktop
-menu/taskbar integration will therefore belong to a future `.desktop`/`.deb`
-milestone, which should reuse this authoritative PNG in the hicolor hierarchy.
-A future Windows build may derive an `.ico` from the same artwork without
-changing application resource lookup.
+PyInstaller cannot embed an icon in a Linux ELF executable. The Debian package
+installs this PNG into the hicolor icon hierarchy and a `.desktop` launcher
+named MCUDesk.
 
 ## Build the Debian package
 
@@ -72,7 +70,7 @@ The script derives the Debian version directly from
 under ignored `build/deb/`, validates it without root privileges, and writes:
 
 ```text
-dist/serialscope_<version>_amd64.deb
+dist/MCUDesk_<version>_Linux_amd64.deb
 ```
 
 The current version already conforms to Debian version syntax and is used
@@ -83,23 +81,25 @@ The installed layout is:
 
 ```text
 /opt/serialscope/                         complete PyInstaller bundle
-/usr/bin/serialscope                     command-line launcher
+/usr/bin/mcudesk                         command-line launcher
+/usr/bin/serialscope                     compatibility launcher
 /usr/share/applications/serialscope.desktop
-/usr/share/icons/hicolor/256x256/apps/serialscope.png
+/usr/share/icons/hicolor/256x256/apps/mcudesk.png
 ```
 
 The 256×256 hicolor icon is generated during the build from the authoritative
-`assets/icons/serialscope.png`; it is not a separately maintained source asset.
+`assets/icons/mcudesk.png`; it is not a separately maintained source asset.
 
 Install, launch, and remove the package with:
 
 ```bash
-sudo apt install ./dist/serialscope_<version>_amd64.deb
+sudo apt install ./dist/MCUDesk_<version>_Linux_amd64.deb
+mcudesk
 serialscope
 sudo apt remove serialscope
 ```
 
-SerialScope also appears in a standards-compliant desktop application menu.
+MCUDesk also appears in a standards-compliant desktop application menu. The Debian package identifier remains `serialscope` so upgrades replace the previous installation.
 The desktop entry launches without a terminal and resolves the icon through
 the hicolor hierarchy.
 
@@ -119,21 +119,23 @@ baseline when broader backward compatibility is required.
 Inspect an existing package without installing it:
 
 ```bash
-./scripts/smoke_test_linux_deb.sh dist/serialscope_<version>_amd64.deb
-dpkg-deb --info dist/serialscope_<version>_amd64.deb
-dpkg-deb --contents dist/serialscope_<version>_amd64.deb
+./scripts/smoke_test_linux_deb.sh dist/MCUDesk_<version>_Linux_amd64.deb
+dpkg-deb --info dist/MCUDesk_<version>_Linux_amd64.deb
+dpkg-deb --contents dist/MCUDesk_<version>_Linux_amd64.deb
 ```
 
 ## Application updates
 
-SerialScope checks the public stable-release endpoint:
+MCUDesk checks the public stable-release endpoint:
 
 ```text
-https://api.github.com/repos/RoelofduToit/SerialScope/releases/latest
+https://api.github.com/repos/RoelofduToit/MCUDesk/releases/latest
 ```
 
-Linux amd64 updates must provide an asset named exactly
-`serialscope_<version>_amd64.deb`. Downloads use Qt's per-user cache location,
+Linux amd64 updates prefer `MCUDesk_<version>_Linux_amd64.deb` and still accept
+the legacy `serialscope_<version>_amd64.deb` asset so SerialScope 0.13.x can
+discover the first MCUDesk-branded release. The Debian build writes both
+filenames. Downloads use Qt's per-user cache location,
 never `/opt`, the source checkout, or `dist/`, and remain `<asset>.part` until
 complete. Installation is offered only when GitHub supplies a valid SHA-256
 digest and the downloaded bytes match it. There is no verification bypass.
@@ -143,7 +145,7 @@ Automatic checks are enabled by default and limited to approximately once per
 recording, machine, or user data. Manual checks remain available in development
 launches as well as installed builds.
 
-After verification, SerialScope opens the `.deb` with the system package
+After verification, MCUDesk opens the `.deb` with the system package
 installer. It does not invoke `sudo`, run as root, replace files under `/opt`
 directly, or restart itself. Active recording blocks only the installation
 handoff; checking and downloading remain asynchronous and do not stop serial
@@ -154,14 +156,14 @@ acquisition.
 Launch directly, without activating the virtual environment:
 
 ```bash
-./dist/SerialScope/SerialScope
+./dist/MCUDesk/MCUDesk
 ```
 
 The executable does not depend on the current working directory. For example:
 
 ```bash
 cd /tmp
-/path/to/SerialScope/dist/SerialScope/SerialScope
+/path/to/MCUDesk/dist/MCUDesk/MCUDesk
 ```
 
 The Linux build is a GUI application and does not open a terminal itself. For startup diagnostics, launch it from an existing terminal; dynamic-loader and PyInstaller bootloader failures remain visible there.
@@ -198,17 +200,17 @@ Use the built executable—not `python main.py`—for the following checks:
 
 ## Clean generated output
 
-The build script safely replaces only SerialScope's generated bundle and work directory. To clean manually from the repository root:
+The build script safely replaces only MCUDesk's generated bundle and work directory. To clean manually from the repository root:
 
 ```bash
-rm -rf build/SerialScope dist/SerialScope
+rm -rf build/MCUDesk dist/MCUDesk
 ```
 
 Both top-level output directories are ignored by Git. The maintained `packaging/serialscope.spec` is explicitly not ignored.
 
 ## Serial-port permissions
 
-Linux distributions commonly restrict `/dev/ttyUSB*` and `/dev/ttyACM*` access to a group such as `dialout` or `uucp`. SerialScope does not modify groups, device rules, or permissions and never invokes `sudo`. Configure access according to the distribution's documentation, log out/in if group membership changes, and retry. Permission failures remain concise connection errors in the UI.
+Linux distributions commonly restrict `/dev/ttyUSB*` and `/dev/ttyACM*` access to a group such as `dialout` or `uucp`. MCUDesk does not modify groups, device rules, or permissions and never invokes `sudo`. Configure access according to the distribution's documentation, log out/in if group membership changes, and retry. Permission failures remain concise connection errors in the UI.
 
 ## Known limitations
 

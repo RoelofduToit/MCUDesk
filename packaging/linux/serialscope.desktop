@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=SerialScope
+Name=MCUDesk
 Comment=Serial data acquisition, logging and visualization
-Exec=serialscope
-Icon=serialscope
+Exec=mcudesk
+Icon=mcudesk
 Terminal=false
 Categories=Development;Engineering;
 StartupNotify=true

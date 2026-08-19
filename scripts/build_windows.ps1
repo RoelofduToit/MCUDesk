@@ -8,18 +8,18 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $SpecFile = Join-Path $ProjectRoot "packaging\serialscope_windows.spec"
-$WorkDirectory = Join-Path $ProjectRoot "build\SerialScope-Windows"
+$WorkDirectory = Join-Path $ProjectRoot "build\MCUDesk-Windows"
 $DistRoot = Join-Path $ProjectRoot "dist"
-$BundleDirectory = Join-Path $DistRoot "SerialScope"
-$Executable = Join-Path $BundleDirectory "SerialScope.exe"
-$BundledIcon = Join-Path $BundleDirectory "_internal\assets\icons\serialscope.png"
+$BundleDirectory = Join-Path $DistRoot "MCUDesk"
+$Executable = Join-Path $BundleDirectory "MCUDesk.exe"
+$BundledIcon = Join-Path $BundleDirectory "_internal\assets\icons\mcudesk.png"
 
 # Prevent host-level Python configuration from contaminating dependency analysis.
 Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
 Remove-Item Env:PYTHONHOME -ErrorAction SilentlyContinue
 
 function Fail-Build([string]$Message) {
-    throw "SerialScope Windows build failed: $Message"
+    throw "MCUDesk Windows build failed: $Message"
 }
 
 function Remove-GeneratedDirectory([string]$Path) {
@@ -93,7 +93,7 @@ $BundleBytes = (Get-ChildItem -LiteralPath $BundleDirectory -Recurse -File | Mea
 $ExecutableBytes = (Get-Item -LiteralPath $Executable).Length
 Write-Output "PyInstaller version: $PyInstallerVersion"
 Write-Output ("Build duration: {0:N1} seconds" -f $Stopwatch.Elapsed.TotalSeconds)
-Write-Output "SerialScope Windows bundle created at: $BundleDirectory"
+Write-Output "MCUDesk Windows bundle created at: $BundleDirectory"
 Write-Output ("Bundle size: {0:N0} bytes" -f $BundleBytes)
-Write-Output ("SerialScope.exe size: {0:N0} bytes" -f $ExecutableBytes)
+Write-Output ("MCUDesk.exe size: {0:N0} bytes" -f $ExecutableBytes)
 Write-Output "Qt Windows platform plugin: $($WindowsPlatformPlugin.FullName)"

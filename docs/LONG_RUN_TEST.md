@@ -1,4 +1,4 @@
-# SerialScope Long-Run Validation
+# MCUDesk Long-Run Validation
 
 Use this checklist for a real 8–12 hour validation before packaging or release. Automated tests exercise lifecycle and high-rate data paths, but they cannot reproduce USB drivers, host sleep, cable quality, disk behavior, or hardware timing.
 
@@ -13,7 +13,7 @@ Recommended equipment and stream:
 
 Before starting:
 
-1. Note the SerialScope version, OS, available disk space, and process memory.
+1. Note the MCUDesk version, OS, available disk space, and process memory.
 2. Connect the device and confirm one update per second in Terminal, Data, Dashboard, and Graphs.
 3. Select several graph channels and confirm the graph starts at elapsed time zero.
 4. Enter a meaningful session name and start recording in a location with ample free space.
@@ -42,7 +42,7 @@ After the run:
 ## Failure and shutdown checks
 
 - While recording, unplug the device. Confirm one concise error, finalized files, a source-specific disconnect reason, and a successful later reconnect.
-- Start another recording and close SerialScope. Cancel once to confirm acquisition continues, then close again and confirm exit. Verify the recording is finalized with `application_closed`.
+- Start another recording and close MCUDesk. Cancel once to confirm acquisition continues, then close again and confirm exit. Verify the recording is finalized with `application_closed`.
 - If safely possible in a disposable test location, make the destination unwritable during a run. Confirm recording becomes inactive for the affected source and the GUI remains usable. Restore permissions afterward.
 
 ## Optional two-device test

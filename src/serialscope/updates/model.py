@@ -10,12 +10,13 @@ from packaging.version import InvalidVersion, Version
 
 
 GITHUB_OWNER = "RoelofduToit"
-GITHUB_REPOSITORY = "SerialScope"
+GITHUB_REPOSITORY = "MCUDesk"
 REPOSITORY_URL = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPOSITORY}"
 LATEST_RELEASE_API_URL = (
     f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPOSITORY}/releases/latest"
 )
 LINUX_PACKAGE_ARCHITECTURE = "amd64"
+WINDOWS_PACKAGE_ARCHITECTURE = "win64"
 AUTOMATIC_CHECK_INTERVAL = timedelta(hours=24)
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 
@@ -85,6 +86,21 @@ def parse_sha256_digest(value: object) -> tuple[str | None, str | None]:
     return digest.lower(), None
 
 
+def compatible_asset_names(version: str, architecture: str | None) -> tuple[str, ...]:
+    """Return preferred then legacy package names for one platform."""
+    if architecture == LINUX_PACKAGE_ARCHITECTURE:
+        return (
+            f"MCUDesk_{version}_Linux_{architecture}.deb",
+            f"serialscope_{version}_{architecture}.deb",
+        )
+    if architecture == WINDOWS_PACKAGE_ARCHITECTURE:
+        return (
+            f"MCUDesk_{version}_Windows_x64_Setup.exe",
+            f"SerialScope_{version}_Windows_x64_Setup.exe",
+        )
+    return ()
+
+
 def _compatible_asset(
     assets: object,
     latest_version: str,
@@ -94,9 +110,13 @@ def _compatible_asset(
         return None
     if not isinstance(assets, list):
         return None
-    expected_name = f"serialscope_{latest_version}_{architecture}.deb"
+    by_name: dict[str, dict] = {}
     for raw_asset in assets:
-        if not isinstance(raw_asset, dict) or raw_asset.get("name") != expected_name:
+        if isinstance(raw_asset, dict) and isinstance(raw_asset.get("name"), str):
+            by_name[raw_asset["name"]] = raw_asset
+    for expected_name in compatible_asset_names(latest_version, architecture):
+        raw_asset = by_name.get(expected_name)
+        if raw_asset is None:
             continue
         url = raw_asset.get("browser_download_url")
         size = raw_asset.get("size", 0)
@@ -134,7 +154,7 @@ def parse_release_metadata(
     return UpdateInfo(
         installed_version=installed,
         latest_version=latest,
-        release_name=name if isinstance(name, str) and name else f"SerialScope {latest}",
+        release_name=name if isinstance(name, str) and name else f"MCUDesk {latest}",
         release_notes=notes if isinstance(notes, str) else "",
         release_url=release_url,
         asset=_compatible_asset(payload.get("assets"), latest, architecture),
@@ -146,6 +166,17 @@ def current_linux_package_architecture() -> str | None:
     machine = platform.machine().lower()
     if sys.platform.startswith("linux") and machine in {"x86_64", "amd64"}:
         return LINUX_PACKAGE_ARCHITECTURE
+    return None
+
+
+def current_update_architecture() -> str | None:
+    """Return the updater package selector for this host, if supported."""
+    linux = current_linux_package_architecture()
+    if linux is not None:
+        return linux
+    machine = platform.machine().lower()
+    if sys.platform.startswith("win") and machine in {"amd64", "x86_64"}:
+        return WINDOWS_PACKAGE_ARCHITECTURE
     return None
 
 

@@ -34,7 +34,7 @@ class SerialConnection:
         return self._serial_port.port
 
     def connect(self, device: str, baud_rate: int) -> None:
-        """Open a serial port using SerialScope's standard settings."""
+        """Open a serial port using MCUDesk's standard settings."""
         if self._serial_port is not None:
             raise SerialConnectionError("A serial port is already connected.")
 

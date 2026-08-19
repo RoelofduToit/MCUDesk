@@ -1,6 +1,6 @@
-# SerialScope
+# MCUDesk
 
-SerialScope is the foundation of a modern cross-platform serial terminal, data logger, and engineering data application for Windows and Linux.
+MCUDesk is a cross-platform serial terminal and engineering data tool for Windows and Linux.
 
 Version 0.11.0 adds asynchronous stable-release checking and verified Linux
 `.deb` downloads through the public GitHub Releases API. Installation remains
@@ -49,11 +49,14 @@ The package-safe module launcher works independently of the repository entry fil
 python -m serialscope
 ```
 
-After installation, the package entry point is also available:
+After installation, the package entry points are also available:
 
 ```bash
+mcudesk
 serialscope
 ```
+
+`serialscope` remains as a compatibility command. The internal Python package name is still `serialscope`.
 
 ## Test
 

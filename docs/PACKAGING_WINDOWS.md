@@ -1,6 +1,12 @@
-# Packaging SerialScope for Windows
+# Packaging MCUDesk for Windows
 
-SerialScope's Windows baseline is a native PyInstaller one-folder bundle. It
+MCUDesk's Windows baseline is a native PyInstaller one-folder bundle plus an
+Inno Setup installer. The internal Python package remains `serialscope`. The
+Windows installer AppId `{E893C988-663D-46E8-8C25-E4B83C414F1E}` is stable
+and must not change, so SerialScope installations upgrade in place to MCUDesk.
+`UsePreviousAppDir=yes` keeps an existing `C:\Program Files\SerialScope\`
+install directory on upgrade. New installs use `C:\Program Files\MCUDesk\`.
+The installer removes leftover `SerialScope.exe` and old SerialScope shortcuts.
 does not create an installer, MSI, or one-file executable.
 
 ## Requirements
@@ -36,16 +42,16 @@ The script uses `packaging/serialscope_windows.spec` and replaces only the
 generated Windows work directory and bundle. Output is:
 
 ```text
-dist\SerialScope\
-|-- SerialScope.exe
+dist\MCUDesk\
+|-- MCUDesk.exe
 `-- _internal\
-    |-- assets\icons\serialscope.png
+    |-- assets\icons\mcudesk.png
     `-- bundled Python, Qt, PySide6, PyQtGraph, and PySerial files
 ```
 
-`SerialScope.exe` uses the Windows GUI subsystem, so it does not create a
+`MCUDesk.exe` uses the Windows GUI subsystem, so it does not create a
 console window. Its Explorer/taskbar icon is embedded from
-`assets/icons/serialscope.ico`. Qt continues to load the authoritative PNG at
+`assets/icons/mcudesk.ico`. Qt continues to load the authoritative PNG at
 runtime through the existing PyInstaller-safe resource resolver.
 
 ## Automated smoke test
@@ -64,7 +70,7 @@ connect to serial hardware.
 
 ## Manual checklist
 
-Launch `dist\SerialScope\SerialScope.exe` directly, without activating the
+Launch `dist\MCUDesk\MCUDesk.exe` directly, without activating the
 virtual environment, and verify:
 
 1. No console window appears and the approved icon is shown.
@@ -84,7 +90,7 @@ virtual environment, and verify:
   Windows reputation prompts may occur on other machines.
 - Hardware serial access, native file dialogs, browser integration, and taskbar
   behavior require manual validation on target systems.
-- Windows update asset selection and installation are not implemented yet. The
-  existing Linux-oriented updater remains bundled unchanged.
+- The updater prefers `MCUDesk_<version>_Windows_x64_Setup.exe` and still
+  accepts the legacy `SerialScope_<version>_Windows_x64_Setup.exe` asset.
 - No installer, shortcuts, file associations, or automatic PATH changes are
   provided by the one-folder bundle.

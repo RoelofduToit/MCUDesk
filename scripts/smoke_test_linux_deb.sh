@@ -7,7 +7,7 @@ PYTHON_EXECUTABLE="${PROJECT_ROOT}/.venv/bin/python"
 PACKAGE_NAME="serialscope"
 ARCHITECTURE="$(dpkg --print-architecture)"
 APPLICATION_VERSION="$("${PYTHON_EXECUTABLE}" -c 'from serialscope import __version__; print(__version__)')"
-PACKAGE_FILE="${1:-${PROJECT_ROOT}/dist/${PACKAGE_NAME}_${APPLICATION_VERSION}_${ARCHITECTURE}.deb}"
+PACKAGE_FILE="${1:-${PROJECT_ROOT}/dist/MCUDesk_${APPLICATION_VERSION}_Linux_${ARCHITECTURE}.deb}"
 SMOKE_DIRECTORY="$(mktemp -d)"
 PACKAGE_ROOT="${SMOKE_DIRECTORY}/root"
 CONTROL_ROOT="${SMOKE_DIRECTORY}/control"
@@ -18,7 +18,7 @@ cleanup() {
 trap cleanup EXIT
 
 fail() {
-    echo "SerialScope .deb smoke test failed: $*" >&2
+    echo "MCUDesk .deb smoke test failed: $*" >&2
     exit 1
 }
 
@@ -33,24 +33,32 @@ dpkg-deb --control "${PACKAGE_FILE}" "${CONTROL_ROOT}"
     || fail "package version does not match serialscope.__version__."
 [[ "$(dpkg-deb -f "${PACKAGE_FILE}" Architecture)" == "${ARCHITECTURE}" ]] \
     || fail "package architecture does not match the build host."
-[[ -x "${PACKAGE_ROOT}/opt/serialscope/SerialScope" ]] \
+[[ -x "${PACKAGE_ROOT}/opt/serialscope/MCUDesk" ]] \
     || fail "installed application executable is missing or not executable."
+[[ -x "${PACKAGE_ROOT}/usr/bin/mcudesk" ]] \
+    || fail "MCUDesk command-line launcher is missing or not executable."
 [[ -x "${PACKAGE_ROOT}/usr/bin/serialscope" ]] \
-    || fail "command-line launcher is missing or not executable."
+    || fail "compatibility command-line launcher is missing or not executable."
 [[ -f "${PACKAGE_ROOT}/usr/share/applications/serialscope.desktop" ]] \
     || fail "desktop entry is missing."
-[[ -f "${PACKAGE_ROOT}/usr/share/icons/hicolor/256x256/apps/serialscope.png" ]] \
+[[ -f "${PACKAGE_ROOT}/usr/share/icons/hicolor/256x256/apps/mcudesk.png" ]] \
     || fail "hicolor application icon is missing."
 
-grep -qx 'exec /opt/serialscope/SerialScope "$@"' \
+grep -qx 'exec /opt/serialscope/MCUDesk "$@"' \
+    "${PACKAGE_ROOT}/usr/bin/mcudesk" \
+    || fail "MCUDesk launcher does not execute the installed bundle correctly."
+grep -qx 'exec /opt/serialscope/MCUDesk "$@"' \
     "${PACKAGE_ROOT}/usr/bin/serialscope" \
-    || fail "launcher does not execute the installed bundle correctly."
-grep -qx 'Exec=serialscope' \
+    || fail "compatibility launcher does not execute the installed bundle correctly."
+grep -qx 'Exec=mcudesk' \
     "${PACKAGE_ROOT}/usr/share/applications/serialscope.desktop" \
     || fail "desktop Exec field is invalid."
-grep -qx 'Icon=serialscope' \
+grep -qx 'Icon=mcudesk' \
     "${PACKAGE_ROOT}/usr/share/applications/serialscope.desktop" \
     || fail "desktop Icon field is invalid."
+grep -qx 'Name=MCUDesk' \
+    "${PACKAGE_ROOT}/usr/share/applications/serialscope.desktop" \
+    || fail "desktop Name field is invalid."
 
 if grep -R -F '/home/roelof' \
     "${PACKAGE_ROOT}/usr/bin" \
@@ -69,6 +77,6 @@ mkdir -p "${RUN_DIRECTORY}"
 cd -- "${RUN_DIRECTORY}"
 QT_QPA_PLATFORM=offscreen \
 XDG_CONFIG_HOME="${SMOKE_DIRECTORY}/config" \
-"${PACKAGE_ROOT}/opt/serialscope/SerialScope" --packaging-smoke-test
+"${PACKAGE_ROOT}/opt/serialscope/MCUDesk" --packaging-smoke-test
 
-echo "SerialScope .deb package passed staged validation: ${PACKAGE_FILE}"
+echo "MCUDesk .deb package passed staged validation: ${PACKAGE_FILE}"

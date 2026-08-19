@@ -22,7 +22,7 @@ def _optional_text(value: object) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class SerialSettings:
-    """The serial and TX settings currently supported by SerialScope."""
+    """The serial and TX settings currently supported by MCUDesk."""
 
     baud_rate: int = 115200
     data_bits: int = 8

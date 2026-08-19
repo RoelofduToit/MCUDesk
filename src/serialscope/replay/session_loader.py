@@ -1,4 +1,4 @@
-"""Qt-independent loading and validation of recorded SerialScope sessions."""
+"""Qt-independent loading and validation of recorded MCUDesk sessions."""
 
 from __future__ import annotations
 

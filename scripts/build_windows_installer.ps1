@@ -10,11 +10,11 @@ $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 $VersionFile = Join-Path $ProjectRoot "src\serialscope\__init__.py"
 $InstallerScript = Join-Path $ProjectRoot "packaging\windows\serialscope.iss"
-$BundleExe = Join-Path $ProjectRoot "dist\SerialScope\SerialScope.exe"
+$BundleExe = Join-Path $ProjectRoot "dist\MCUDesk\MCUDesk.exe"
 $InstallerDir = Join-Path $ProjectRoot "dist\installer"
 
 function Fail-Build([string]$Message) {
-    throw "SerialScope installer build failed: $Message"
+    throw "MCUDesk installer build failed: $Message"
 }
 
 if (-not (Test-Path -LiteralPath $VersionFile -PathType Leaf)) {
@@ -66,13 +66,13 @@ New-Item -ItemType Directory -Force -Path $InstallerDir | Out-Null
 
 $ExpectedInstaller = Join-Path `
     $InstallerDir `
-    "SerialScope_${Version}_Windows_x64_Setup.exe"
+    "MCUDesk_${Version}_Windows_x64_Setup.exe"
 
 if (Test-Path -LiteralPath $ExpectedInstaller) {
     Remove-Item -LiteralPath $ExpectedInstaller -Force
 }
 
-Write-Output "SerialScope version: $Version"
+Write-Output "MCUDesk version: $Version"
 Write-Output "Inno Setup compiler: $IsccPath"
 
 Push-Location $ProjectRoot

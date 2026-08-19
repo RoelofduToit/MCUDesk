@@ -1,4 +1,4 @@
-"""The SerialScope main window and top-level UI composition."""
+"""The MCUDesk main window and top-level UI composition."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QDialog,
 )
 
-from serialscope import __version__
+from serialscope import PRODUCT_NAME, __version__
 from serialscope.logging import (
     MultiSourceRecordingSession,
     RawLogger,
@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
         self._reconnect_timer.setSingleShot(True)
         self._reconnect_timer.timeout.connect(self._attempt_reconnect)
         self.setObjectName("mainWindow")
-        self.setWindowTitle("SerialScope")
+        self.setWindowTitle(PRODUCT_NAME)
         self.setMinimumSize(800, 520)
         self.resize(1120, 720)
 
@@ -385,7 +385,7 @@ class MainWindow(QMainWindow):
             self._update_controller.check_manually
         )
         help_menu.addSeparator()
-        self.about_action = help_menu.addAction("About SerialScope")
+        self.about_action = help_menu.addAction(f"About {PRODUCT_NAME}")
         self.about_action.triggered.connect(self._show_about_dialog)
         self.github_action = help_menu.addAction("GitHub")
         self.github_action.triggered.connect(self._open_github)
@@ -401,13 +401,13 @@ class MainWindow(QMainWindow):
 
         self.menu_author_label = QLabel(APPLICATION_AUTHOR)
         self.menu_author_label.setObjectName("menuAuthorLabel")
-        self.menu_author_label.setToolTip("SerialScope developer")
+        self.menu_author_label.setToolTip(f"{PRODUCT_NAME} developer")
         layout.addWidget(self.menu_author_label)
         layout.addWidget(QLabel("|"))
 
         self.menu_version_label = QLabel(f"v{__version__}")
         self.menu_version_label.setObjectName("menuVersionLabel")
-        self.menu_version_label.setToolTip("Installed SerialScope version")
+        self.menu_version_label.setToolTip(f"Installed {PRODUCT_NAME} version")
         layout.addWidget(self.menu_version_label)
         layout.addWidget(QLabel("|"))
 
@@ -415,7 +415,7 @@ class MainWindow(QMainWindow):
         self.github_updates_button.setObjectName("githubUpdatesButton")
         self.github_updates_button.setText("GitHub / Updates")
         self.github_updates_button.setToolTip(
-            "Open SerialScope on GitHub for releases and updates"
+            f"Open {PRODUCT_NAME} on GitHub for releases and updates"
         )
         self.github_updates_button.clicked.connect(self._open_github)
         layout.addWidget(self.github_updates_button)
@@ -662,7 +662,7 @@ class MainWindow(QMainWindow):
                 "Baud",
                 serial_metadata.get("baud_rate") or metadata.get("baud_rate"),
             ),
-            ("SerialScope", metadata.get("serialscope_version")),
+            (PRODUCT_NAME, metadata.get("serialscope_version")),
             ("Delimiter", repr(metadata.get("structured_data_delimiter", ","))),
             ("Rows", metadata.get("structured_row_count", len(session.samples))),
         )

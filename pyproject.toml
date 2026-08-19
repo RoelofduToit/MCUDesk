@@ -24,6 +24,7 @@ packaging = [
 ]
 
 [project.gui-scripts]
+mcudesk = "serialscope.app:main"
 serialscope = "serialscope.app:main"
 
 [tool.setuptools.dynamic]

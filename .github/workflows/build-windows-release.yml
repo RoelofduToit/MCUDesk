@@ -1,5 +1,10 @@
 name: Build Windows release
 
+# Historical one-shot workflow for the SerialScope-branded v0.13.0 Windows
+# installer. It checks out tag v0.13.0, so the produced asset name remains
+# SerialScope_0.13.0_Windows_x64_Setup.exe. Future MCUDesk Windows releases
+# should use MCUDesk_* installer names from the current packaging scripts.
+
 on:
   workflow_dispatch:
 

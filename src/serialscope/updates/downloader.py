@@ -8,12 +8,25 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QStandardPaths, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
-from serialscope import __version__
+from serialscope import PRODUCT_NAME, __version__
 from serialscope.updates.model import ReleaseAsset
 
 
+_LINUX_PACKAGE_SUFFIXES = ("_Linux_amd64.deb", "_amd64.deb")
+_WINDOWS_PACKAGE_SUFFIX = "_Windows_x64_Setup.exe"
+
+
+def _is_supported_update_asset_name(name: str) -> bool:
+    """Accept MCUDesk and legacy SerialScope package names, never path components."""
+    if Path(name).name != name:
+        return False
+    return name.endswith(_LINUX_PACKAGE_SUFFIXES) or name.endswith(
+        _WINDOWS_PACKAGE_SUFFIX
+    )
+
+
 class UpdateDownloader(QObject):
-    """Own one package transfer and publish only a fully verified `.deb`."""
+    """Own one package transfer and publish only a fully verified installer."""
 
     progress = Signal(int, int)
     completed = Signal(object)
@@ -33,7 +46,7 @@ class UpdateDownloader(QObject):
         if not cache_location:
             cache_location = str(
                 Path(QStandardPaths.writableLocation(QStandardPaths.TempLocation))
-                / "SerialScope"
+                / "SerialScope"  # keep historical cache identity under STORAGE_APP_NAME
             )
         default_cache = Path(cache_location)
         self._cache_directory = cache_directory or default_cache / "updates"
@@ -62,7 +75,7 @@ class UpdateDownloader(QObject):
         if not asset.is_verifiable:
             self.failed.emit(asset.verification_error or "SHA-256 verification unavailable.")
             return False
-        if Path(asset.name).name != asset.name or not asset.name.endswith("_amd64.deb"):
+        if not _is_supported_update_asset_name(asset.name):
             self.failed.emit("The selected update package name is unsafe or incompatible.")
             return False
 
@@ -83,7 +96,7 @@ class UpdateDownloader(QObject):
         self._canceling = False
         self._write_error = None
         request = QNetworkRequest(QUrl(asset.url))
-        request.setRawHeader(b"User-Agent", f"SerialScope/{__version__}".encode())
+        request.setRawHeader(b"User-Agent", f"{PRODUCT_NAME}/{__version__}".encode())
         request.setTransferTimeout(30_000)
         self._reply = self._network_manager.get(request)
         self._reply.readyRead.connect(self._read_available)

@@ -1,8 +1,8 @@
-# SerialScope Architecture
+# MCUDesk Architecture
 
 ## Purpose
 
-SerialScope is intended to become a professional cross-platform desktop application for Windows and Linux. It will provide a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features.
+MCUDesk is a professional cross-platform desktop application for Windows and Linux. It provides a modern serial terminal, data logging, intelligent parsing, device profiles, live engineering graphs, and later engineering and data-analysis features. The internal Python package remains `serialscope`.
 
 Phase 0 through v0.2 established the terminal, serial, and raw recording foundations. Version 0.3 added deterministic structured channel detection, version 0.4 introduced a tabbed workspace and graphs, version 0.6 added replay, graph inspection, and Dashboard, version 0.7 added channel metadata and alarms, version 0.8 introduced independent multi-device acquisition, version 0.9 hardened lifecycle, packaging, and experiment events, version 0.10 added persistent per-device profiles, and version 0.11 adds verified application updates.
 
@@ -58,26 +58,26 @@ Future modules should be introduced only when their responsibilities are needed.
 ## Version 0.11.0 application updates
 
 `serialscope.updates.model` is the single authority for the public
-`RoelofduToit/SerialScope` release location and Linux package convention.
+`RoelofduToit/MCUDesk` release location and package convention.
 `UpdateChecker` requests only GitHub's latest stable release endpoint through
 QtNetwork, normalizes leading `v` tags with `packaging.version.Version`, rejects
-draft/prerelease metadata, and selects only the exact
-`serialscope_<version>_amd64.deb` asset. Requests contain only normal HTTP
-headers and the SerialScope version; there are no credentials, telemetry, or
-experiment/device data.
+draft/prerelease metadata, and prefers MCUDesk-branded assets while still
+accepting legacy SerialScope/`serialscope` asset names. Requests contain only
+normal HTTP headers and the MCUDesk version; there are no credentials,
+telemetry, or experiment/device data.
 
 `UpdateDownloader` streams the selected asset asynchronously into Qt's
 per-user cache beneath `updates/`. The incomplete filename ends in `.part` and
 is removed on cancellation, HTTP/write failure, incomplete transfer, or digest
-mismatch. SerialScope requires GitHub's valid `sha256:<hex>` metadata: only a
+mismatch. MCUDesk requires GitHub's valid `sha256:<hex>` metadata: only a
 fully flushed, size-checked, SHA-256-matching download is atomically renamed to
-its final `.deb` name and offered for installation. Missing, malformed, and
+its final package name and offered for installation. Missing, malformed, and
 unsupported digests have no bypass.
 
 The UI controller allows checks and downloads during acquisition/recording but
 blocks installation while recording remains active. It never stops logging or
 disconnects hardware. Installation opens the verified package through the
-desktop's default package installer; SerialScope never invokes `sudo`, stores a
+desktop's default package installer; MCUDesk never invokes `sudo`, stores a
 password, overwrites `/opt`, or forcibly restarts itself. Automatic checks are
 enabled by default, persisted through `QSettings`, scheduled after the main
 window appears, and rate-limited to approximately once per 24 hours. Automatic
@@ -140,7 +140,7 @@ Graph and Dashboard selection retain native `QCheckBox` multi-selection, keyboar
 
 `DeviceProfile` is persistent reusable configuration for exactly one device, while `SerialSource` remains a runtime acquisition object and `SerialPortInfo` remains one currently discoverable operating-system endpoint. A profile has a UUID independent of its unique, trimmed display name. It stores the currently supported 8-N-1/no-flow-control serial format, baud rate, per-source TX line ending, the current `auto` parser mode, optional hardware identity hints, a last-port fallback, and channel alias/unit/alarm metadata keyed by authoritative source channel names.
 
-`ProfileStore` keeps schema version 1 in `device_profiles.json` beneath Qt's cross-platform `AppConfigLocation`. It creates the configuration directory when needed and uses the same temporary-file, flush, `fsync`, and atomic-replace helper as session metadata. Unknown optional fields are tolerated. An invalid document or unsupported schema starts SerialScope with zero available profiles, reports a concise warning, preserves the original file, and disables profile mutation rather than overwriting recoverable user data. Global theme/delimiter `QSettings` remain a separate responsibility.
+`ProfileStore` keeps schema version 1 in `device_profiles.json` beneath Qt's cross-platform `AppConfigLocation`. It creates the configuration directory when needed and uses the same temporary-file, flush, `fsync`, and atomic-replace helper as session metadata. Unknown optional fields are tolerated. An invalid document or unsupported schema starts MCUDesk with zero available profiles, reports a concise warning, preserves the original file, and disables profile mutation rather than overwriting recoverable user data. Global theme/delimiter `QSettings` remain a separate responsibility.
 
 Device matching is deterministic. A stored USB serial number, constrained by VID/PID when present, is exact even if the Linux device path changes. Without a serial number, one matching VID/PID plus available product/manufacturer hints is likely; multiple equal matches are ambiguous and leave the port unselected until the operator chooses. The remembered port is considered only when no stable hardware identity exists. Selecting a profile may select one deterministic match and restore configuration, but it never opens the port. Manual port override never rewrites identity unless the user explicitly updates the profile.
 
@@ -168,9 +168,10 @@ Acquisition and logging are never throttled for display. Graph rendering is time
 
 ## Version 0.9.2 Linux packaging
 
-The maintained PyInstaller spec packages `src/serialscope/__main__.py`; both the bundle and `python -m serialscope` therefore converge on `serialscope.app.main()`. The one-folder output keeps Qt plugins and Python libraries inspectable under `dist/SerialScope/`. PyInstaller's analysis and PySide6 hooks collect Qt libraries and platform plugins; normal import analysis includes SerialScope's PyQtGraph and PySerial usage without importing optional PyQtGraph OpenGL/examples modules.
+The maintained PyInstaller spec packages `src/serialscope/__main__.py`; both the bundle and `python -m serialscope` therefore converge on `serialscope.app.main()`. The one-folder output keeps Qt plugins and Python libraries inspectable under `dist/MCUDesk/`. PyInstaller's analysis and PySide6 hooks collect Qt libraries and platform plugins; normal import analysis includes MCUDesk's PyQtGraph and PySerial usage without importing optional PyQtGraph OpenGL/examples modules. The packaged
+executable is named MCUDesk.
 
-The bundle contains no README or docs. It includes `assets/icons/serialscope.png` as runtime data beneath PyInstaller's `_internal` directory; Qt applies it at application level. User settings remain in Qt's platform-native `QSettings` location, and session/replay locations are chosen through file dialogs. None depends on the executable directory or current working directory. The Linux spec leaves `EXE(icon=None)` because PyInstaller supports executable icon embedding only on Windows and macOS; future Linux desktop packaging must install the same PNG through a `.desktop` file and hicolor icon hierarchy.
+The bundle contains no README or docs. It includes `assets/icons/mcudesk.png` as runtime data beneath PyInstaller's `_internal` directory; Qt applies it at application level. User settings remain in Qt's platform-native `QSettings` location under the existing SerialScope storage identity, and session/replay locations are chosen through file dialogs. None depends on the executable directory or current working directory. The Linux spec leaves `EXE(icon=None)` because PyInstaller supports executable icon embedding only on Windows and macOS; desktop packaging installs the same PNG through a `.desktop` file and hicolor icon hierarchy.
 
 PyInstaller is isolated in the `packaging` optional dependency group and is not a runtime dependency. Generated `build/` and `dist/` content remains ignored, while `packaging/serialscope.spec` is intentionally tracked. A private `--packaging-smoke-test` argument constructs the normal main window and exits automatically, enabling a non-interactive offscreen bundle check without creating a second startup path.
 
@@ -214,7 +215,7 @@ Disconnect leaves graph history and visible series intact. A subsequent successf
 
 `ApplicationSettings` uses Qt `QSettings`, relying on Qt's platform-native storage location, and persists only lowercase `dark` or `light` plus the structured-data delimiter. Dark is the default. Legacy `system` values and all unknown themes fall back to Dark; unknown delimiters fall back to comma. No connection or recording state is persisted. Delimiter changes are saved when the user changes that dedicated Session control; an active recording still captures and locks its delimiter at session start.
 
-The Preferences dialog exposes exactly Dark and Light. Confirmed changes apply live through the centralized theme layer without reconstructing widgets or mutating serial, parser, recording, Data, or graph state. Both themes use centralized restrained stylesheets and a shared typography definition, control dimensions, and spacing. SerialScope does not derive its appearance from the operating-system theme, giving it consistent geometry and typography across desktop environments.
+The Preferences dialog exposes exactly Dark and Light. Confirmed changes apply live through the centralized theme layer without reconstructing widgets or mutating serial, parser, recording, Data, or graph state. Both themes use centralized restrained stylesheets and a shared typography definition, control dimensions, and spacing. MCUDesk does not derive its appearance from the operating-system theme, giving it consistent geometry and typography across desktop environments.
 
 `GraphsWidget` receives a shared graph palette from the theme layer and updates its background, axes, legend, and text without clearing history or selections. Trace colors remain deterministic and independent of user customization.
 
@@ -240,7 +241,7 @@ Disconnect leaves the last live Dashboard values visible without generating upda
 
 Every structured channel retains its parser/device-provided source name as its authoritative identity. `ChannelMetadataRegistry` stores only optional, trimmed presentation metadata (`alias` and user-supplied `unit`) under that source key. Empty aliases fall back to the source name and empty units remain blank. Duplicate aliases are valid and cannot merge histories, selections, tiles, CSV columns, or any other source-keyed state.
 
-Channels → Configure Channels opens a table whose source-name column is read-only. Applying changes updates existing Data rows, graph selectors/legend/cursor/statistics text, and Dashboard selectors/tiles in place. Graph history and selected series, Dashboard selections, numeric values, serial state, parsing, and recording remain intact. Units are presentation text only: SerialScope performs no inference, conversion, calibration, or scaling.
+Channels → Configure Channels opens a table whose source-name column is read-only. Applying changes updates existing Data rows, graph selectors/legend/cursor/statistics text, and Dashboard selectors/tiles in place. Graph history and selected series, Dashboard selections, numeric values, serial state, parsing, and recording remain intact. Units are presentation text only: MCUDesk performs no inference, conversion, calibration, or scaling.
 
 The Unit column uses one reusable categorized catalogue covering common temperature, pressure, flow, mass, rotation/frequency, electrical, length, velocity, time, concentration/fraction, and energy units. Menus store and return the actual displayed string rather than an index or category identifier. Other → Custom accepts arbitrary Unicode engineering notation, and unknown values restored from session metadata remain custom instead of being replaced. Selecting a different unit never converts or otherwise changes a measurement.
 

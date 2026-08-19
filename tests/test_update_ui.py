@@ -61,7 +61,7 @@ def _info(latest: str = "0.11.1", asset: ReleaseAsset | None = None) -> UpdateIn
     return UpdateInfo(
         installed_version="0.11.0",
         latest_version=latest,
-        release_name=f"SerialScope {latest}",
+        release_name=f"MCUDesk {latest}",
         release_notes="Safe release notes",
         release_url=f"https://example.invalid/releases/{latest}",
         asset=asset,

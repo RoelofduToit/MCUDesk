@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDialog, QMessageBox, QProgressDialog, QWidget
 
+from serialscope import PRODUCT_NAME
 from serialscope.settings import ApplicationSettings
 from serialscope.updates import UpdateChecker, UpdateDownloader, UpdateInfo, automatic_check_due
 from serialscope.ui.update_dialogs import (
@@ -105,7 +106,7 @@ class UpdateController(QObject):
         QMessageBox.information(
             self._window,
             "Finish installing the update",
-            "Complete installation in the system package installer, then restart SerialScope.",
+            f"Complete installation in the system package installer, then restart {PRODUCT_NAME}.",
         )
         return True
 
@@ -114,7 +115,7 @@ class UpdateController(QObject):
             return
         dialog = QProgressDialog("Checking for updates...", "", 0, 0, self._window)
         dialog.setObjectName("updateCheckingDialog")
-        dialog.setWindowTitle("SerialScope Update")
+        dialog.setWindowTitle(f"{PRODUCT_NAME} Update")
         dialog.setCancelButton(None)
         dialog.setWindowModality(Qt.WindowModality.NonModal)
         dialog.setMinimumDuration(0)
@@ -136,8 +137,8 @@ class UpdateController(QObject):
             if manual:
                 QMessageBox.information(
                     self._window,
-                    "SerialScope Update",
-                    "SerialScope is up to date.\n\n"
+                    f"{PRODUCT_NAME} Update",
+                    f"{PRODUCT_NAME} is up to date.\n\n"
                     f"Installed version: {info.installed_version}\n"
                     f"Latest version: {info.latest_version}",
                 )

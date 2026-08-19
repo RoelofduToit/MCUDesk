@@ -8,13 +8,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$Executable = Join-Path $ProjectRoot "dist\SerialScope\SerialScope.exe"
-$BundledIcon = Join-Path $ProjectRoot "dist\SerialScope\_internal\assets\icons\serialscope.png"
-$SmokeDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("SerialScope-smoke-" + [guid]::NewGuid().ToString("N"))
+$Executable = Join-Path $ProjectRoot "dist\MCUDesk\MCUDesk.exe"
+$BundledIcon = Join-Path $ProjectRoot "dist\MCUDesk\_internal\assets\icons\mcudesk.png"
+$SmokeDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("MCUDesk-smoke-" + [guid]::NewGuid().ToString("N"))
 $Process = $null
 
 function Fail-SmokeTest([string]$Message) {
-    throw "SerialScope Windows smoke test failed: $Message"
+    throw "MCUDesk Windows smoke test failed: $Message"
 }
 
 function Get-PeSubsystem([string]$Path) {
@@ -43,13 +43,13 @@ if (-not (Test-Path -LiteralPath $BundledIcon -PathType Leaf)) {
     Fail-SmokeTest "bundled runtime icon not found: $BundledIcon"
 }
 if ((Get-PeSubsystem $Executable) -ne 2) {
-    Fail-SmokeTest "SerialScope.exe is not a Windows GUI-subsystem executable"
+    Fail-SmokeTest "MCUDesk.exe is not a Windows GUI-subsystem executable"
 }
 
 Add-Type -AssemblyName System.Drawing
 $AssociatedIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($Executable)
 if ($null -eq $AssociatedIcon) {
-    Fail-SmokeTest "SerialScope.exe does not expose an associated Windows icon"
+    Fail-SmokeTest "MCUDesk.exe does not expose an associated Windows icon"
 }
 $AssociatedIcon.Dispose()
 
@@ -69,7 +69,7 @@ try {
     if ($ClosedNormally) {
         $null = $Process.WaitForExit(5000)
     }
-    Write-Output "Packaged SerialScope remained alive for $StartupSeconds seconds from unrelated cwd: $SmokeDirectory"
+    Write-Output "Packaged MCUDesk remained alive for $StartupSeconds seconds from unrelated cwd: $SmokeDirectory"
     Write-Output "Windows GUI subsystem and embedded icon checks passed."
 } finally {
     if ($null -ne $Process) {

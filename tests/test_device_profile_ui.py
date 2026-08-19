@@ -281,7 +281,7 @@ def test_corrupt_profile_storage_does_not_prevent_window_startup(
     window = MainWindow(port_scanner=lambda: [], profile_store=ProfileStore(path))
     application.processEvents()
 
-    assert window.windowTitle() == "SerialScope"
+    assert window.windowTitle() == "MCUDesk"
     assert not window.connection_bar.profile_combo.isEnabled()
     assert warnings and "left unchanged" in warnings[0]
     assert path.read_text("utf-8") == "{broken"

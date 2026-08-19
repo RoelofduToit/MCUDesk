@@ -4,15 +4,15 @@ set -euo pipefail
 SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIRECTORY}/.." && pwd)"
 PYTHON_EXECUTABLE="${PROJECT_ROOT}/.venv/bin/python"
-PYINSTALLER_BUNDLE="${PROJECT_ROOT}/dist/SerialScope"
+PYINSTALLER_BUNDLE="${PROJECT_ROOT}/dist/MCUDesk"
 PACKAGING_SOURCE="${PROJECT_ROOT}/packaging/linux"
 STAGING_DIRECTORY="${PROJECT_ROOT}/build/deb/serialscope"
 PACKAGE_NAME="serialscope"
 ARCHITECTURE="$(dpkg --print-architecture)"
-ICON_SOURCE="${PROJECT_ROOT}/assets/icons/serialscope.png"
+ICON_SOURCE="${PROJECT_ROOT}/assets/icons/mcudesk.png"
 
 fail() {
-    echo "SerialScope .deb build failed: $*" >&2
+    echo "MCUDesk .deb build failed: $*" >&2
     exit 1
 }
 
@@ -26,10 +26,10 @@ APPLICATION_VERSION="$("${PYTHON_EXECUTABLE}" -c 'from serialscope import __vers
 dpkg --validate-version "${APPLICATION_VERSION}" >/dev/null 2>&1 \
     || fail "application version is not a valid Debian version: ${APPLICATION_VERSION}"
 
-PACKAGE_FILE="${PROJECT_ROOT}/dist/${PACKAGE_NAME}_${APPLICATION_VERSION}_${ARCHITECTURE}.deb"
+PACKAGE_FILE="${PROJECT_ROOT}/dist/MCUDesk_${APPLICATION_VERSION}_Linux_${ARCHITECTURE}.deb"
 
 "${SCRIPT_DIRECTORY}/build_linux.sh"
-[[ -x "${PYINSTALLER_BUNDLE}/SerialScope" ]] \
+[[ -x "${PYINSTALLER_BUNDLE}/MCUDesk" ]] \
     || fail "PyInstaller executable was not created."
 
 rm -rf -- "${STAGING_DIRECTORY}"
@@ -41,6 +41,8 @@ mkdir -p \
     "${STAGING_DIRECTORY}/usr/share/icons/hicolor/256x256/apps"
 
 cp -a "${PYINSTALLER_BUNDLE}/." "${STAGING_DIRECTORY}/opt/serialscope/"
+install -m 0755 "${PACKAGING_SOURCE}/mcudesk" \
+    "${STAGING_DIRECTORY}/usr/bin/mcudesk"
 install -m 0755 "${PACKAGING_SOURCE}/serialscope" \
     "${STAGING_DIRECTORY}/usr/bin/serialscope"
 install -m 0644 "${PACKAGING_SOURCE}/serialscope.desktop" \
@@ -51,7 +53,7 @@ install -m 0755 "${PACKAGING_SOURCE}/postrm" \
     "${STAGING_DIRECTORY}/DEBIAN/postrm"
 
 "${PYTHON_EXECUTABLE}" - "${ICON_SOURCE}" \
-    "${STAGING_DIRECTORY}/usr/share/icons/hicolor/256x256/apps/serialscope.png" <<'PYTHON'
+    "${STAGING_DIRECTORY}/usr/share/icons/hicolor/256x256/apps/mcudesk.png" <<'PYTHON'
 from pathlib import Path
 import sys
 
@@ -85,27 +87,30 @@ Architecture: ${ARCHITECTURE}
 Installed-Size: ${INSTALLED_SIZE}
 Maintainer: Roelof du Toit <136355778+RoelofduToit@users.noreply.github.com>
 Depends: libc6 (>= 2.38), libegl1, libgl1, libwayland-client0, libwayland-cursor0
-Homepage: https://github.com/RoelofduToit/SerialScope
+Homepage: https://github.com/RoelofduToit/MCUDesk
 Description: Serial data acquisition, logging and visualization
- SerialScope is a desktop serial terminal and engineering data tool with
+ MCUDesk is a desktop serial terminal and engineering data tool with
  structured parsing, recording, graphing, dashboards and session replay.
 CONTROL
 
 chmod -R u=rwX,go=rX "${STAGING_DIRECTORY}/opt/serialscope"
 chmod 0755 \
-    "${STAGING_DIRECTORY}/opt/serialscope/SerialScope" \
+    "${STAGING_DIRECTORY}/opt/serialscope/MCUDesk" \
+    "${STAGING_DIRECTORY}/usr/bin/mcudesk" \
     "${STAGING_DIRECTORY}/usr/bin/serialscope" \
     "${STAGING_DIRECTORY}/DEBIAN/postinst" \
     "${STAGING_DIRECTORY}/DEBIAN/postrm"
 chmod 0644 \
     "${STAGING_DIRECTORY}/DEBIAN/control" \
     "${STAGING_DIRECTORY}/usr/share/applications/serialscope.desktop" \
-    "${STAGING_DIRECTORY}/usr/share/icons/hicolor/256x256/apps/serialscope.png"
+    "${STAGING_DIRECTORY}/usr/share/icons/hicolor/256x256/apps/mcudesk.png"
 
-[[ "$(sed -n 's/^Exec=//p' "${STAGING_DIRECTORY}/usr/share/applications/serialscope.desktop")" == "serialscope" ]] \
+[[ "$(sed -n 's/^Exec=//p' "${STAGING_DIRECTORY}/usr/share/applications/serialscope.desktop")" == "mcudesk" ]] \
     || fail "desktop Exec field is invalid."
-[[ "$(sed -n 's/^Icon=//p' "${STAGING_DIRECTORY}/usr/share/applications/serialscope.desktop")" == "serialscope" ]] \
+[[ "$(sed -n 's/^Icon=//p' "${STAGING_DIRECTORY}/usr/share/applications/serialscope.desktop")" == "mcudesk" ]] \
     || fail "desktop Icon field is invalid."
+[[ "$(sed -n 's/^Name=//p' "${STAGING_DIRECTORY}/usr/share/applications/serialscope.desktop")" == "MCUDesk" ]] \
+    || fail "desktop Name field is invalid."
 
 if command -v desktop-file-validate >/dev/null 2>&1; then
     desktop-file-validate "${STAGING_DIRECTORY}/usr/share/applications/serialscope.desktop"
@@ -117,6 +122,12 @@ rm -f -- "${PACKAGE_FILE}"
 dpkg-deb --build --root-owner-group "${STAGING_DIRECTORY}" "${PACKAGE_FILE}"
 "${SCRIPT_DIRECTORY}/smoke_test_linux_deb.sh" "${PACKAGE_FILE}"
 
+# Transitional copy for SerialScope 0.13.x in-app updaters that still look for
+# the previous GitHub asset filename. The Debian package identity stays serialscope.
+COMPATIBILITY_PACKAGE_FILE="${PROJECT_ROOT}/dist/serialscope_${APPLICATION_VERSION}_${ARCHITECTURE}.deb"
+cp -a -- "${PACKAGE_FILE}" "${COMPATIBILITY_PACKAGE_FILE}"
+
 PACKAGE_SIZE="$(du -h "${PACKAGE_FILE}" | cut -f1)"
-echo "SerialScope Debian package created: ${PACKAGE_FILE}"
+echo "MCUDesk Debian package created: ${PACKAGE_FILE}"
+echo "Compatibility updater asset: ${COMPATIBILITY_PACKAGE_FILE}"
 echo "Package size: ${PACKAGE_SIZE}"

@@ -5,11 +5,11 @@ import json
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
-from serialscope import __version__
+from serialscope import PRODUCT_NAME, __version__
 from serialscope.updates.model import (
     LATEST_RELEASE_API_URL,
     UpdateMetadataError,
-    current_linux_package_architecture,
+    current_update_architecture,
     parse_release_metadata,
 )
 
@@ -42,7 +42,7 @@ class UpdateChecker(QObject):
         request = QNetworkRequest(QUrl(LATEST_RELEASE_API_URL))
         request.setRawHeader(b"Accept", b"application/vnd.github+json")
         request.setRawHeader(b"X-GitHub-Api-Version", b"2022-11-28")
-        request.setRawHeader(b"User-Agent", f"SerialScope/{__version__}".encode())
+        request.setRawHeader(b"User-Agent", f"{PRODUCT_NAME}/{__version__}".encode())
         request.setTransferTimeout(15_000)
         self._canceling = False
         self._reply = self._network_manager.get(request)
@@ -82,7 +82,7 @@ class UpdateChecker(QObject):
                 parse_release_metadata(
                     payload,
                     __version__,
-                    current_linux_package_architecture(),
+                    current_update_architecture(),
                 )
             )
         except UpdateMetadataError as error:

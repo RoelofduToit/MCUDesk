@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd -- "${SCRIPT_DIRECTORY}/.." && pwd)"
-EXECUTABLE="${PROJECT_ROOT}/dist/SerialScope/SerialScope"
-ICON="${PROJECT_ROOT}/dist/SerialScope/_internal/assets/icons/serialscope.png"
+EXECUTABLE="${PROJECT_ROOT}/dist/MCUDesk/MCUDesk"
+ICON="${PROJECT_ROOT}/dist/MCUDesk/_internal/assets/icons/mcudesk.png"
 SMOKE_DIRECTORY="$(mktemp -d)"
 
 cleanup() {
@@ -27,4 +27,4 @@ QT_QPA_PLATFORM=offscreen \
 XDG_CONFIG_HOME="${SMOKE_DIRECTORY}/config" \
 "${EXECUTABLE}" --packaging-smoke-test
 
-echo "Packaged SerialScope started successfully from unrelated cwd: ${SMOKE_DIRECTORY}"
+echo "Packaged MCUDesk started successfully from unrelated cwd: ${SMOKE_DIRECTORY}"

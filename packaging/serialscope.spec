@@ -1,11 +1,11 @@
-"""PyInstaller one-folder configuration for the SerialScope Linux build."""
+"""PyInstaller one-folder configuration for the MCUDesk Linux build."""
 
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 SOURCE_ROOT = PROJECT_ROOT / "src"
-ICON_SOURCE = PROJECT_ROOT / "assets" / "icons" / "serialscope.png"
+ICON_SOURCE = PROJECT_ROOT / "assets" / "icons" / "mcudesk.png"
 
 analysis = Analysis(
     [str(SOURCE_ROOT / "serialscope" / "__main__.py")],
@@ -28,7 +28,7 @@ executable = EXE(
     analysis.scripts,
     [],
     exclude_binaries=True,
-    name="SerialScope",
+    name="MCUDesk",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -51,5 +51,5 @@ bundle = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="SerialScope",
+    name="MCUDesk",
 )

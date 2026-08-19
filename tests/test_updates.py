@@ -15,16 +15,20 @@ from PySide6.QtWidgets import QApplication
 from serialscope.settings import ApplicationSettings
 from serialscope.updates import (
     LATEST_RELEASE_API_URL,
+    LINUX_PACKAGE_ARCHITECTURE,
     ReleaseAsset,
     UpdateChecker,
     UpdateDownloader,
     UpdateMetadataError,
     automatic_check_due,
+    compatible_asset_names,
     current_linux_package_architecture,
     is_update_available,
     parse_release_metadata,
     parse_sha256_digest,
 )
+from serialscope.updates.downloader import _is_supported_update_asset_name
+from serialscope.updates.model import WINDOWS_PACKAGE_ARCHITECTURE
 
 
 def _release_payload(version: str = "0.10.1", digest: str | None = None) -> dict:
@@ -33,7 +37,7 @@ def _release_payload(version: str = "0.10.1", digest: str | None = None) -> dict
         "tag_name": f"v{version}",
         "name": f"SerialScope {version}",
         "body": "Release notes\n\n- Reliable updater",
-        "html_url": f"https://github.com/RoelofduToit/SerialScope/releases/tag/v{version}",
+        "html_url": f"https://github.com/RoelofduToit/MCUDesk/releases/tag/v{version}",
         "draft": False,
         "prerelease": False,
         "assets": [
@@ -81,6 +85,13 @@ def test_invalid_release_tag_is_rejected() -> None:
         is_update_available("0.10.0", "not a version")
 
 
+def test_missing_release_name_falls_back_to_mcudesk() -> None:
+    payload = _release_payload()
+    payload["name"] = ""
+    info = parse_release_metadata(payload, "0.10.0")
+    assert info.release_name == "MCUDesk 0.10.1"
+
+
 def test_realistic_release_metadata_is_normalized_and_amd64_asset_is_exact() -> None:
     info = parse_release_metadata(_release_payload(), "0.10.0")
 
@@ -95,6 +106,79 @@ def test_realistic_release_metadata_is_normalized_and_amd64_asset_is_exact() -> 
     assert info.asset.url == "https://example.invalid/serialscope.deb"
     assert info.asset.size == len(b"verified package bytes")
     assert info.asset.is_verifiable
+
+
+def test_updater_prefers_mcudesk_linux_asset_and_keeps_legacy_fallback() -> None:
+    payload = _release_payload()
+    preferred = f"MCUDesk_0.10.1_Linux_amd64.deb"
+    payload["assets"].insert(
+        0,
+        {
+            "name": preferred,
+            "browser_download_url": "https://example.invalid/mcudesk.deb",
+            "size": 99,
+            "digest": "sha256:" + "a" * 64,
+        },
+    )
+    info = parse_release_metadata(payload, "0.10.0")
+    assert info.asset is not None
+    assert info.asset.name == preferred
+    assert info.asset.url == "https://example.invalid/mcudesk.deb"
+
+    legacy_only = _release_payload()
+    legacy = parse_release_metadata(legacy_only, "0.10.0")
+    assert legacy.asset is not None
+    assert legacy.asset.name == "serialscope_0.10.1_amd64.deb"
+
+
+def test_updater_accepts_mcudesk_and_legacy_windows_installers() -> None:
+    digest = "sha256:" + "b" * 64
+    payload = _release_payload()
+    payload["assets"].extend(
+        [
+            {
+                "name": "SerialScope_0.10.1_Windows_x64_Setup.exe",
+                "browser_download_url": "https://example.invalid/legacy-setup.exe",
+                "size": 11,
+                "digest": digest,
+            },
+            {
+                "name": "MCUDesk_0.10.1_Windows_x64_Setup.exe",
+                "browser_download_url": "https://example.invalid/mcudesk-setup.exe",
+                "size": 12,
+                "digest": digest,
+            },
+        ]
+    )
+    preferred = parse_release_metadata(
+        payload, "0.10.0", WINDOWS_PACKAGE_ARCHITECTURE
+    )
+    assert preferred.asset is not None
+    assert preferred.asset.name == "MCUDesk_0.10.1_Windows_x64_Setup.exe"
+
+    payload["assets"] = [
+        asset
+        for asset in payload["assets"]
+        if asset["name"] != "MCUDesk_0.10.1_Windows_x64_Setup.exe"
+    ]
+    legacy = parse_release_metadata(payload, "0.10.0", WINDOWS_PACKAGE_ARCHITECTURE)
+    assert legacy.asset is not None
+    assert legacy.asset.name == "SerialScope_0.10.1_Windows_x64_Setup.exe"
+
+
+def test_compatible_asset_names_list_mcudesk_before_legacy() -> None:
+    linux = compatible_asset_names("0.14.0", LINUX_PACKAGE_ARCHITECTURE)
+    windows = compatible_asset_names("0.14.0", WINDOWS_PACKAGE_ARCHITECTURE)
+    assert linux[0].startswith("MCUDesk_")
+    assert linux[-1].startswith("serialscope_")
+    assert windows[0].startswith("MCUDesk_")
+    assert windows[-1].startswith("SerialScope_")
+    assert _is_supported_update_asset_name(linux[0])
+    assert _is_supported_update_asset_name(linux[-1])
+    assert _is_supported_update_asset_name(windows[0])
+    assert _is_supported_update_asset_name(windows[-1])
+    assert not _is_supported_update_asset_name("../evil.deb")
+    assert not _is_supported_update_asset_name("MCUDesk_0.14.0.exe")
 
 
 def test_missing_compatible_asset_never_falls_back_to_first_asset() -> None:
@@ -233,7 +317,7 @@ def test_verified_download_uses_part_file_reports_progress_and_renames(tmp_path:
     QApplication.instance() or QApplication([])
     data = b"verified package bytes"
     asset = ReleaseAsset(
-        "serialscope_0.11.1_amd64.deb",
+        "MCUDesk_0.14.0_Linux_amd64.deb",
         "https://example.invalid/update.deb",
         len(data),
         hashlib.sha256(data).hexdigest(),
