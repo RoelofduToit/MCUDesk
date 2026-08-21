@@ -227,12 +227,27 @@ def test_auto_tile_size_shrinks_on_narrow_viewport() -> None:
     widget.show()
     application.processEvents()
 
+    assert widget.custom_tile_size is None
+    assert (
+        widget._effective_tile_size(widget._PREFERRED_TILE_SIZE)
+        == widget._PREFERRED_TILE_SIZE
+    )
+    assert (
+        widget._effective_tile_size(widget._PREFERRED_TILE_SIZE - 1)
+        == widget._MINIMUM_TILE_SIZE
+    )
+
     widget.resize(980, 500)
     application.processEvents()
+    wide_viewport = widget.tile_scroll.viewport().width()
+    assert wide_viewport >= widget._PREFERRED_TILE_SIZE
     assert widget._tile_size == widget._PREFERRED_TILE_SIZE
 
-    widget.resize(220, 500)
+    widget.tile_scroll.setFixedWidth(widget._PREFERRED_TILE_SIZE - 20)
     application.processEvents()
+    narrow_viewport = widget.tile_scroll.viewport().width()
+    assert narrow_viewport < widget._PREFERRED_TILE_SIZE
+    widget._reflow(force=True)
     assert widget._tile_size == widget._MINIMUM_TILE_SIZE
     widget.close()
     application.processEvents()
