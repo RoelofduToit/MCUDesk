@@ -199,6 +199,45 @@ def test_many_channels_use_vertical_scroll_without_horizontal_scroll() -> None:
     application.processEvents()
 
 
+def test_custom_tile_size_preset_applies_fixed_square_dimensions() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("A", "B"), (1, 2)))
+    widget.set_channel_selected("A", True)
+    widget.set_channel_selected("B", True)
+    widget.resize(980, 500)
+    widget.show()
+    application.processEvents()
+
+    widget.set_tile_size_preset("Large")
+    application.processEvents()
+
+    assert widget.custom_tile_size == 260
+    assert all(tile.width() == tile.height() == 260 for tile in widget._tiles.values())
+    widget.close()
+    application.processEvents()
+
+
+def test_auto_tile_size_shrinks_on_narrow_viewport() -> None:
+    application = QApplication.instance() or QApplication([])
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("A",), (1,)))
+    widget.set_channel_selected("A", True)
+    widget.set_tile_size_preset("Auto")
+    widget.show()
+    application.processEvents()
+
+    widget.resize(980, 500)
+    application.processEvents()
+    assert widget._tile_size == widget._PREFERRED_TILE_SIZE
+
+    widget.resize(220, 500)
+    application.processEvents()
+    assert widget._tile_size == widget._MINIMUM_TILE_SIZE
+    widget.close()
+    application.processEvents()
+
+
 def test_window_resize_preserves_logical_positions_and_square_tiles() -> None:
     application = QApplication.instance() or QApplication([])
     widget = DashboardWidget()

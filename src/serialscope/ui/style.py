@@ -512,6 +512,7 @@ QPlainTextEdit#terminalOutput {
     selection-background-color: #255b72;
 }
 QLabel#graphChannelsLabel, QLabel#dashboardSelectorLabel,
+QLabel#dashboardTileSizeLabel,
 QLabel#graphTimeWindowLabel, QLabel#graphSettingsHeading {
     color: #8fa3b8;
     font-weight: 600;
@@ -1281,6 +1282,7 @@ QPlainTextEdit#terminalOutput {
     selection-background-color: #B7D0DC;
 }
 QLabel#graphChannelsLabel, QLabel#dashboardSelectorLabel,
+QLabel#dashboardTileSizeLabel,
 QLabel#graphTimeWindowLabel, QLabel#graphSettingsHeading {
     color: #586574;
     font-weight: 600;

@@ -10,9 +10,12 @@ from PySide6.QtGui import (
     QShowEvent,
 )
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -40,6 +43,13 @@ class DashboardWidget(QWidget):
     _MINIMUM_TILE_SIZE = 150
     _GRID_SPACING = 12
     _MIME_TYPE = "application/x-serialscope-dashboard-channel"
+    TILE_SIZE_PRESETS: tuple[tuple[str, int | None], ...] = (
+        ("Auto", None),
+        ("Compact", 150),
+        ("Normal", 210),
+        ("Large", 260),
+        ("Extra large", 320),
+    )
 
     def __init__(
         self, parent: QWidget | None = None, *, lazy: bool = False
@@ -57,6 +67,7 @@ class DashboardWidget(QWidget):
         self.layout_model = DashboardLayout(columns=4)
         self._column_count = 1
         self._tile_size = self._PREFERRED_TILE_SIZE
+        self._custom_tile_size: int | None = None
         self._metadata = ChannelMetadataRegistry()
         self._source_names: dict[str, str] = {}
         self._show_source_labels = False
@@ -76,9 +87,34 @@ class DashboardWidget(QWidget):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
         selector_label = QLabel("Dashboard channels")
         selector_label.setObjectName("dashboardSelectorLabel")
-        layout.addWidget(selector_label)
+        selector_label.setMinimumWidth(0)
+        selector_label.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
+        header_row.addWidget(selector_label, 1)
+        tile_size_label = QLabel("Tile size")
+        tile_size_label.setObjectName("dashboardTileSizeLabel")
+        tile_size_label.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+        )
+        header_row.addWidget(tile_size_label)
+        self.tile_size_combo = QComboBox()
+        self.tile_size_combo.setObjectName("dashboardTileSizeCombo")
+        for label, pixels in self.TILE_SIZE_PRESETS:
+            self.tile_size_combo.addItem(label, pixels)
+        self.tile_size_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToContents
+        )
+        self.tile_size_combo.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+        )
+        self.tile_size_combo.currentIndexChanged.connect(self._tile_size_changed)
+        header_row.addWidget(self.tile_size_combo)
+        layout.addLayout(header_row)
 
         self.channel_selector = ChannelSelector()
         self.channel_selector.selection_changed.connect(self._selection_changed)
@@ -133,6 +169,29 @@ class DashboardWidget(QWidget):
     @property
     def tile_count(self) -> int:
         return len(self._tiles)
+
+    @property
+    def custom_tile_size(self) -> int | None:
+        """Return the user-selected tile edge length, or ``None`` for Auto."""
+        return self._custom_tile_size
+
+    @property
+    def tile_size_preset(self) -> str:
+        """Return the label of the active tile-size preset."""
+        self._build_ui()
+        return self.tile_size_combo.currentText()
+
+    def set_tile_size_preset(self, label: str) -> None:
+        """Select one named tile-size preset and reflow the grid."""
+        self._build_ui()
+        index = self.tile_size_combo.findText(label)
+        if index < 0:
+            raise ValueError(f"Unknown dashboard tile size preset: {label}")
+        self.tile_size_combo.setCurrentIndex(index)
+
+    def _tile_size_changed(self) -> None:
+        self._custom_tile_size = self.tile_size_combo.currentData()
+        self._reflow(force=True)
 
     def update_channels(self, update: ChannelUpdate) -> None:
         """Consume one existing structured update without parsing raw input."""
@@ -377,13 +436,18 @@ class DashboardWidget(QWidget):
         self.empty_label.setVisible(not self._tiles)
         self._reflow(force=True)
 
-    def _reflow(self, force: bool = False) -> None:
-        width = max(1, self.tile_scroll.viewport().width())
-        tile_size = (
+    def _effective_tile_size(self, width: int) -> int:
+        if self._custom_tile_size is not None:
+            return self._custom_tile_size
+        return (
             self._PREFERRED_TILE_SIZE
             if width >= self._PREFERRED_TILE_SIZE
             else self._MINIMUM_TILE_SIZE
         )
+
+    def _reflow(self, force: bool = False) -> None:
+        width = max(1, self.tile_scroll.viewport().width())
+        tile_size = self._effective_tile_size(width)
         column_count = self._columns_for_width(width, tile_size)
         if (
             not force
