@@ -10,6 +10,10 @@ import uuid
 
 from PySide6.QtCore import QStandardPaths
 
+from serialscope.modbus.model import (
+    PROTOCOL_SERIAL_STREAM,
+    ModbusRtuConfiguration,
+)
 from serialscope.parsing.parser_config import ParserConfiguration
 from serialscope.profiles.model import (
     DeviceIdentity,
@@ -20,6 +24,7 @@ from serialscope.storage import atomic_write_json
 
 
 PROFILE_SCHEMA_VERSION = 1
+_UNSET = object()
 
 
 class ProfileStoreError(RuntimeError):
@@ -63,6 +68,8 @@ class ProfileStore:
         channels: Mapping[str, Mapping[str, object]] | None = None,
         profile_id: str | None = None,
         parser_config: ParserConfiguration | Mapping[str, object] | None = None,
+        protocol: str = PROTOCOL_SERIAL_STREAM,
+        modbus: ModbusRtuConfiguration | Mapping[str, object] | None = None,
     ) -> DeviceProfile:
         self._ensure_writable()
         try:
@@ -79,6 +86,10 @@ class ProfileStore:
                 else ParserConfiguration.from_mapping(
                     parser_config, default_mode=parser
                 ),
+                protocol=protocol,
+                modbus=modbus
+                if isinstance(modbus, ModbusRtuConfiguration) or modbus is None
+                else ModbusRtuConfiguration.from_mapping(modbus),
             )
         except (TypeError, ValueError) as error:
             raise ProfileStoreError(str(error)) from error
@@ -99,6 +110,8 @@ class ProfileStore:
         last_port: str | None,
         channels: Mapping[str, Mapping[str, object]],
         parser_config: ParserConfiguration | Mapping[str, object] | None = None,
+        protocol: str | None = None,
+        modbus: ModbusRtuConfiguration | Mapping[str, object] | None | object = _UNSET,
     ) -> DeviceProfile:
         self._ensure_writable()
         previous = self.get(profile_id)
@@ -112,6 +125,14 @@ class ProfileStore:
                 if parser_config is not None
                 else ParserConfiguration(mode=parser)
             )
+            if modbus is _UNSET:
+                resolved_modbus = previous.modbus
+            elif modbus is None:
+                resolved_modbus = None
+            elif isinstance(modbus, ModbusRtuConfiguration):
+                resolved_modbus = modbus
+            else:
+                resolved_modbus = ModbusRtuConfiguration.from_mapping(modbus)
             updated = replace(
                 previous,
                 serial=serial,
@@ -120,6 +141,8 @@ class ProfileStore:
                 last_port=last_port,
                 channels=channels,
                 parser_config=resolved_config,
+                protocol=protocol or previous.protocol,
+                modbus=resolved_modbus,
             )
         except (TypeError, ValueError) as error:
             raise ProfileStoreError(str(error)) from error

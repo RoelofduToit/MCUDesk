@@ -33,6 +33,7 @@ def test_runtime_dependencies_are_explicit_and_development_is_separate() -> None
     assert '"pyqtgraph' in runtime
     assert '"pyserial' in runtime
     assert '"packaging' in runtime
+    assert '"pymodbus' in runtime
     assert '"pytest' not in runtime
     assert '"pytest>=8,<9"' in development
     assert '"pyinstaller>=6.10,<7"' in development

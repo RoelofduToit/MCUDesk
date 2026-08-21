@@ -32,6 +32,10 @@ from serialscope.logging import (
     is_interrupted_recording,
 )
 from serialscope.diagnostics import DiagnosticsHub
+from serialscope.modbus.model import (
+    PROTOCOL_MODBUS_RTU,
+    ModbusRtuConfigurationError,
+)
 from serialscope.parsing import ChannelUpdate, ParserConfiguration, SerialStreamParser
 from serialscope.data import (
     CalculatedChannelStore,
@@ -66,6 +70,7 @@ from serialscope.ui.dashboard_widget import DashboardWidget
 from serialscope.ui.event_dialogs import AddEventDialog, EventListDialog
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
 from serialscope.ui.diagnostics_dialog import DiagnosticsDialog
+from serialscope.ui.modbus_device_dialog import ModbusDeviceDialog
 from serialscope.ui.parser_configuration_dialog import ParserConfigurationDialog
 from serialscope.ui.preferences_dialog import PreferencesDialog
 from serialscope.ui.profile_dialogs import ProfileNameDialog
@@ -323,6 +328,14 @@ class MainWindow(QMainWindow):
 
     def _show_parser_configuration(self) -> None:
         source = self._selected_source
+        if source.is_modbus:
+            QMessageBox.information(
+                self,
+                "Parser Configuration",
+                "Parser Configuration applies to serial-stream sources.\n"
+                "Modbus RTU devices use register mapping instead.",
+            )
+            return
         recording = self._recording_session.is_recording
         dialog = ParserConfigurationDialog(
             source.parser.configuration,
@@ -382,6 +395,97 @@ class MainWindow(QMainWindow):
     def _timer_cleanup_diagnostics(self) -> None:
         self._diagnostics_dialog = None
 
+    def _show_modbus_devices(self) -> None:
+        source = self._selected_source
+        occupied = {
+            item.port: item.display_name
+            for item in self._source_manager.connected_sources
+            if item.port
+        }
+        dialog = ModbusDeviceDialog(
+            profiles=self._profile_store.profiles,
+            ports=self._available_ports(),
+            configuration=source.modbus_config,
+            selected_profile_id=self._source_profiles.get(source.source_id),
+            selected_port=source.port or (
+                self.connection_bar.selected_port.device
+                if self.connection_bar.selected_port is not None
+                else None
+            ),
+            occupied_ports=occupied,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            configuration = dialog.configuration()
+        except ModbusRtuConfigurationError as error:
+            self._show_profile_error(str(error))
+            return
+        if source.is_connected:
+            self._show_connection_error(
+                "Disconnect this device before applying Modbus configuration."
+            )
+            return
+        try:
+            self._source_manager.apply_modbus_configuration(
+                source.source_id, configuration
+            )
+            self._apply_modbus_channel_units(source.source_id, configuration)
+            profile_id = dialog.selected_profile_id()
+            values = self._current_profile_values()
+            values["protocol"] = PROTOCOL_MODBUS_RTU
+            values["modbus"] = configuration
+            values["serial"] = SerialSettings(
+                baud_rate=configuration.connection.baud_rate,
+                line_ending=source.line_ending,
+            )
+            values["last_port"] = dialog.selected_port() or source.port
+            if profile_id is None:
+                name_dialog = ProfileNameDialog("Save Modbus Profile", parent=self)
+                if name_dialog.exec() != QDialog.DialogCode.Accepted:
+                    self._refresh_source_selectors()
+                    return
+                profile = self._profile_store.create(
+                    name_dialog.profile_name, **values
+                )
+                profile_id = profile.profile_id
+            else:
+                self._profile_store.update(profile_id, **values)
+            self._source_profiles[source.source_id] = profile_id
+            profile = self._profile_store.get(profile_id)
+            if not source.display_name.startswith("Device "):
+                pass
+            else:
+                self._source_manager.rename_source(source.source_id, profile.name)
+            if dialog.connect_requested:
+                port = dialog.selected_port()
+                if port is None:
+                    raise SerialConnectionError("Select a serial port before connecting.")
+                self._source_manager.connect(
+                    source.source_id, port, configuration.connection.baud_rate
+                )
+                self.connection_bar.set_connected(True)
+                self.side_panel.set_connected(True)
+        except (ProfileStoreError, SerialConnectionError, ModbusRtuConfigurationError) as error:
+            self._show_connection_error(str(error))
+        self._refresh_source_selectors()
+
+    def _apply_modbus_channel_units(
+        self, source_id: str, configuration
+    ) -> None:
+        registry = self._source_metadata[source_id]
+        names = tuple(item.name for item in configuration.enabled_registers)
+        registry.ensure(names)
+        for register in configuration.enabled_registers:
+            existing = registry.get(register.name)
+            if register.unit and not existing.unit:
+                registry.set(
+                    register.name, existing.alias, register.unit, existing.alarms
+                )
+        self._channel_metadata = registry
+        self._apply_channel_metadata()
+
     def _build_menu_bar(self) -> None:
         file_menu = self.menuBar().addMenu("File")
         self.open_session_action = file_menu.addAction("Open Session...")
@@ -399,6 +503,8 @@ class MainWindow(QMainWindow):
         self.parser_configuration_action.triggered.connect(
             self._show_parser_configuration
         )
+        self.modbus_devices_action = settings_menu.addAction("Modbus Devices...")
+        self.modbus_devices_action.triggered.connect(self._show_modbus_devices)
 
         tools_menu = self.menuBar().addMenu("Tools")
         self.diagnostics_action = tools_menu.addAction("Diagnostics...")
@@ -765,13 +871,23 @@ class MainWindow(QMainWindow):
 
     def _apply_profile(self, profile: DeviceProfile) -> None:
         source = self._selected_source
-        source.baud_rate = profile.serial.baud_rate
-        source.line_ending = profile.serial.line_ending
-        source.parser.apply_configuration(profile.parser_config)
-        self.connection_bar.baud_combo.setCurrentText(str(profile.serial.baud_rate))
-        self.terminal.line_ending_combo.blockSignals(True)
-        self.terminal.line_ending_combo.setCurrentText(profile.serial.line_ending)
-        self.terminal.line_ending_combo.blockSignals(False)
+        if profile.protocol == PROTOCOL_MODBUS_RTU and profile.modbus is not None:
+            self._source_manager.apply_modbus_configuration(
+                source.source_id, profile.modbus
+            )
+            source.baud_rate = profile.modbus.connection.baud_rate
+            self.connection_bar.baud_combo.setCurrentText(str(source.baud_rate))
+            self._apply_modbus_channel_units(source.source_id, profile.modbus)
+        else:
+            if source.is_modbus:
+                self._source_manager.apply_serial_stream_protocol(source.source_id)
+            source.baud_rate = profile.serial.baud_rate
+            source.line_ending = profile.serial.line_ending
+            source.parser.apply_configuration(profile.parser_config)
+            self.connection_bar.baud_combo.setCurrentText(str(profile.serial.baud_rate))
+            self.terminal.line_ending_combo.blockSignals(True)
+            self.terminal.line_ending_combo.setCurrentText(profile.serial.line_ending)
+            self.terminal.line_ending_combo.blockSignals(False)
         registry = self._source_metadata[source.source_id]
         registry.replace(
             profile.channels,
@@ -780,6 +896,7 @@ class MainWindow(QMainWindow):
         )
         self._channel_metadata = registry
         self._apply_channel_metadata()
+        self.terminal.set_modbus_mode(source.is_modbus)
 
     def _update_profile_match(self, profile: DeviceProfile | None = None) -> None:
         profile_id = self._source_profiles.get(self._selected_source_id)
@@ -848,6 +965,8 @@ class MainWindow(QMainWindow):
             "device_identity": identity,
             "last_port": port.device if port else source.port,
             "channels": self._source_metadata[source.source_id].snapshot(),
+            "protocol": source.protocol,
+            "modbus": source.modbus_config,
         }
 
     def _profile_reference(self, source_id: str) -> tuple[str | None, str | None]:
@@ -1051,7 +1170,8 @@ class MainWindow(QMainWindow):
         self.graphs_widget.source_combo.setCurrentIndex(
             self.graphs_widget.source_combo.findData(source.source_id)
         )
-        self.terminal.set_connected(source.is_connected)
+        self.terminal.set_modbus_mode(source.is_modbus)
+        self.terminal.set_connected(source.is_connected and not source.is_modbus)
         self.side_panel.set_connected(bool(self._source_manager.connected_sources))
         self._rx_bytes, self._tx_bytes = source.rx_bytes, source.tx_bytes
         self._update_counter_labels()
@@ -1113,10 +1233,14 @@ class MainWindow(QMainWindow):
         self._reset_session_counters()
         self._reset_channels(reset_graphs=True)
         self.connection_bar.set_connected(True)
-        self.terminal.set_connected(True)
+        self.terminal.set_modbus_mode(self._selected_source.is_modbus)
+        self.terminal.set_connected(
+            True if not self._selected_source.is_modbus else False
+        )
         self.side_panel.set_connected(True)
-        self.terminal.command_input.setFocus()
-        self.terminal.reset_stream_decoder()
+        if not self._selected_source.is_modbus:
+            self.terminal.command_input.setFocus()
+            self.terminal.reset_stream_decoder()
         self._serial_reader = self._selected_source.reader
         self._update_profile_control_state()
 
@@ -1177,6 +1301,13 @@ class MainWindow(QMainWindow):
         registry = self._source_metadata[source_id]
         known_channels = registry.source_names
         registry.ensure(update.names)
+        if source.modbus_config is not None:
+            for register in source.modbus_config.enabled_registers:
+                existing = registry.get(register.name)
+                if register.unit and not existing.unit:
+                    registry.set(
+                        register.name, existing.alias, register.unit, existing.alarms
+                    )
         calculated = self._evaluate_calculated_channels(source_id)
         if calculated is not None:
             registry.ensure(calculated.names)
@@ -1360,7 +1491,7 @@ class MainWindow(QMainWindow):
         """Encode and transmit the current command through the serial layer."""
         source_id = self.terminal.selected_source_id or self._selected_source_id
         source = self._source_manager.get(source_id)
-        if not source.is_connected:
+        if not source.is_connected or source.is_modbus:
             return
 
         data = self.terminal.command_bytes()
@@ -1701,8 +1832,10 @@ class MainWindow(QMainWindow):
         self._cancel_reconnect()
         if source_id == self._selected_source_id:
             self.connection_bar.set_connected(True)
-            self.terminal.set_connected(True)
-            self.terminal.reset_stream_decoder()
+            self.terminal.set_modbus_mode(source.is_modbus)
+            self.terminal.set_connected(source.is_connected and not source.is_modbus)
+            if not source.is_modbus:
+                self.terminal.reset_stream_decoder()
             self._serial_reader = source.reader
         self.side_panel.set_connected(True)
         self._update_profile_control_state()

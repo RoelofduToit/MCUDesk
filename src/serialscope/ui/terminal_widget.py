@@ -107,6 +107,7 @@ class TerminalWidget(QFrame):
         self._control_sequence_state = "text"
         self._source_text: dict[str, str] = {}
         self._source_bytes: dict[str, bytearray] = {}
+        self._modbus_mode = False
         self.source_combo.currentIndexChanged.connect(self._source_changed)
         self.set_connected(False)
 
@@ -117,9 +118,29 @@ class TerminalWidget(QFrame):
 
     def set_connected(self, connected: bool) -> None:
         """Enable transmit controls only while a serial port is connected."""
+        if getattr(self, "_modbus_mode", False):
+            self.command_input.setEnabled(False)
+            self.line_ending_combo.setEnabled(False)
+            self.send_button.setEnabled(False)
+            return
         self.command_input.setEnabled(connected)
         self.line_ending_combo.setEnabled(connected)
         self.send_button.setEnabled(connected)
+
+    def set_modbus_mode(self, enabled: bool) -> None:
+        """Keep Terminal unused for Modbus RTU sources."""
+        self._modbus_mode = enabled
+        if enabled:
+            self.output.setPlaceholderText(
+                "Terminal is not available for Modbus RTU sources."
+            )
+            if not self.output.toPlainText().strip():
+                self.output.clear()
+            self.set_connected(False)
+        else:
+            self.output.setPlaceholderText(
+                "Serial data will appear here when connected."
+            )
 
     def append_bytes(self, data: bytes) -> None:
         """Decode and append a raw stream chunk without altering line breaks."""

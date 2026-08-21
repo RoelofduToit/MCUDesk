@@ -12,6 +12,7 @@ Phase 0 through v0.2 established the terminal, serial, and raw recording foundat
 - `src/serialscope/app.py` owns the Qt application lifecycle.
 - `src/serialscope/settings.py` validates and persists small user preferences through `QSettings`.
 - `src/serialscope/profiles/` owns Device Profile models, deterministic port matching, and versioned atomic JSON persistence.
+- `src/serialscope/modbus/` owns read-only Modbus RTU configuration, decoding, register grouping, and background polling. Polled values enter the existing `ChannelUpdate` pipeline. The Settings menu opens the configuration dialog; the main window is not given a Modbus panel.
 - `src/serialscope/diagnostics/` observes source bytes, parser outcomes, and structured updates. The Tools menu opens a snapshot dialog; diagnostics never alter engineering channels.
 - `src/serialscope/updates/` owns GitHub release parsing, version comparison, asynchronous checks, verified downloads, cancellation, and daily-check policy.
 - `src/serialscope/serial/port_scanner.py` discovers ports through PySerial and returns Qt-independent structured metadata.

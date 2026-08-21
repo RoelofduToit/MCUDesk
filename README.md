@@ -67,4 +67,5 @@ python -m pytest
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the project boundaries and architectural rules.
 See [docs/LONG_RUN_TEST.md](docs/LONG_RUN_TEST.md) for the overnight reliability checklist.
 See [docs/PACKAGING_LINUX.md](docs/PACKAGING_LINUX.md) for standalone Linux build instructions.
+See [docs/MODBUS.md](docs/MODBUS.md) for read-only Modbus RTU over USB/RS-485.
 See [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) for live data-quality diagnostics.

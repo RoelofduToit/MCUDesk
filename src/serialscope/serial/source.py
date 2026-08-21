@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import re
 from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 
+from serialscope.modbus import (
+    ModbusPoller,
+    ModbusRtuConfiguration,
+    PROTOCOL_MODBUS_RTU,
+    PROTOCOL_SERIAL_STREAM,
+    create_serial_transport,
+)
 from serialscope.diagnostics.collector import DiagnosticsHub
 from serialscope.parsing import ChannelUpdate, ParserConfiguration, SerialStreamParser
 from serialscope.serial.connection import SerialConnection, SerialConnectionError
@@ -31,12 +38,21 @@ class SerialSource:
     connection: SerialConnection = field(default_factory=SerialConnection)
     parser: SerialStreamParser = field(default_factory=SerialStreamParser)
     reader: SerialReader | None = None
+    protocol: str = PROTOCOL_SERIAL_STREAM
+    modbus_config: ModbusRtuConfiguration | None = None
+    poller: ModbusPoller | None = None
     rx_bytes: int = 0
     tx_bytes: int = 0
     latest_values: dict[str, int | float] = field(default_factory=dict)
 
     @property
+    def is_modbus(self) -> bool:
+        return self.protocol == PROTOCOL_MODBUS_RTU
+
+    @property
     def is_connected(self) -> bool:
+        if self.is_modbus:
+            return self.poller is not None and self.poller.is_running
         return self.connection.is_connected
 
 
@@ -56,6 +72,8 @@ class SerialSourceManager(QObject):
         connection_factory: Callable[[], SerialConnection] = SerialConnection,
         reader_factory: Callable[[SerialConnection], SerialReader] = SerialReader,
         parser_factory: Callable[[], SerialStreamParser] = SerialStreamParser,
+        poller_factory: Callable[..., ModbusPoller] | None = None,
+        modbus_transport_factory: Callable[..., object] | None = None,
         diagnostics: DiagnosticsHub | None = None,
         parent: QObject | None = None,
     ) -> None:
@@ -63,6 +81,10 @@ class SerialSourceManager(QObject):
         self._connection_factory = connection_factory
         self._reader_factory = reader_factory
         self._parser_factory = parser_factory
+        self._poller_factory = poller_factory or ModbusPoller
+        self._modbus_transport_factory = modbus_transport_factory or (
+            lambda port, settings: create_serial_transport(port, settings)
+        )
         self._diagnostics = diagnostics
         self._sources: dict[str, SerialSource] = {}
 
@@ -148,24 +170,53 @@ class SerialSourceManager(QObject):
         self.get(source_id).display_name = resolved
         self.source_state_changed.emit(source_id, "connected" if self.get(source_id).is_connected else "disconnected")
 
-    def connect(self, source_id: str, port: str, baud_rate: int) -> None:
+    def apply_modbus_configuration(
+        self, source_id: str, configuration: ModbusRtuConfiguration
+    ) -> None:
         source = self.get(source_id)
-        if source.is_connected or source.reader is not None:
+        if source.is_connected:
             raise SerialConnectionError(
-                f"{source.display_name} is already connected."
+                "Disconnect this device before changing Modbus configuration."
             )
-        owner = next(
+        source.protocol = PROTOCOL_MODBUS_RTU
+        source.modbus_config = configuration
+        source.baud_rate = configuration.connection.baud_rate
+        self.source_state_changed.emit(source_id, "disconnected")
+
+    def apply_serial_stream_protocol(self, source_id: str) -> None:
+        source = self.get(source_id)
+        if source.is_connected:
+            raise SerialConnectionError(
+                "Disconnect this device before changing the data source type."
+            )
+        source.protocol = PROTOCOL_SERIAL_STREAM
+        source.modbus_config = None
+        self.source_state_changed.emit(source_id, "disconnected")
+
+    def occupied_port_owner(self, port: str, *, excluding: str | None = None) -> SerialSource | None:
+        return next(
             (
                 item
                 for item in self.connected_sources
-                if item.source_id != source_id and item.port == port
+                if item.port == port and item.source_id != excluding
             ),
             None,
         )
+
+    def connect(self, source_id: str, port: str, baud_rate: int) -> None:
+        source = self.get(source_id)
+        if source.is_connected or source.reader is not None or source.poller is not None:
+            raise SerialConnectionError(
+                f"{source.display_name} is already connected."
+            )
+        owner = self.occupied_port_owner(port, excluding=source_id)
         if owner is not None:
             raise SerialConnectionError(
                 f"{port} is already connected as {owner.display_name}."
             )
+        if source.is_modbus:
+            self._connect_modbus(source, port, baud_rate)
+            return
         source.connection.connect(port, baud_rate)
         try:
             reader = self._reader_factory(source.connection)
@@ -203,12 +254,59 @@ class SerialSourceManager(QObject):
             self._diagnostics.note_connected(source_id)
         self.source_state_changed.emit(source_id, "connected")
 
+    def _connect_modbus(self, source: SerialSource, port: str, baud_rate: int) -> None:
+        configuration = source.modbus_config
+        if configuration is None or not configuration.enabled_registers:
+            raise SerialConnectionError(
+                "Configure at least one enabled Modbus register before connecting."
+            )
+        if baud_rate != configuration.connection.baud_rate:
+            configuration = replace(
+                configuration,
+                connection=replace(configuration.connection, baud_rate=baud_rate),
+            )
+            source.modbus_config = configuration
+        try:
+            poller = self._poller_factory(
+                configuration,
+                lambda: self._modbus_transport_factory(port, configuration.connection),
+            )
+            source.poller = poller
+            poller.values_ready.connect(
+                lambda update, identity=source.source_id, owner=poller: self._modbus_update(
+                    identity, owner, update
+                )
+            )
+            poller.failed.connect(
+                lambda message, identity=source.source_id, owner=poller: self._poller_failed(
+                    identity, owner, message
+                )
+            )
+            poller.start()
+        except Exception as error:
+            source.poller = None
+            raise SerialConnectionError(
+                f"Could not start Modbus polling for {source.display_name}: {error}"
+            ) from error
+        source.port = port
+        source.baud_rate = baud_rate
+        source.rx_bytes = 0
+        source.tx_bytes = 0
+        source.latest_values.clear()
+        if self._diagnostics is not None:
+            self._diagnostics.note_connected(source.source_id)
+        self.source_state_changed.emit(source.source_id, "connected")
+
     def disconnect(self, source_id: str) -> None:
         source = self.get(source_id)
         reader, source.reader = source.reader, None
         if reader is not None:
             reader.stop()
-        source.connection.disconnect()
+        poller, source.poller = source.poller, None
+        if poller is not None:
+            poller.stop()
+        if not source.is_modbus:
+            source.connection.disconnect()
         source.parser.reset()
         if self._diagnostics is not None:
             self._diagnostics.note_disconnected(source_id)
@@ -232,9 +330,37 @@ class SerialSourceManager(QObject):
 
     def write(self, source_id: str, data: bytes) -> int:
         source = self.get(source_id)
+        if source.is_modbus:
+            raise SerialConnectionError(
+                "Terminal transmit is not available for Modbus RTU sources."
+            )
         written = source.connection.write(data)
         source.tx_bytes += written
         return written
+
+    def _modbus_update(
+        self, source_id: str, poller: ModbusPoller, update: ChannelUpdate
+    ) -> None:
+        source = self.get(source_id)
+        if source.poller is not poller or not source.is_connected:
+            return
+        source.latest_values.update(zip(update.names, update.values, strict=True))
+        if self._diagnostics is not None:
+            self._diagnostics.note_structured_update(source_id, update.names)
+        self.structured_update.emit(source_id, update)
+
+    def _poller_failed(
+        self, source_id: str, poller: ModbusPoller, message: str
+    ) -> None:
+        source = self.get(source_id)
+        if source.poller is not poller:
+            return
+        source.poller = None
+        poller.stop()
+        if self._diagnostics is not None:
+            self._diagnostics.note_disconnected(source_id)
+        self.source_state_changed.emit(source_id, "error")
+        self.source_failed.emit(source_id, message)
 
     def _receive(self, source_id: str, reader: SerialReader, data: bytes) -> None:
         source = self.get(source_id)

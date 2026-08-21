@@ -211,6 +211,7 @@ def test_preferences_action_is_available() -> None:
 
     assert window.preferences_action.text() == "Preferences"
     assert window.parser_configuration_action.text() == "Parser Configuration..."
+    assert window.modbus_devices_action.text() == "Modbus Devices..."
     assert window.diagnostics_action.text() == "Diagnostics..."
     assert window.configure_channels_action.text() == "Configure Channels..."
     assert window.check_updates_action.text() == "Check for Updates..."

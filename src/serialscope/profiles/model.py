@@ -6,6 +6,13 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 from serialscope.data import AlarmLimits
+from serialscope.modbus.model import (
+    PROTOCOL_MODBUS_RTU,
+    PROTOCOL_SERIAL_STREAM,
+    SOURCE_PROTOCOLS,
+    ModbusRtuConfiguration,
+    ModbusRtuConfigurationError,
+)
 from serialscope.parsing.parser_config import (
     ParserConfiguration,
     ParserConfigurationError,
@@ -135,6 +142,8 @@ class DeviceProfile:
     last_port: str | None = None
     channels: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
     parser_config: ParserConfiguration = field(default_factory=ParserConfiguration)
+    protocol: str = PROTOCOL_SERIAL_STREAM
+    modbus: ModbusRtuConfiguration | None = None
 
     def __post_init__(self) -> None:
         profile_id = self.profile_id.strip()
@@ -143,6 +152,9 @@ class DeviceProfile:
             raise ValueError("Profile ID must not be empty.")
         if not name:
             raise ValueError("Profile name must not be empty.")
+        protocol = str(self.protocol or PROTOCOL_SERIAL_STREAM).strip() or PROTOCOL_SERIAL_STREAM
+        if protocol not in SOURCE_PROTOCOLS:
+            raise ValueError("Unsupported device protocol.")
         try:
             parser_config = self.parser_config
             if not isinstance(parser_config, ParserConfiguration):
@@ -154,15 +166,29 @@ class DeviceProfile:
                 parser_config = ParserConfiguration(mode=str(self.parser))
         except ParserConfigurationError as error:
             raise ValueError(str(error)) from error
+        modbus = self.modbus
+        if protocol == PROTOCOL_MODBUS_RTU:
+            try:
+                if not isinstance(modbus, ModbusRtuConfiguration):
+                    modbus = ModbusRtuConfiguration.from_mapping(modbus)
+            except ModbusRtuConfigurationError as error:
+                raise ValueError(str(error)) from error
+        elif modbus is not None and not isinstance(modbus, ModbusRtuConfiguration):
+            try:
+                modbus = ModbusRtuConfiguration.from_mapping(modbus)
+            except ModbusRtuConfigurationError as error:
+                raise ValueError(str(error)) from error
         object.__setattr__(self, "profile_id", profile_id)
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "parser_config", parser_config)
         object.__setattr__(self, "parser", parser_config.mode)
         object.__setattr__(self, "last_port", _optional_text(self.last_port))
         object.__setattr__(self, "channels", _normalize_channels(self.channels))
+        object.__setattr__(self, "protocol", protocol)
+        object.__setattr__(self, "modbus", modbus)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload = {
             "profile_id": self.profile_id,
             "name": self.name,
             "serial": self.serial.to_dict(),
@@ -171,7 +197,11 @@ class DeviceProfile:
             "device_identity": self.device_identity.to_dict(),
             "last_port": self.last_port,
             "channels": self.channels,
+            "protocol": self.protocol,
         }
+        if self.modbus is not None:
+            payload["modbus"] = self.modbus.to_dict()
+        return payload
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "DeviceProfile":
@@ -179,12 +209,15 @@ class DeviceProfile:
         identity = value.get("device_identity", {})
         channels = value.get("channels", {})
         parser_config = value.get("parser_config")
+        modbus = value.get("modbus")
         if not isinstance(serial, Mapping) or not isinstance(identity, Mapping):
             raise ValueError("Profile configuration must contain JSON objects.")
         if not isinstance(channels, Mapping):
             raise ValueError("Profile channels must contain a JSON object.")
         if parser_config is not None and not isinstance(parser_config, Mapping):
             raise ValueError("Parser configuration must contain a JSON object.")
+        if modbus is not None and not isinstance(modbus, Mapping):
+            raise ValueError("Modbus configuration must contain a JSON object.")
         return cls(
             profile_id=str(value.get("profile_id", "")),
             name=str(value.get("name", "")),
@@ -197,4 +230,6 @@ class DeviceProfile:
                 parser_config,
                 default_mode=str(value.get("parser", "auto")),
             ),
+            protocol=str(value.get("protocol") or PROTOCOL_SERIAL_STREAM),
+            modbus=ModbusRtuConfiguration.from_mapping(modbus) if modbus is not None else None,
         )

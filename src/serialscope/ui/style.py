@@ -730,7 +730,8 @@ QTableWidget#calculatedChannelsTable,
 QTableWidget#parserPreviewTable,
 QTableWidget#parserMappingTable,
 QTableWidget#diagnosticsChannelTable,
-QTableWidget#diagnosticsGapTable {
+QTableWidget#diagnosticsGapTable,
+QTableWidget#modbusRegisterTable {
     color: #d9e2ec;
     background-color: #121a23;
     alternate-background-color: #16202a;
@@ -743,7 +744,8 @@ QTableWidget#calculatedChannelsTable QHeaderView::section,
 QTableWidget#parserPreviewTable QHeaderView::section,
 QTableWidget#parserMappingTable QHeaderView::section,
 QTableWidget#diagnosticsChannelTable QHeaderView::section,
-QTableWidget#diagnosticsGapTable QHeaderView::section {
+QTableWidget#diagnosticsGapTable QHeaderView::section,
+QTableWidget#modbusRegisterTable QHeaderView::section {
     color: #c5d3de;
     background-color: #1a2530;
     border: 0;
@@ -1469,7 +1471,8 @@ QTableWidget#calculatedChannelsTable,
 QTableWidget#parserPreviewTable,
 QTableWidget#parserMappingTable,
 QTableWidget#diagnosticsChannelTable,
-QTableWidget#diagnosticsGapTable {
+QTableWidget#diagnosticsGapTable,
+QTableWidget#modbusRegisterTable {
     color: #202833;
     background-color: #EEF2F5;
     alternate-background-color: #E4E9EE;
@@ -1482,7 +1485,8 @@ QTableWidget#calculatedChannelsTable QHeaderView::section,
 QTableWidget#parserPreviewTable QHeaderView::section,
 QTableWidget#parserMappingTable QHeaderView::section,
 QTableWidget#diagnosticsChannelTable QHeaderView::section,
-QTableWidget#diagnosticsGapTable QHeaderView::section {
+QTableWidget#diagnosticsGapTable QHeaderView::section,
+QTableWidget#modbusRegisterTable QHeaderView::section {
     color: #2A3340;
     background-color: #EDF1F5;
     border: 0;
