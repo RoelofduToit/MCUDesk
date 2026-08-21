@@ -94,3 +94,17 @@ virtual environment, and verify:
   accepts the legacy `SerialScope_<version>_Windows_x64_Setup.exe` asset.
 - No installer, shortcuts, file associations, or automatic PATH changes are
   provided by the one-folder bundle.
+
+## GitHub Actions Windows release
+
+Windows installers for current MCUDesk releases are built on GitHub-hosted
+`windows-latest` runners using `.github/workflows/build-windows-current-release.yml`.
+
+Dispatch it with a required `tag` input such as `v0.15.0`. The workflow checks
+out that tag, verifies `serialscope.__version__` matches, runs pytest, builds
+the application and Inno Setup installer, and uploads
+`MCUDesk_<version>_Windows_x64_Setup.exe` to the existing draft GitHub release
+for that tag. It does not publish the release.
+
+Do not use `.github/workflows/build-windows-release.yml` for new releases.
+That file is a historical one-shot workflow for SerialScope v0.13.0.

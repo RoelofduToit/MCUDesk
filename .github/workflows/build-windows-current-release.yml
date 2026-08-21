@@ -1,0 +1,247 @@
+name: Build MCUDesk Windows release
+
+# Current reusable Windows installer workflow for MCUDesk.
+# Dispatch with the release tag (for example v0.15.0). The workflow checks out
+# that tag, verifies the application version, builds the installer, and uploads
+# it to the existing *draft* GitHub release. It does not publish the release.
+#
+# Leave .github/workflows/build-windows-release.yml unchanged: that file is a
+# historical one-shot workflow for SerialScope v0.13.0.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, for example v0.15.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build-windows-installer:
+    name: Build Windows installer
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Validate release tag
+        shell: pwsh
+        run: |
+          $Tag = $env:RELEASE_TAG
+          if ([string]::IsNullOrWhiteSpace($Tag)) {
+            throw "The required workflow input 'tag' is empty."
+          }
+          if ($Tag -ne $Tag.Trim() -or $Tag -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Refusing to build: tag '$Tag' is not a vMAJOR.MINOR.PATCH tag such as v0.15.0"
+          }
+          $Version = $Tag.Substring(1)
+          "RELEASE_VERSION=$Version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Output "Building MCUDesk Windows installer for tag $Tag (version $Version)"
+
+      - name: Check out the supplied tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch tags
+        shell: pwsh
+        run: |
+          git fetch --tags --force origin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify HEAD is exactly the supplied tag
+        shell: pwsh
+        run: |
+          $Tag = $env:RELEASE_TAG
+          $Head = (git rev-parse HEAD).Trim()
+          $Tagged = (git rev-list -n 1 $Tag).Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $Describe = (git describe --tags --exact-match HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Output "HEAD=$Head"
+          Write-Output "TAG_COMMIT=$Tagged"
+          Write-Output "DESCRIBE=$Describe"
+          if ($Head -ne $Tagged) {
+            throw "Refusing to build: HEAD $Head is not the commit tagged $Tag ($Tagged)"
+          }
+          if ($Describe -ne $Tag) {
+            throw "Refusing to build: HEAD is tagged '$Describe', expected '$Tag'"
+          }
+
+      - name: Verify application version matches the tag
+        shell: pwsh
+        run: |
+          $VersionFile = "src\serialscope\__init__.py"
+          if (-not (Test-Path -LiteralPath $VersionFile -PathType Leaf)) {
+            throw "Version file not found: $VersionFile"
+          }
+          $VersionText = Get-Content -LiteralPath $VersionFile -Raw
+          $Match = [regex]::Match($VersionText, '__version__\s*=\s*"([^"]+)"')
+          if (-not $Match.Success) {
+            throw "Could not read serialscope.__version__ from $VersionFile"
+          }
+          $FileVersion = $Match.Groups[1].Value
+          $Expected = $env:RELEASE_VERSION
+          Write-Output "serialscope.__version__=$FileVersion"
+          Write-Output "tag version=$Expected"
+          if ($FileVersion -ne $Expected) {
+            throw "Refusing to build: serialscope.__version__ is $FileVersion, but tag $($env:RELEASE_TAG) requires $Expected"
+          }
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create virtual environment
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath ".venv\Scripts\python.exe")) {
+            throw "Expected .venv\Scripts\python.exe was not created"
+          }
+
+      - name: Install project dependencies
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev,packaging]"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run pytest
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
+          QT_ENABLE_HIGHDPI_SCALING: "0"
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Windows application
+        shell: pwsh
+        run: |
+          .\scripts\build_windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke test Windows application
+        shell: pwsh
+        run: |
+          .\scripts\smoke_test_windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $IsccCandidates = @(
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $Iscc = $IsccCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $Iscc) {
+            throw "ISCC.exe not found after installing Inno Setup"
+          }
+          Write-Output "Inno Setup compiler: $Iscc"
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          .\scripts\build_windows_installer.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify installer and print SHA256
+        id: installer
+        shell: pwsh
+        run: |
+          $Version = $env:RELEASE_VERSION
+          $InstallerName = "MCUDesk_${Version}_Windows_x64_Setup.exe"
+          $Installer = Join-Path "dist\installer" $InstallerName
+          if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) {
+            throw "Installer not found: $Installer"
+          }
+          $Item = Get-Item -LiteralPath $Installer
+          $Hash = Get-FileHash -LiteralPath $Installer -Algorithm SHA256
+          Write-Output "Installer path: $($Item.FullName)"
+          Write-Output "Installer size: $($Item.Length) bytes"
+          Write-Output "Installer SHA256: $($Hash.Hash)"
+          "name=$InstallerName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "path=$Installer" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "size=$($Item.Length)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256=$($Hash.Hash)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $Summary = @(
+            "## Windows installer"
+            "- Tag: $($env:RELEASE_TAG)"
+            "- Version: $Version"
+            "- Path: $($Item.FullName)"
+            "- Size: $($Item.Length) bytes"
+            "- SHA256: $($Hash.Hash)"
+          ) -join [Environment]::NewLine
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $Summary
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MCUDesk_${{ env.RELEASE_VERSION }}_Windows_x64_Setup
+          path: dist/installer/MCUDesk_${{ env.RELEASE_VERSION }}_Windows_x64_Setup.exe
+          if-no-files-found: error
+
+      - name: Ensure GitHub CLI is available
+        shell: pwsh
+        run: |
+          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+            choco install gh --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          gh --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload installer to the matching draft GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $Tag = $env:RELEASE_TAG
+          $Version = $env:RELEASE_VERSION
+          $InstallerName = "MCUDesk_${Version}_Windows_x64_Setup.exe"
+          $Installer = Join-Path "dist\installer" $InstallerName
+          if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) {
+            throw "Installer not found: $Installer"
+          }
+          gh release view $Tag --json isDraft,isPrerelease,tagName,assets
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub release $Tag was not found. Create the draft release before running this workflow."
+          }
+          $Release = gh release view $Tag --json isDraft,isPrerelease,tagName | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($Release.tagName -ne $Tag) {
+            throw "Refusing to upload: release tag '$($Release.tagName)' does not match workflow tag '$Tag'"
+          }
+          if (-not $Release.isDraft) {
+            throw "Refusing to upload: $Tag is not a draft. This workflow never publishes a release."
+          }
+          gh release upload $Tag $Installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $Updated = gh release view $Tag --json isDraft,isPrerelease,tagName,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($Updated.tagName -ne $Tag) {
+            throw "Refusing to continue: post-upload release tag '$($Updated.tagName)' does not match '$Tag'"
+          }
+          if (-not $Updated.isDraft) {
+            throw "Release $Tag is no longer a draft after upload; this workflow must not publish."
+          }
+          $Names = @($Updated.assets | ForEach-Object { $_.name })
+          if ($Names -notcontains $InstallerName) {
+            throw "Installer $InstallerName was not present on $Tag after upload"
+          }
+          Write-Output "Uploaded $InstallerName to draft release $Tag"
+          $Updated | ConvertTo-Json -Depth 6

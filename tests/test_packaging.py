@@ -286,3 +286,38 @@ def test_windows_installer_keeps_stable_appid_and_mcudesk_branding() -> None:
     assert "mcudesk.ico" in installer
     assert r"dist\MCUDesk\*" in installer
     assert "{app}\\SerialScope.exe" in installer
+
+
+def test_current_windows_release_workflow_is_tag_driven() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    current = (
+        project_root / ".github" / "workflows" / "build-windows-current-release.yml"
+    ).read_text("utf-8")
+    historical = (
+        project_root / ".github" / "workflows" / "build-windows-release.yml"
+    ).read_text("utf-8")
+
+    assert "workflow_dispatch:" in current
+    assert "tag:" in current
+    assert "required: true" in current
+    assert "windows-latest" in current
+    assert "ref: ${{ inputs.tag }}" in current
+    assert "git describe --tags --exact-match HEAD" in current
+    assert "src\\serialscope\\__init__.py" in current
+    assert '".[dev,packaging]"' in current
+    assert "QT_QPA_PLATFORM: offscreen" in current
+    assert r".\scripts\build_windows.ps1" in current
+    assert r".\scripts\smoke_test_windows.ps1" in current
+    assert r".\scripts\build_windows_installer.ps1" in current
+    assert "MCUDesk_${Version}_Windows_x64_Setup.exe" in current
+    assert "gh release upload $Tag $Installer" in current
+    assert "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in current
+    assert "contents: write" in current
+    assert "actions: write" in current
+    assert "This workflow never publishes a release." in current
+    assert "gh release edit" not in current
+    assert "ref: v0.13.0" not in current
+    assert "SerialScope_0.13.0_Windows_x64_Setup.exe" not in current
+
+    assert "ref: v0.13.0" in historical
+    assert "SerialScope_0.13.0_Windows_x64_Setup.exe" in historical
