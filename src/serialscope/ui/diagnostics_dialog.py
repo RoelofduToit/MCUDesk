@@ -12,12 +12,15 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
-    QFormLayout,
+    QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -74,51 +77,68 @@ class DiagnosticsDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("diagnosticsDialog")
         self.setWindowTitle("Diagnostics")
-        self.setMinimumSize(620, 480)
-        self.resize(720, 560)
+        self.setMinimumSize(620, 420)
+        self.resize(720, 620)
         self._hub = hub
         self._sources = sources
         self._replay = replay_diagnostics
         self._on_settings_changed = on_settings_changed
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 12)
-        layout.setSpacing(10)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(16, 14, 16, 12)
+        outer.setSpacing(10)
+
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         source_row = QHBoxLayout()
         source_row.addWidget(QLabel("Source"))
         self.source_combo = QComboBox()
         self.source_combo.setObjectName("diagnosticsSourceCombo")
+        self.source_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.source_combo.setMinimumContentsLength(18)
         self.source_combo.currentIndexChanged.connect(self._refresh)
         source_row.addWidget(self.source_combo, 1)
         layout.addLayout(source_row)
 
         status = QGroupBox("Status")
-        form = QFormLayout(status)
-        self.status_value = QLabel("Disconnected")
-        self.uptime_value = QLabel("—")
-        self.last_data_value = QLabel("—")
-        self.rx_rate_value = QLabel("—")
-        self.messages_value = QLabel("0")
-        self.structured_value = QLabel("0")
-        self.parser_errors_value = QLabel("0")
-        self.success_value = QLabel("—")
-        self.reconnects_value = QLabel("0")
-        self.longest_gap_value = QLabel("—")
-        form.addRow("State", self.status_value)
-        form.addRow("Uptime", self.uptime_value)
-        form.addRow("Last data", self.last_data_value)
-        form.addRow("RX rate", self.rx_rate_value)
-        form.addRow("Messages", self.messages_value)
-        form.addRow("Structured updates", self.structured_value)
-        form.addRow("Parser errors", self.parser_errors_value)
-        form.addRow("Parser success", self.success_value)
-        form.addRow("Reconnects", self.reconnects_value)
-        form.addRow("Longest source gap", self.longest_gap_value)
+        grid = QGridLayout(status)
+        grid.setContentsMargins(10, 8, 10, 8)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(4)
+        self.status_value = self._status_label("Disconnected")
+        self.uptime_value = self._status_label("—")
+        self.last_data_value = self._status_label("—")
+        self.rx_rate_value = self._status_label("—")
+        self.messages_value = self._status_label("0")
+        self.structured_value = self._status_label("0")
+        self.parser_errors_value = self._status_label("0")
+        self.success_value = self._status_label("—")
+        self.reconnects_value = self._status_label("0")
+        self.longest_gap_value = self._status_label("—")
+        metrics = (
+            ("State", self.status_value, "Uptime", self.uptime_value),
+            ("Last data", self.last_data_value, "RX rate", self.rx_rate_value),
+            ("Messages", self.messages_value, "Structured", self.structured_value),
+            ("Parser errors", self.parser_errors_value, "Success", self.success_value),
+            ("Reconnects", self.reconnects_value, "Longest gap", self.longest_gap_value),
+        )
+        for row, (left_name, left_value, right_name, right_value) in enumerate(metrics):
+            grid.addWidget(self._metric_caption(left_name), row, 0)
+            grid.addWidget(left_value, row, 1)
+            grid.addWidget(self._metric_caption(right_name), row, 2)
+            grid.addWidget(right_value, row, 3)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
         layout.addWidget(status)
 
         channels = QGroupBox("Channels")
         channel_layout = QVBoxLayout(channels)
+        channel_layout.setContentsMargins(8, 8, 8, 8)
         self.channel_table = QTableWidget(0, 7)
         self.channel_table.setObjectName("diagnosticsChannelTable")
         self.channel_table.setHorizontalHeaderLabels(
@@ -127,47 +147,73 @@ class DiagnosticsDialog(QDialog):
         self.channel_table.verticalHeader().setVisible(False)
         self.channel_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.channel_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.channel_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.channel_table.setMinimumHeight(120)
+        self.channel_table.setWordWrap(False)
+        channel_header = self.channel_table.horizontalHeader()
+        channel_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for column in range(1, 7):
+            channel_header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         channel_layout.addWidget(self.channel_table)
         layout.addWidget(channels, 1)
 
         gaps = QGroupBox("Recent Data Gaps")
         gap_layout = QVBoxLayout(gaps)
+        gap_layout.setContentsMargins(8, 8, 8, 8)
         self.gap_table = QTableWidget(0, 3)
         self.gap_table.setObjectName("diagnosticsGapTable")
-        self.gap_table.setHorizontalHeaderLabels(("Start (s)", "Duration", "Channel"))
+        self.gap_table.setHorizontalHeaderLabels(("Start", "Duration", "Channel"))
         self.gap_table.verticalHeader().setVisible(False)
         self.gap_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.gap_table.setMaximumHeight(120)
+        self.gap_table.setMinimumHeight(72)
         self.gap_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         gap_layout.addWidget(self.gap_table)
         layout.addWidget(gaps)
 
         settings = QGroupBox("Thresholds")
-        settings_form = QFormLayout(settings)
+        settings_row = QHBoxLayout(settings)
+        settings_row.setContentsMargins(10, 8, 10, 8)
+        settings_row.setSpacing(8)
         self.stale_spin = QDoubleSpinBox()
         self.stale_spin.setRange(2.0, 20.0)
         self.stale_spin.setDecimals(1)
         self.stale_spin.setValue(hub.settings.stale_multiplier)
         self.stale_spin.setSuffix(" ×")
+        self.stale_spin.setMaximumWidth(120)
         self.gap_spin = QDoubleSpinBox()
         self.gap_spin.setRange(2.0, 20.0)
         self.gap_spin.setDecimals(1)
         self.gap_spin.setValue(hub.settings.gap_multiplier)
         self.gap_spin.setSuffix(" ×")
+        self.gap_spin.setMaximumWidth(120)
         self.expected_spin = QDoubleSpinBox()
         self.expected_spin.setRange(0.0, 3600.0)
         self.expected_spin.setDecimals(3)
         self.expected_spin.setSpecialValueText("Measured")
         self.expected_spin.setSuffix(" s")
         self.expected_spin.setValue(hub.settings.expected_interval_s or 0.0)
-        apply = QPushButton("Apply Thresholds")
+        self.expected_spin.setMaximumWidth(150)
+        apply = QPushButton("Apply")
         apply.setObjectName("diagnosticsApplyThresholds")
+        apply.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         apply.clicked.connect(self._apply_thresholds)
-        settings_form.addRow("Stale after", self.stale_spin)
-        settings_form.addRow("Gap after", self.gap_spin)
-        settings_form.addRow("Expected interval", self.expected_spin)
-        settings_form.addRow("", apply)
-        layout.addWidget(settings)
+        settings_row.addWidget(self._metric_caption("Stale"))
+        settings_row.addWidget(self.stale_spin)
+        settings_row.addWidget(self._metric_caption("Gap"))
+        settings_row.addWidget(self.gap_spin)
+        settings_row.addWidget(self._metric_caption("Interval"))
+        settings_row.addWidget(self.expected_spin)
+        settings_row.addWidget(apply)
+        settings_row.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("diagnosticsBodyScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
+        outer.addWidget(settings)
 
         buttons = QHBoxLayout()
         reset = QPushButton("Reset Statistics")
@@ -183,13 +229,45 @@ class DiagnosticsDialog(QDialog):
         close.rejected.connect(self.reject)
         close.accepted.connect(self.accept)
         buttons.addWidget(close)
-        layout.addLayout(buttons)
+        outer.addLayout(buttons)
 
         self._timer = QTimer(self)
         self._timer.setInterval(250)
         self._timer.timeout.connect(self._refresh)
         self.reload_sources()
         self._timer.start()
+
+    @staticmethod
+    def _metric_caption(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("mutedLabel")
+        return label
+
+    @staticmethod
+    def _status_label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("diagnosticsValue")
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        return label
+
+    def _fill_table(
+        self,
+        table: QTableWidget,
+        rows: Sequence[tuple[str, ...]],
+        *,
+        center_from: int = 1,
+    ) -> None:
+        table.setRowCount(len(rows))
+        for row, values in enumerate(rows):
+            for column, text in enumerate(values):
+                item = table.item(row, column)
+                if item is None:
+                    item = QTableWidgetItem(text)
+                    if column >= center_from:
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    table.setItem(row, column, item)
+                elif item.text() != text:
+                    item.setText(text)
 
     def reload_sources(self) -> None:
         selected = self.source_combo.currentData()
@@ -209,6 +287,18 @@ class DiagnosticsDialog(QDialog):
     def _refresh(self) -> None:
         source_id = self._selected_source_id()
         if source_id is None:
+            self.status_value.setText("No sources")
+            self.uptime_value.setText("—")
+            self.last_data_value.setText("—")
+            self.rx_rate_value.setText("—")
+            self.messages_value.setText("—")
+            self.structured_value.setText("—")
+            self.parser_errors_value.setText("—")
+            self.success_value.setText("—")
+            self.reconnects_value.setText("—")
+            self.longest_gap_value.setText("—")
+            self.channel_table.setRowCount(0)
+            self.gap_table.setRowCount(0)
             return
         if self._replay is not None:
             self._show_replay(source_id)
@@ -232,28 +322,29 @@ class DiagnosticsDialog(QDialog):
             self.success_value.setText(f"{snapshot.parser_success_rate * 100:.1f}%")
         self.reconnects_value.setText(str(snapshot.reconnects))
         self.longest_gap_value.setText(_optional_number(snapshot.longest_gap_s, " s"))
-        self.channel_table.setRowCount(len(snapshot.channels))
-        for row, channel in enumerate(snapshot.channels):
-            values = (
-                channel.name,
-                _rate_text(channel.measured_rate_hz, "Hz"),
-                _optional_number(channel.average_interval_s, " s"),
-                _optional_number(channel.max_interval_s, " s"),
-                _optional_number(channel.last_update_age_s, " s"),
-                _optional_number(channel.jitter_s, " s"),
-                channel.state,
-            )
-            for column, text in enumerate(values):
-                item = QTableWidgetItem(text)
-                if column:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.channel_table.setItem(row, column, item)
+        self._fill_table(
+            self.channel_table,
+            tuple(
+                (
+                    channel.name,
+                    _rate_text(channel.measured_rate_hz, "Hz"),
+                    _optional_number(channel.average_interval_s, " s"),
+                    _optional_number(channel.max_interval_s, " s"),
+                    _optional_number(channel.last_update_age_s, " s"),
+                    _optional_number(channel.jitter_s, " s"),
+                    channel.state,
+                )
+                for channel in snapshot.channels
+            ),
+        )
         recent = tuple(snapshot.gaps)[-8:]
-        self.gap_table.setRowCount(len(recent))
-        for row, gap in enumerate(reversed(recent)):
-            self.gap_table.setItem(row, 0, QTableWidgetItem(f"{gap.start_s:.2f}"))
-            self.gap_table.setItem(row, 1, QTableWidgetItem(f"{gap.duration_s:.2f} s"))
-            self.gap_table.setItem(row, 2, QTableWidgetItem(gap.channel or "Source"))
+        self._fill_table(
+            self.gap_table,
+            tuple(
+                (f"{gap.start_s:.2f}", f"{gap.duration_s:.2f} s", gap.channel or "Source")
+                for gap in reversed(recent)
+            ),
+        )
 
     def _show_replay(self, source_id: str) -> None:
         sources = self._replay.get("sources") if isinstance(self._replay, dict) else None
@@ -281,35 +372,36 @@ class DiagnosticsDialog(QDialog):
         if not isinstance(channels, dict):
             self.channel_table.setRowCount(0)
             return
-        self.channel_table.setRowCount(len(channels))
-        for row, (name, values) in enumerate(channels.items()):
+        rows: list[tuple[str, ...]] = []
+        for name, values in channels.items():
             payload = values if isinstance(values, dict) else {}
-            texts = (
-                str(name),
-                _rate_text(
-                    float(payload["measured_rate_hz"])
-                    if payload.get("measured_rate_hz") is not None
-                    else None,
-                    "Hz",
-                ),
-                _optional_number(
-                    float(payload["average_interval_s"])
-                    if payload.get("average_interval_s") is not None
-                    else None,
-                    " s",
-                ),
-                _optional_number(
-                    float(payload["longest_gap_s"])
-                    if payload.get("longest_gap_s") is not None
-                    else None,
-                    " s",
-                ),
-                "—",
-                "—",
-                "Recorded",
+            rows.append(
+                (
+                    str(name),
+                    _rate_text(
+                        float(payload["measured_rate_hz"])
+                        if payload.get("measured_rate_hz") is not None
+                        else None,
+                        "Hz",
+                    ),
+                    _optional_number(
+                        float(payload["average_interval_s"])
+                        if payload.get("average_interval_s") is not None
+                        else None,
+                        " s",
+                    ),
+                    _optional_number(
+                        float(payload["longest_gap_s"])
+                        if payload.get("longest_gap_s") is not None
+                        else None,
+                        " s",
+                    ),
+                    "—",
+                    "—",
+                    "Recorded",
+                )
             )
-            for column, text in enumerate(texts):
-                self.channel_table.setItem(row, column, QTableWidgetItem(text))
+        self._fill_table(self.channel_table, rows)
 
     def _apply_thresholds(self) -> None:
         expected = self.expected_spin.value()

@@ -93,6 +93,11 @@ QLabel#fieldLabel, QLabel#panelTitle {
 QLabel#mutedLabel {
     color: #718399;
 }
+QLabel#diagnosticsValue {
+    color: #d9e2ec;
+    font-weight: 500;
+    background: transparent;
+}
 QLabel#profileStatusLabel { color: #718399; font-size: 9pt; }
 QToolButton#deviceProfileMenuButton {
     color: #bac8d5; background-color: #18232e; border: 1px solid #314354;
@@ -720,7 +725,11 @@ QGroupBox#channelSettingsSection::title {
     color: #c5d3de;
 }
 QTableWidget#channelSettingsTable,
-QTableWidget#calculatedChannelsTable {
+QTableWidget#calculatedChannelsTable,
+QTableWidget#parserPreviewTable,
+QTableWidget#parserMappingTable,
+QTableWidget#diagnosticsChannelTable,
+QTableWidget#diagnosticsGapTable {
     color: #d9e2ec;
     background-color: #121a23;
     alternate-background-color: #16202a;
@@ -729,7 +738,11 @@ QTableWidget#calculatedChannelsTable {
     selection-background-color: #1f3a4c;
 }
 QTableWidget#channelSettingsTable QHeaderView::section,
-QTableWidget#calculatedChannelsTable QHeaderView::section {
+QTableWidget#calculatedChannelsTable QHeaderView::section,
+QTableWidget#parserPreviewTable QHeaderView::section,
+QTableWidget#parserMappingTable QHeaderView::section,
+QTableWidget#diagnosticsChannelTable QHeaderView::section,
+QTableWidget#diagnosticsGapTable QHeaderView::section {
     color: #c5d3de;
     background-color: #1a2530;
     border: 0;
@@ -870,6 +883,11 @@ QLabel#fieldLabel, QLabel#panelTitle {
     letter-spacing: 1px;
 }
 QLabel#mutedLabel, QLabel#graphsEmptyDetail { color: #6B7785; }
+QLabel#diagnosticsValue {
+    color: #202833;
+    font-weight: 500;
+    background: transparent;
+}
 QLabel#profileStatusLabel { color: #6B7785; font-size: 9pt; }
 QToolButton#deviceProfileMenuButton {
     color: #2A3340; background-color: #EDF1F5; border: 1px solid #C5CED8;
@@ -1445,7 +1463,11 @@ QGroupBox#channelSettingsSection::title {
     color: #2A3340;
 }
 QTableWidget#channelSettingsTable,
-QTableWidget#calculatedChannelsTable {
+QTableWidget#calculatedChannelsTable,
+QTableWidget#parserPreviewTable,
+QTableWidget#parserMappingTable,
+QTableWidget#diagnosticsChannelTable,
+QTableWidget#diagnosticsGapTable {
     color: #202833;
     background-color: #EEF2F5;
     alternate-background-color: #E4E9EE;
@@ -1454,7 +1476,11 @@ QTableWidget#calculatedChannelsTable {
     selection-background-color: #D2DFE8;
 }
 QTableWidget#channelSettingsTable QHeaderView::section,
-QTableWidget#calculatedChannelsTable QHeaderView::section {
+QTableWidget#calculatedChannelsTable QHeaderView::section,
+QTableWidget#parserPreviewTable QHeaderView::section,
+QTableWidget#parserMappingTable QHeaderView::section,
+QTableWidget#diagnosticsChannelTable QHeaderView::section,
+QTableWidget#diagnosticsGapTable QHeaderView::section {
     color: #2A3340;
     background-color: #EDF1F5;
     border: 0;

@@ -19,6 +19,8 @@ def test_diagnostics_dialog_creates_and_reset_does_not_disconnect() -> None:
     application.processEvents()
     assert dialog.windowTitle() == "Diagnostics"
     assert dialog.channel_table.columnCount() == 7
+    assert dialog.status_value.objectName() == "diagnosticsValue"
+    assert dialog.status_value.height() >= 16
     dialog._reset()
     application.processEvents()
     assert hub.live.snapshot("default").structured_updates == 0

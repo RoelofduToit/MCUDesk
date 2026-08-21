@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QTableWidget,
@@ -73,8 +75,13 @@ class ParserConfigurationDialog(QDialog):
         self.setMinimumSize(520, 480)
         self.resize(620, 580)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 12)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(16, 14, 16, 12)
+        outer.setSpacing(12)
+
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
 
         mode_group = QGroupBox("Parser")
@@ -137,7 +144,16 @@ class ParserConfigurationDialog(QDialog):
         self.status_label.setObjectName("mutedLabel")
         self.status_label.setWordWrap(True)
         preview_layout.addWidget(self.status_label)
+        self.preview_table.setMinimumHeight(96)
         layout.addWidget(preview_group, 1)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("parserBodyScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -147,7 +163,7 @@ class ParserConfigurationDialog(QDialog):
         self.apply_button.setObjectName("dialogPrimaryButton")
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
-        layout.addWidget(self.buttons)
+        outer.addWidget(self.buttons)
 
         self.mode_combo.currentIndexChanged.connect(self._on_controls_changed)
         self.delimiter_combo.currentIndexChanged.connect(self._on_controls_changed)
@@ -179,7 +195,6 @@ class ParserConfigurationDialog(QDialog):
         label.setObjectName("mutedLabel")
         label.setWordWrap(True)
         layout.addWidget(label)
-        layout.addStretch()
         return page
 
     def _build_delimited_page(self) -> QWidget:
@@ -217,8 +232,8 @@ class ParserConfigurationDialog(QDialog):
         )
         self.mapping_table.verticalHeader().setVisible(False)
         self.mapping_table.verticalHeader().setDefaultSectionSize(26)
-        self.mapping_table.setMinimumHeight(96)
-        self.mapping_table.setMaximumHeight(188)
+        self.mapping_table.setMinimumHeight(120)
+        self.mapping_table.setMaximumHeight(220)
         mapping_header = self.mapping_table.horizontalHeader()
         mapping_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         mapping_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -277,7 +292,6 @@ class ParserConfigurationDialog(QDialog):
         label.setObjectName("mutedLabel")
         label.setWordWrap(True)
         layout.addWidget(label)
-        layout.addStretch()
         return page
 
     def _load_configuration(self, configuration: ParserConfiguration) -> None:
@@ -436,6 +450,9 @@ class ParserConfigurationDialog(QDialog):
         )
         show_mapping = mode == "delimited" and self.header_combo.currentData() == "none"
         self.mapping_table.setVisible(show_mapping)
+        page = self.config_stack.currentWidget()
+        if page is not None:
+            self.config_stack.setMaximumHeight(max(1, page.sizeHint().height()))
 
     def _use_recent_sample(self) -> None:
         if self._recent_sample.strip():
