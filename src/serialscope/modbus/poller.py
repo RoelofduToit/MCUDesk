@@ -17,6 +17,10 @@ from serialscope.parsing import ChannelUpdate
 
 FATAL_KINDS = {"disconnected"}
 ERROR_EMIT_INTERVAL_S = 2.0
+# After stop(), at most one in-flight read should remain. Wait for that
+# pymodbus timeout plus a short close/cleanup margin.
+_SHUTDOWN_MARGIN_S = 1.0
+_retained_pollers: set["ModbusPoller"] = set()
 
 
 class ModbusPollerWorker(QObject):
@@ -61,11 +65,15 @@ class ModbusPollerWorker(QObject):
                 try:
                     update = self._poll_once(transport, blocks, slave_id)
                 except ModbusClientError as error:
+                    if self._stop_requested.is_set():
+                        break
                     if error.kind in FATAL_KINDS:
                         self.failed.emit(str(error))
                         return
                     self._emit_soft_error(error)
                 else:
+                    if self._stop_requested.is_set():
+                        break
                     if update is not None:
                         self.values_ready.emit(update)
                     if self._last_error_kind is not None:
@@ -96,12 +104,16 @@ class ModbusPollerWorker(QObject):
         names: list[str] = []
         values: list[int | float] = []
         for block in blocks:
+            if self._stop_requested.is_set():
+                break
             try:
                 if block.kind == "holding":
                     words = transport.read_holding_registers(block.address, block.count, slave_id)
                 else:
                     words = transport.read_input_registers(block.address, block.count, slave_id)
             except ModbusClientError as error:
+                if self._stop_requested.is_set():
+                    break
                 if error.kind in FATAL_KINDS:
                     raise
                 self._emit_soft_error(error)
@@ -153,7 +165,8 @@ class ModbusPoller(QObject):
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         super().__init__()
-        self._thread = QThread()
+        self._configuration = configuration
+        self._thread = QThread(self)
         self._worker = ModbusPollerWorker(configuration, transport_factory, clock)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -161,6 +174,7 @@ class ModbusPoller(QObject):
         self._worker.status_changed.connect(self.status_changed)
         self._worker.failed.connect(self.failed)
         self._worker.finished.connect(self._thread.quit)
+        self._thread.finished.connect(self._release_after_finish)
 
     @property
     def is_running(self) -> bool:
@@ -170,7 +184,25 @@ class ModbusPoller(QObject):
         self._thread.start()
 
     def stop(self) -> None:
+        """Request stop, wait for the in-flight I/O timeout, then join."""
         self._worker.request_stop()
-        if self._thread.isRunning():
-            self._thread.quit()
-            self._thread.wait(3_000)
+        if not self._thread.isRunning():
+            _retained_pollers.discard(self)
+            return
+        # quit() is thread-safe and unblocks exec() after run() returns.
+        # Do not rely on finished→quit while the GUI thread is inside wait().
+        self._thread.quit()
+        if self._thread.wait(self._shutdown_wait_ms()):
+            _retained_pollers.discard(self)
+            return
+        # The worker is still in a bounded serial read. Keep this object
+        # alive until QThread.finished so the thread is never destroyed
+        # while running.
+        _retained_pollers.add(self)
+
+    def _shutdown_wait_ms(self) -> int:
+        timeout_s = self._configuration.connection.timeout_s
+        return max(500, int((timeout_s + _SHUTDOWN_MARGIN_S) * 1000))
+
+    def _release_after_finish(self) -> None:
+        _retained_pollers.discard(self)
