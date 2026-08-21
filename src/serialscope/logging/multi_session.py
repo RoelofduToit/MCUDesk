@@ -297,6 +297,7 @@ class MultiSourceRecordingSession:
         self,
         end_reason: str,
         total_rx_bytes: Mapping[str, int] | None = None,
+        diagnostics: dict[str, object] | None = None,
     ) -> None:
         if not self.is_recording:
             return
@@ -323,6 +324,8 @@ class MultiSourceRecordingSession:
             self._device_metadata(item, (total_rx_bytes or {}).get(item.config.source_id))
             for item in self._sources.values()
         ]
+        if diagnostics is not None:
+            self._metadata["diagnostics"] = diagnostics
         self._metadata.update(
             {
                 "status": "completed",

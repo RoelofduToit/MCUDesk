@@ -6,6 +6,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings
 
+from serialscope.diagnostics.model import DiagnosticsSettings
+
 
 THEME_OPTIONS = ("dark", "light")
 DELIMITER_OPTIONS = (",", ";", "\t")
@@ -64,6 +66,30 @@ class ApplicationSettings:
 
     def set_automatically_check_for_updates(self, enabled: bool) -> None:
         self._backend.setValue("updates/automatic_check", bool(enabled))
+        self._backend.sync()
+
+    @property
+    def diagnostics_settings(self) -> DiagnosticsSettings:
+        expected = self._backend.value("diagnostics/expected_interval_s", "", type=str)
+        try:
+            expected_interval = float(expected) if str(expected).strip() else None
+        except ValueError:
+            expected_interval = None
+        return DiagnosticsSettings(
+            stale_multiplier=float(
+                self._backend.value("diagnostics/stale_multiplier", 5.0)
+            ),
+            gap_multiplier=float(self._backend.value("diagnostics/gap_multiplier", 5.0)),
+            expected_interval_s=expected_interval,
+        )
+
+    def set_diagnostics_settings(self, settings: DiagnosticsSettings) -> None:
+        self._backend.setValue("diagnostics/stale_multiplier", settings.stale_multiplier)
+        self._backend.setValue("diagnostics/gap_multiplier", settings.gap_multiplier)
+        self._backend.setValue(
+            "diagnostics/expected_interval_s",
+            "" if settings.expected_interval_s is None else str(settings.expected_interval_s),
+        )
         self._backend.sync()
 
     def set_last_automatic_update_check(self, checked_at: datetime) -> None:

@@ -316,7 +316,12 @@ class RecordingSession:
         except (RawLoggerError, StructuredCsvLoggerError) as error:
             raise RecordingSessionError(str(error)) from error
 
-    def stop(self, end_reason: str, total_rx_bytes: int) -> None:
+    def stop(
+        self,
+        end_reason: str,
+        total_rx_bytes: int,
+        diagnostics: dict[str, object] | None = None,
+    ) -> None:
         """Close raw data and finalize metadata for the active session."""
         if not self.is_recording:
             return
@@ -339,6 +344,8 @@ class RecordingSession:
         except EventLoggerError as error:
             event_error = error
 
+        if diagnostics is not None:
+            self._metadata["diagnostics"] = diagnostics
         self._metadata.update(
             {
                 "status": "completed",

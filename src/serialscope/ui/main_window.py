@@ -31,6 +31,7 @@ from serialscope.logging import (
     find_interrupted_recordings,
     is_interrupted_recording,
 )
+from serialscope.diagnostics import DiagnosticsHub
 from serialscope.parsing import ChannelUpdate, ParserConfiguration, SerialStreamParser
 from serialscope.data import (
     CalculatedChannelStore,
@@ -64,6 +65,7 @@ from serialscope.ui.data_widget import DataWidget
 from serialscope.ui.dashboard_widget import DashboardWidget
 from serialscope.ui.event_dialogs import AddEventDialog, EventListDialog
 from serialscope.ui.multi_graphs_widget import MultiSourceGraphsWidget
+from serialscope.ui.diagnostics_dialog import DiagnosticsDialog
 from serialscope.ui.parser_configuration_dialog import ParserConfigurationDialog
 from serialscope.ui.preferences_dialog import PreferencesDialog
 from serialscope.ui.profile_dialogs import ProfileNameDialog
@@ -132,6 +134,10 @@ class MainWindow(QMainWindow):
             default_source.source_id: ChannelMetadataRegistry()
         }
         self._application_settings = application_settings or ApplicationSettings()
+        self._diagnostics = DiagnosticsHub(self._application_settings.diagnostics_settings)
+        self._source_manager.set_diagnostics(self._diagnostics)
+        self._diagnostics_dialog: DiagnosticsDialog | None = None
+        self._replay_diagnostics: dict[str, object] | None = None
         self._update_controller = UpdateController(
             self,
             self._application_settings,
@@ -353,6 +359,29 @@ class MainWindow(QMainWindow):
         except ProfileStoreError as error:
             self._show_profile_error(str(error))
 
+    def _show_diagnostics(self) -> None:
+        if self._diagnostics_dialog is not None:
+            self._diagnostics_dialog.reload_sources()
+            self._diagnostics_dialog.show()
+            self._diagnostics_dialog.raise_()
+            return
+        dialog = DiagnosticsDialog(
+            self._diagnostics,
+            lambda: tuple(
+                (source.source_id, source.display_name)
+                for source in self._source_manager.sources
+            ),
+            replay_diagnostics=self._replay_diagnostics,
+            on_settings_changed=self._application_settings.set_diagnostics_settings,
+            parent=self,
+        )
+        self._diagnostics_dialog = dialog
+        dialog.finished.connect(lambda _result: self._timer_cleanup_diagnostics())
+        dialog.show()
+
+    def _timer_cleanup_diagnostics(self) -> None:
+        self._diagnostics_dialog = None
+
     def _build_menu_bar(self) -> None:
         file_menu = self.menuBar().addMenu("File")
         self.open_session_action = file_menu.addAction("Open Session...")
@@ -370,6 +399,10 @@ class MainWindow(QMainWindow):
         self.parser_configuration_action.triggered.connect(
             self._show_parser_configuration
         )
+
+        tools_menu = self.menuBar().addMenu("Tools")
+        self.diagnostics_action = tools_menu.addAction("Diagnostics...")
+        self.diagnostics_action.triggered.connect(self._show_diagnostics)
 
         channels_menu = self.menuBar().addMenu("Channels")
         self.configure_channels_action = channels_menu.addAction(
@@ -553,6 +586,7 @@ class MainWindow(QMainWindow):
         if self._replay_session is None:
             return
         self._replay_session = None
+        self._replay_diagnostics = None
         live_metadata = self._live_channel_metadata or {}
         self._live_channel_metadata = None
         self._channel_metadata.replace(live_metadata, tuple(live_metadata))
@@ -575,6 +609,8 @@ class MainWindow(QMainWindow):
     def _enter_replay_mode(self, session: ReplaySession) -> None:
         self._live_channel_metadata = self._channel_metadata.snapshot()
         self._replay_session = session
+        diagnostics = session.metadata.get("diagnostics")
+        self._replay_diagnostics = diagnostics if isinstance(diagnostics, dict) else None
         replay_metadata = session.metadata.get("channels", {})
         if not isinstance(replay_metadata, dict):
             replay_metadata = {}
@@ -948,6 +984,8 @@ class MainWindow(QMainWindow):
         self.data_widget.set_source_count(count)
         self.dashboard_widget.set_source_count(count)
         self._selected_source_changed()
+        if self._diagnostics_dialog is not None:
+            self._diagnostics_dialog.reload_sources()
 
     def _add_serial_source(self) -> None:
         if self._recording_session.is_recording:
@@ -1433,6 +1471,7 @@ class MainWindow(QMainWindow):
             self._show_logging_error(str(error))
             return
 
+        self._diagnostics.begin_recording()
         self._recording_timer.start()
         self.side_panel.set_events(())
         self.graphs_widget.set_events(())
@@ -1445,6 +1484,7 @@ class MainWindow(QMainWindow):
 
     def _stop_recording(self, end_reason: str, show_error: bool = True) -> None:
         directory = self._recording_session.directory
+        diagnostics = self._diagnostics.end_recording()
         try:
             if isinstance(self._recording_session, MultiSourceRecordingSession):
                 self._recording_session.stop(
@@ -1453,9 +1493,12 @@ class MainWindow(QMainWindow):
                         source.source_id: source.rx_bytes
                         for source in self._source_manager.sources
                     },
+                    diagnostics=diagnostics,
                 )
             else:
-                self._recording_session.stop(end_reason, self._rx_bytes)
+                self._recording_session.stop(
+                    end_reason, self._rx_bytes, diagnostics=diagnostics
+                )
         except RecordingSessionError as error:
             if show_error:
                 self._show_logging_error(str(error))
@@ -1593,6 +1636,9 @@ class MainWindow(QMainWindow):
                 source.reader = None
         self._stop_recording("application_closed", show_error=False)
         self._update_controller.shutdown()
+        if self._diagnostics_dialog is not None:
+            self._diagnostics_dialog.close()
+            self._diagnostics_dialog = None
         self._source_manager.disconnect_all()
         for graph in self.graphs_widget._widgets.values():
             graph._refresh_timer.stop()

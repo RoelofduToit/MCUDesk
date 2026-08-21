@@ -15,6 +15,7 @@ class BoundedLineBuffer:
         self._maximum = max_line_bytes
         self._buffer = bytearray()
         self._discarding_oversized_line = False
+        self.discarded_line_count = 0
 
     @property
     def buffered_bytes(self) -> int:
@@ -23,6 +24,7 @@ class BoundedLineBuffer:
     def reset(self) -> None:
         self._buffer.clear()
         self._discarding_oversized_line = False
+        self.discarded_line_count = 0
 
     def feed(self, data: bytes) -> tuple[bytes, ...]:
         lines: list[bytes] = []
@@ -33,6 +35,7 @@ class BoundedLineBuffer:
                 if newline < 0:
                     break
                 self._discarding_oversized_line = False
+                self.discarded_line_count += 1
                 offset = newline + 1
                 continue
 
@@ -50,6 +53,8 @@ class BoundedLineBuffer:
                 self._buffer.extend(segment)
                 line = bytes(self._buffer)
                 lines.append(line[:-1] if line.endswith(b"\r") else line)
+            else:
+                self.discarded_line_count += 1
             self._buffer.clear()
             offset = newline + 1
         return tuple(lines)

@@ -8,6 +8,7 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
 
+from serialscope.diagnostics.collector import DiagnosticsHub
 from serialscope.parsing import ChannelUpdate, ParserConfiguration, SerialStreamParser
 from serialscope.serial.connection import SerialConnection, SerialConnectionError
 from serialscope.serial.reader import SerialReader
@@ -55,13 +56,18 @@ class SerialSourceManager(QObject):
         connection_factory: Callable[[], SerialConnection] = SerialConnection,
         reader_factory: Callable[[SerialConnection], SerialReader] = SerialReader,
         parser_factory: Callable[[], SerialStreamParser] = SerialStreamParser,
+        diagnostics: DiagnosticsHub | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._connection_factory = connection_factory
         self._reader_factory = reader_factory
         self._parser_factory = parser_factory
+        self._diagnostics = diagnostics
         self._sources: dict[str, SerialSource] = {}
+
+    def set_diagnostics(self, diagnostics: DiagnosticsHub | None) -> None:
+        self._diagnostics = diagnostics
 
     @property
     def sources(self) -> tuple[SerialSource, ...]:
@@ -121,6 +127,8 @@ class SerialSourceManager(QObject):
         source = self.get(source_id)
         self.disconnect(source_id)
         del self._sources[source_id]
+        if self._diagnostics is not None:
+            self._diagnostics.note_removed(source_id)
         self.source_removed.emit(source_id)
 
     def rename_source(self, source_id: str, display_name: str) -> None:
@@ -191,6 +199,8 @@ class SerialSourceManager(QObject):
         source.tx_bytes = 0
         source.latest_values.clear()
         source.parser.reset()
+        if self._diagnostics is not None:
+            self._diagnostics.note_connected(source_id)
         self.source_state_changed.emit(source_id, "connected")
 
     def disconnect(self, source_id: str) -> None:
@@ -200,6 +210,8 @@ class SerialSourceManager(QObject):
             reader.stop()
         source.connection.disconnect()
         source.parser.reset()
+        if self._diagnostics is not None:
+            self._diagnostics.note_disconnected(source_id)
         self.source_state_changed.emit(source_id, "disconnected")
 
     def disconnect_all(self) -> None:
@@ -230,8 +242,15 @@ class SerialSourceManager(QObject):
             return
         source.rx_bytes += len(data)
         self.bytes_received.emit(source_id, data)
-        for update in source.parser.feed(data):
+        if self._diagnostics is not None:
+            self._diagnostics.note_bytes(source_id, len(data))
+        updates, observation = source.parser.observe(data)
+        if self._diagnostics is not None:
+            self._diagnostics.note_parser_observation(source_id, observation)
+        for update in updates:
             source.latest_values.update(zip(update.names, update.values, strict=True))
+            if self._diagnostics is not None:
+                self._diagnostics.note_structured_update(source_id, update.names)
             self.structured_update.emit(source_id, update)
 
     def _reader_failed(
@@ -247,5 +266,7 @@ class SerialSourceManager(QObject):
         except SerialConnectionError:
             pass
         source.parser.reset()
+        if self._diagnostics is not None:
+            self._diagnostics.note_disconnected(source_id)
         self.source_state_changed.emit(source_id, "error")
         self.source_failed.emit(source_id, message)
