@@ -92,3 +92,9 @@ to load without choosing a protocol.
 - No register or coil writes
 - No automatic A/B or endianness detection
 - Register maps must come from the manufacturer documentation
+
+## Development simulator
+
+A Linux PTY slave for software tests is documented in
+[MODBUS_SIMULATOR.md](MODBUS_SIMULATOR.md). It is not a physical RS-485 test
+and is not installed with the MCUDesk application.
