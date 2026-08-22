@@ -1,7 +1,7 @@
 # MCUDesk
 
-MCUDesk is a professional cross-platform serial terminal and engineering data
-workspace for Windows and Linux. It helps developers and engineers connect to
+MCUDesk is a serial terminal and engineering data
+workspace for Windows and Linux. It helps connect to
 microcontrollers and serial devices, inspect terminal traffic, detect structured
 data, monitor live graphs and dashboards, record experiments, and replay saved
 sessions.
