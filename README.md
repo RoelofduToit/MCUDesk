@@ -1,12 +1,78 @@
 # MCUDesk
 
-MCUDesk is a cross-platform serial terminal and engineering data tool for Windows and Linux.
+MCUDesk is a professional cross-platform serial terminal and engineering data
+workspace for Windows and Linux. It helps developers and engineers connect to
+microcontrollers and serial devices, inspect terminal traffic, detect structured
+data, monitor live graphs and dashboards, record experiments, and replay saved
+sessions.
 
-Version 0.11.0 adds asynchronous stable-release checking and verified Linux
-`.deb` downloads through the public GitHub Releases API. Installation remains
-an explicit handoff to the operating system package installer.
+Key capabilities include:
 
-Recordings use one parent experiment directory with `session.json` and `events.csv`, plus separate `raw.log` and `data.csv` files beneath each participating device directory. Operator events and structured device files share the same host-side monotonic session origin. Existing sessions without `events.csv` remain replayable.
+- independent multi-device serial connections
+- raw terminal RX/TX with configurable line endings
+- automatic CSV, key/value, and JSON-line channel detection
+- live engineering graphs, cursor inspection, statistics, and event markers
+- configurable dashboards, channel aliases, units, and alarm limits
+- exact raw logging plus structured session data and metadata
+- offline session replay and data export
+- reusable device profiles and read-only Modbus RTU monitoring
+- built-in Light and Dark themes and application update checks
+
+## Download
+
+Ready-to-install packages are published on the
+[GitHub Releases page](https://github.com/RoelofduToit/MCUDesk/releases/latest).
+Open the latest release, expand **Assets**, and download the package for your
+operating system. You do not need Python to run these packaged builds.
+
+### Linux (Debian/Ubuntu/Linux Mint, 64-bit)
+
+Download:
+
+```text
+MCUDesk_<version>_Linux_amd64.deb
+```
+
+Then install it from a terminal, replacing `<version>` with the downloaded
+release version:
+
+```bash
+cd ~/Downloads
+sudo apt install ./MCUDesk_<version>_Linux_amd64.deb
+```
+
+Launch **MCUDesk** from the desktop application menu or run:
+
+```bash
+mcudesk
+```
+
+The Linux package requires a compatible 64-bit Debian-family distribution with
+glibc 2.38 or newer.
+
+### Windows (64-bit)
+
+Download:
+
+```text
+MCUDesk_<version>_Windows_x64_Setup.exe
+```
+
+Double-click the downloaded installer and follow the setup wizard. The current
+installer is not code-signed, so Windows may show a Microsoft Defender
+SmartScreen warning; verify that the file came from this repository's official
+GitHub release before continuing.
+
+MCUDesk can check for stable updates from **GitHub / Updates** inside the
+application. Package installation always remains an explicit user action.
+
+## Recording format
+
+Recordings use one parent experiment directory with `session.json` and
+`events.csv`, plus separate `raw.log` and `data.csv` files beneath each
+participating device directory. Operator events and structured device files
+share the same host-side monotonic session origin. Existing sessions without
+`events.csv` remain replayable.
 
 ## Requirements
 
