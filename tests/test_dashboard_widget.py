@@ -641,6 +641,10 @@ def test_dashboard_label_typography_is_centralized_for_both_themes() -> None:
         rule = stylesheet.split("QLabel#dashboardTileName {", 1)[1].split("}", 1)[0]
         assert "font-size: 11pt" in rule
         assert "font-weight: 500" in rule
+        value_rule = stylesheet.split("QLabel#dashboardTileValue {", 1)[1].split("}", 1)[0]
+        assert "font-size: 24pt" in value_rule
+        assert "font-weight: 600" in value_rule
+        assert 'QLabel#dashboardTileValue[numericFamily="bundled"]' in stylesheet
 
 
 def test_long_dashboard_alias_is_elided_without_changing_square_tile() -> None:

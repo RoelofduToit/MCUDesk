@@ -46,8 +46,10 @@ def test_linux_spec_uses_package_entry_point_and_authoritative_version() -> None
     assert '"serialscope" / "__main__.py"' in spec
     assert 'name="MCUDesk"' in spec
     assert "console=False" in spec
-    assert 'datas=[(str(ICON_SOURCE), "assets/icons")]' in spec
+    assert '(str(ICON_SOURCE), "assets/icons")' in spec
+    assert '(str(FONTS_SOURCE), "assets/fonts")' in spec
     assert '"assets" / "icons" / "mcudesk.png"' in spec
+    assert '"assets" / "fonts"' in spec
     assert "0.9.2" not in spec
 
 
@@ -164,6 +166,15 @@ def test_debian_packaging_uses_master_png_independently_of_windows_icon() -> Non
     )
     assert (project_root / "assets" / "icons" / "mcudesk.png").is_file()
     assert (project_root / "assets" / "icons" / "mcudesk.ico").is_file()
+    fonts = project_root / "assets" / "fonts"
+    assert (fonts / "DSEG7Classic-Regular.ttf").is_file()
+    assert (fonts / "DSEG7Classic-Italic.ttf").is_file()
+    assert (fonts / "DSEG14Classic-Regular.ttf").is_file()
+    assert (fonts / "MatrixSansPrint-Regular.ttf").is_file()
+    assert (fonts / "IBMPlexMono-Regular.ttf").is_file()
+    assert (fonts / "licenses" / "DSEG-LICENSE.txt").is_file()
+    assert (fonts / "licenses" / "MatrixSans-OFL.txt").is_file()
+    assert (fonts / "licenses" / "IBMPlexMono-LICENSE.txt").is_file()
     assert 'ICON_SOURCE="${PROJECT_ROOT}/assets/icons/mcudesk.png"' in build_script
     assert "image.scaled(" in build_script
     assert 'resized.save(str(destination), "PNG")' in build_script
@@ -210,8 +221,10 @@ def test_windows_spec_is_windowed_one_folder_and_bundles_runtime_icon() -> None:
     assert "COLLECT(" in spec
     assert 'icon=str(WINDOWS_ICON)' in spec
     assert '"assets" / "icons" / "mcudesk.ico"' in spec
-    assert 'datas=[(str(ICON_SOURCE), "assets/icons")]' in spec
+    assert '(str(ICON_SOURCE), "assets/icons")' in spec
+    assert '(str(FONTS_SOURCE), "assets/fonts")' in spec
     assert '"assets" / "icons" / "mcudesk.png"' in spec
+    assert '"assets" / "fonts"' in spec
 
 
 def test_windows_icon_contains_conventional_multiresolution_sizes() -> None:

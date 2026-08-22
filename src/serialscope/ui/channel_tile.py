@@ -7,6 +7,8 @@ from PySide6.QtCore import Property, QMimeData, QPoint, QPointF, Qt
 from PySide6.QtGui import (
     QColor,
     QDrag,
+    QFont,
+    QFontMetrics,
     QMouseEvent,
     QPainter,
     QPen,
@@ -16,6 +18,13 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from serialscope.data import AlarmState, ChannelPresentation
+from serialscope.ui.fonts import (
+    NumericDisplayStyle,
+    font_supports_text,
+    normalize_numeric_display_style,
+    numeric_display_font,
+    numeric_display_size_scale,
+)
 
 
 SPARKLINE_MAX_SAMPLES = 48
@@ -141,6 +150,9 @@ class ChannelTile(QFrame):
         self.setMinimumSize(150, 150)
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         self._drag_start: QPoint | None = None
+        self._numeric_style = NumericDisplayStyle.DEFAULT
+        self._numeric_font: QFont | None = None
+        self._default_value_font = QFont()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 14)
@@ -182,12 +194,70 @@ class ChannelTile(QFrame):
             self.sparkline,
         ):
             mark_tile_display_widget(child)
+        self._default_value_font = QFont(self.value_label.font())
 
     def set_source_name(self, source_name: str) -> None:
         self.source_label.setText(source_name)
 
+    def set_numeric_display_style(self, style: NumericDisplayStyle | str) -> None:
+        """Apply a Dashboard numeric typeface without reading application settings."""
+        self._numeric_style = normalize_numeric_display_style(style)
+        self._numeric_font = numeric_display_font(self._numeric_style)
+        self._apply_numeric_display_font()
+
+    def _apply_numeric_display_font(self) -> None:
+        requested = self._numeric_font
+        text = self.value_label.text()
+        if requested is None or not font_supports_text(requested, text):
+            self.value_label.setProperty("numericFamily", "default")
+            self.value_label.setStyleSheet("")
+            self.value_label.setFont(self._default_value_font)
+        else:
+            applied = QFont(requested)
+            point_size = 24.0 * numeric_display_size_scale(self._numeric_style)
+            applied.setPointSizeF(point_size)
+            applied = self._fit_bundled_value_font(applied, text)
+            point_size = applied.pointSizeF()
+            family = applied.family().replace("'", "\\'")
+            style = "italic" if applied.italic() else "normal"
+            # Widget stylesheet is required so QWidget { font-family } does not
+            # replace the bundled typeface after polish.
+            self.value_label.setProperty("numericFamily", "bundled")
+            self.value_label.setStyleSheet(
+                f"font-family: '{family}'; font-size: {point_size}pt; "
+                f"font-weight: 400; font-style: {style};"
+            )
+            self.value_label.setFont(applied)
+        self.value_label.style().unpolish(self.value_label)
+        self.value_label.style().polish(self.value_label)
+
+    def _fit_bundled_value_font(self, font: QFont, text: str) -> QFont:
+        """Shrink a bundled value face just enough to stay inside the tile."""
+        available = self.value_label.contentsRect()
+        if available.width() < 12 or available.height() < 12 or not text:
+            return font
+        fitted = QFont(font)
+        for _ in range(10):
+            metrics = QFontMetrics(fitted)
+            if (
+                metrics.horizontalAdvance(text) <= available.width()
+                and metrics.height() <= available.height()
+            ):
+                break
+            next_size = fitted.pointSizeF() * 0.88
+            if next_size < 11:
+                break
+            fitted.setPointSizeF(next_size)
+        return fitted
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        if self._numeric_font is not None:
+            self._apply_numeric_display_font()
+
     def set_value(self, value: int | float, *, record: bool = True) -> None:
         self.value_label.setText(format_dashboard_value(value))
+        self._apply_numeric_display_font()
         if record:
             self.sparkline.add_sample(value)
 

@@ -281,6 +281,9 @@ QLabel#dashboardTileValue {
     font-size: 24pt;
     font-weight: 600;
 }
+QLabel#dashboardTileValue[numericFamily="bundled"] {
+    font-weight: 400;
+}
 QLabel#dashboardTileUnit {
     color: #8fa3b8;
     font-size: 11pt;
@@ -1066,6 +1069,9 @@ QLabel#dashboardTileValue {
     color: #202833;
     font-size: 24pt;
     font-weight: 600;
+}
+QLabel#dashboardTileValue[numericFamily="bundled"] {
+    font-weight: 400;
 }
 QLabel#dashboardTileUnit { color: #586574; font-size: 11pt; }
 QLabel#dashboardTileStatus { color: #586574; font-size: 9pt; font-weight: 600; }

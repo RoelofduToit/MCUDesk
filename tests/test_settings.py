@@ -16,6 +16,7 @@ def test_default_preferences_are_dark_and_comma(tmp_path: Path) -> None:
     settings = _settings(tmp_path / "settings.ini")
 
     assert settings.theme == "dark"
+    assert settings.dashboard_numeric_style == "default"
     assert settings.structured_data_delimiter == ","
     assert settings.automatically_check_for_updates
     assert settings.last_automatic_update_check is None
@@ -37,6 +38,39 @@ def test_theme_is_persisted_as_lowercase_value(tmp_path: Path) -> None:
 
     backend = QSettings(str(path), QSettings.Format.IniFormat)
     assert backend.value("appearance/theme") == "light"
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        "default",
+        "seven_segment",
+        "fourteen_segment",
+        "lcd",
+        "dot_matrix",
+        "technical_mono",
+    ],
+)
+def test_dashboard_numeric_style_persists(tmp_path: Path, style: str) -> None:
+    path = tmp_path / "settings.ini"
+    _settings(path).set_dashboard_numeric_style(style)
+
+    assert _settings(path).dashboard_numeric_style == style
+    backend = QSettings(str(path), QSettings.Format.IniFormat)
+    assert backend.value("appearance/dashboard_numeric_style") == style
+
+
+@pytest.mark.parametrize("stored_style", ["Neon", "seven segment", "", "Default"])
+def test_invalid_dashboard_numeric_style_falls_back_to_default(
+    tmp_path: Path,
+    stored_style: str,
+) -> None:
+    path = tmp_path / "settings.ini"
+    backend = QSettings(str(path), QSettings.Format.IniFormat)
+    backend.setValue("appearance/dashboard_numeric_style", stored_style)
+    backend.sync()
+
+    assert _settings(path).dashboard_numeric_style == "default"
 
 
 @pytest.mark.parametrize("stored_theme", ["system", "System", "Neon"])

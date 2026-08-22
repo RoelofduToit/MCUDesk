@@ -11,6 +11,14 @@ from serialscope.diagnostics.model import DiagnosticsSettings
 
 THEME_OPTIONS = ("dark", "light")
 DELIMITER_OPTIONS = (",", ";", "\t")
+DASHBOARD_NUMERIC_STYLE_OPTIONS = (
+    "default",
+    "seven_segment",
+    "fourteen_segment",
+    "lcd",
+    "dot_matrix",
+    "technical_mono",
+)
 
 
 class ApplicationSettings:
@@ -23,6 +31,14 @@ class ApplicationSettings:
     def theme(self) -> str:
         value = self._backend.value("appearance/theme", "dark", type=str).lower()
         return value if value in THEME_OPTIONS else "dark"
+
+    @property
+    def dashboard_numeric_style(self) -> str:
+        value = self._backend.value(
+            "appearance/dashboard_numeric_style", "default", type=str
+        )
+        token = str(value).strip().lower()
+        return token if token in DASHBOARD_NUMERIC_STYLE_OPTIONS else "default"
 
     @property
     def structured_data_delimiter(self) -> str:
@@ -54,6 +70,14 @@ class ApplicationSettings:
     def set_theme(self, theme: str) -> None:
         self._backend.setValue(
             "appearance/theme", theme.lower() if theme.lower() in THEME_OPTIONS else "dark"
+        )
+        self._backend.sync()
+
+    def set_dashboard_numeric_style(self, style: str) -> None:
+        token = str(style).strip().lower()
+        self._backend.setValue(
+            "appearance/dashboard_numeric_style",
+            token if token in DASHBOARD_NUMERIC_STYLE_OPTIONS else "default",
         )
         self._backend.sync()
 

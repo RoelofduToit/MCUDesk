@@ -3,7 +3,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QGroupBox, QLabel
 
 from serialscope.ui.preferences_dialog import PreferencesDialog
 
@@ -22,6 +22,35 @@ def test_preferences_dialog_selects_supported_theme(label: str, theme: str) -> N
         "Dark",
         "Light",
     ]
+    dialog.close()
+    application.processEvents()
+
+
+def test_preferences_dialog_selects_dashboard_numeric_style() -> None:
+    application = QApplication.instance() or QApplication([])
+    dialog = PreferencesDialog("dark", dashboard_numeric_style="dot_matrix")
+
+    assert dialog.dashboard_numeric_style == "dot_matrix"
+    labels = [
+        dialog.numeric_style_combo.itemText(index)
+        for index in range(dialog.numeric_style_combo.count())
+    ]
+    assert labels == [
+        "Default",
+        "Seven Segment",
+        "Fourteen Segment",
+        "LCD",
+        "Dot Matrix",
+        "Technical Mono",
+    ]
+    assert [child.title() for child in dialog.findChildren(QGroupBox)] == [
+        "Appearance",
+        "Dashboard",
+        "Updates",
+    ]
+    assert dialog.findChild(QLabel, "dashboardNumericStyleLabel").text() == "Numeric style"
+    dialog.numeric_style_combo.setCurrentText("Technical Mono")
+    assert dialog.dashboard_numeric_style == "technical_mono"
     dialog.close()
     application.processEvents()
 

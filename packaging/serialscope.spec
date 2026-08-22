@@ -6,12 +6,16 @@ from pathlib import Path
 PROJECT_ROOT = Path(SPECPATH).resolve().parent
 SOURCE_ROOT = PROJECT_ROOT / "src"
 ICON_SOURCE = PROJECT_ROOT / "assets" / "icons" / "mcudesk.png"
+FONTS_SOURCE = PROJECT_ROOT / "assets" / "fonts"
 
 analysis = Analysis(
     [str(SOURCE_ROOT / "serialscope" / "__main__.py")],
     pathex=[str(SOURCE_ROOT)],
     binaries=[],
-    datas=[(str(ICON_SOURCE), "assets/icons")],
+    datas=[
+        (str(ICON_SOURCE), "assets/icons"),
+        (str(FONTS_SOURCE), "assets/fonts"),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

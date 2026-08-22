@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 from serialscope import PRODUCT_NAME, STORAGE_APP_NAME, __version__
 from serialscope.resources import apply_application_icon
 from serialscope.settings import ApplicationSettings
+from serialscope.ui.fonts import load_numeric_display_fonts
 from serialscope.ui.main_window import MainWindow
 
 
@@ -23,6 +24,7 @@ def main() -> int:
     application.setApplicationVersion(__version__)
     application.setOrganizationName(STORAGE_APP_NAME)
     apply_application_icon(application)
+    load_numeric_display_fonts()
     settings = ApplicationSettings()
     window = MainWindow(application_settings=settings)
     window.show()

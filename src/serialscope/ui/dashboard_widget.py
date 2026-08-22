@@ -31,6 +31,10 @@ from serialscope.data import (
     evaluate_alarm,
 )
 from serialscope.ui.channel_tile import SPARKLINE_MAX_SAMPLES, ChannelTile
+from serialscope.ui.fonts import (
+    NumericDisplayStyle,
+    normalize_numeric_display_style,
+)
 from serialscope.replay import ReplaySession
 from serialscope.ui.channel_colors import sparkline_color_for_channel
 from serialscope.ui.channel_selector import ChannelSelector, ChannelToggle
@@ -73,6 +77,7 @@ class DashboardWidget(QWidget):
         self._show_source_labels = False
         self._drop_candidate: GridPosition | None = None
         self._light_theme = False
+        self._numeric_display_style = NumericDisplayStyle.DEFAULT
         self._built = False
         self.setAcceptDrops(True)
         if not lazy:
@@ -245,6 +250,16 @@ class DashboardWidget(QWidget):
         """Keep sparkline contrast aligned with the active tile background."""
         self._light_theme = theme == "light"
         self._apply_sparkline_colors()
+
+    @property
+    def numeric_display_style(self) -> str:
+        return self._numeric_display_style.value
+
+    def set_numeric_display_style(self, style: NumericDisplayStyle | str) -> None:
+        """Apply a global numeric typeface to existing and future tiles."""
+        self._numeric_display_style = normalize_numeric_display_style(style)
+        for tile in self._tiles.values():
+            tile.set_numeric_display_style(self._numeric_display_style)
 
     def _apply_sparkline_colors(self) -> None:
         names = tuple(self._available_names)
@@ -423,6 +438,7 @@ class DashboardWidget(QWidget):
                 tile.set_alarm_state(
                     evaluate_alarm(value, self._metadata.get(name).alarms)
                 )
+                tile.set_numeric_display_style(self._numeric_display_style)
                 self._tiles[name] = tile
                 self.layout_model.add(name)
                 tile.show()

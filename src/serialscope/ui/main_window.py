@@ -241,6 +241,9 @@ class MainWindow(QMainWindow):
         )
         self.data_widget = DataWidget()
         self.dashboard_widget = DashboardWidget(lazy=True)
+        self.dashboard_widget.set_numeric_display_style(
+            self._application_settings.dashboard_numeric_style
+        )
         self.graphs_widget = MultiSourceGraphsWidget()
         self.workspace_tabs.addTab(self.terminal, "Terminal")
         self.workspace_tabs.addTab(self.data_widget, "Data")
@@ -318,11 +321,18 @@ class MainWindow(QMainWindow):
             automatically_check_for_updates=(
                 self._application_settings.automatically_check_for_updates
             ),
+            dashboard_numeric_style=self._application_settings.dashboard_numeric_style,
         )
         if dialog.exec() == PreferencesDialog.DialogCode.Accepted:
             self._application_settings.set_theme(dialog.selected_theme)
             self._application_settings.set_automatically_check_for_updates(
                 dialog.automatically_check_for_updates
+            )
+            self._application_settings.set_dashboard_numeric_style(
+                dialog.dashboard_numeric_style
+            )
+            self.dashboard_widget.set_numeric_display_style(
+                dialog.dashboard_numeric_style
             )
             self.apply_theme(dialog.selected_theme)
 
