@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 def test_product_name_is_mcudesk_and_internal_package_is_serialscope() -> None:
     assert PRODUCT_NAME == "MCUDesk"
     assert STORAGE_APP_NAME == "SerialScope"
-    assert __version__ == "0.16.0"
+    assert __version__ == "0.17.0"
     assert Path("src/serialscope").is_dir()
     assert APPLICATION_ICON.as_posix() == "assets/icons/mcudesk.png"
     assert GITHUB_REPOSITORY == "MCUDesk"
