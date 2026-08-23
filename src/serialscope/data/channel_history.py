@@ -2,6 +2,7 @@
 
 from collections import deque
 from collections.abc import Callable
+import math
 import time
 
 from serialscope.parsing import ChannelUpdate
@@ -30,9 +31,23 @@ class ChannelHistory:
     def channel_names(self) -> tuple[str, ...]:
         return tuple(self._samples)
 
+    @property
+    def window_seconds(self) -> float:
+        return self._window_seconds
+
+    @property
+    def max_points_per_channel(self) -> int:
+        return self._max_points_per_channel
+
     def add_update(self, update: ChannelUpdate) -> None:
         """Record one structured update at its shared receive time."""
-        timestamp = self._clock()
+        self.add_update_at(update, self._clock())
+
+    def add_update_at(self, update: ChannelUpdate, timestamp: float) -> None:
+        """Record an update at an explicit monotonic/elapsed timestamp."""
+        timestamp = float(timestamp)
+        if not math.isfinite(timestamp):
+            raise ValueError("History timestamp must be finite.")
         if self._origin is None:
             self._origin = timestamp
         for name, value in zip(update.names, update.values, strict=True):
@@ -51,6 +66,15 @@ class ChannelHistory:
             tuple(timestamp - origin for timestamp, _value in samples),
             tuple(value for _timestamp, value in samples),
         )
+
+    def sample_count(self, name: str) -> int:
+        return len(self._samples.get(name, ()))
+
+    def latest_elapsed(self, name: str) -> float | None:
+        samples = self._samples.get(name)
+        if not samples or self._origin is None:
+            return None
+        return samples[-1][0] - self._origin
 
     def reset(self) -> None:
         """Clear all samples and reset the elapsed-time origin."""

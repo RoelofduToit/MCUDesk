@@ -55,6 +55,31 @@ def test_preferences_dialog_selects_dashboard_numeric_style() -> None:
     application.processEvents()
 
 
+def test_preferences_dialog_selects_dashboard_trend_window() -> None:
+    application = QApplication.instance() or QApplication([])
+    dialog = PreferencesDialog("dark", dashboard_trend_window_seconds=600)
+
+    assert dialog.dashboard_trend_window_seconds == 600
+    assert [
+        dialog.trend_window_combo.itemText(index)
+        for index in range(dialog.trend_window_combo.count())
+    ] == [
+        "30 seconds",
+        "1 minute",
+        "5 minutes",
+        "10 minutes",
+        "30 minutes",
+        "1 hour",
+    ]
+    assert dialog.findChild(QLabel, "dashboardTrendWindowLabel").text() == (
+        "Trend window"
+    )
+    dialog.trend_window_combo.setCurrentText("30 minutes")
+    assert dialog.dashboard_trend_window_seconds == 1_800
+    dialog.close()
+    application.processEvents()
+
+
 def test_preferences_dialog_edits_automatic_update_setting() -> None:
     QApplication.instance() or QApplication([])
     dialog = PreferencesDialog("dark", automatically_check_for_updates=False)

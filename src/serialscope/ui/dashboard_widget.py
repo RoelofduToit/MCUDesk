@@ -1,5 +1,7 @@
 """Responsive HMI-style dashboard for selected structured channels."""
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt
 from PySide6.QtGui import (
     QDragEnterEvent,
@@ -21,6 +23,10 @@ from PySide6.QtWidgets import (
 )
 
 from serialscope.parsing import ChannelUpdate
+from serialscope.settings import (
+    DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS,
+    normalize_dashboard_trend_window,
+)
 from serialscope.data import (
     AlarmState,
     ChannelHistory,
@@ -35,9 +41,40 @@ from serialscope.ui.fonts import (
     NumericDisplayStyle,
     normalize_numeric_display_style,
 )
-from serialscope.replay import ReplaySession
+from serialscope.replay import ReplaySample, ReplaySession
 from serialscope.ui.channel_colors import sparkline_color_for_channel
 from serialscope.ui.channel_selector import ChannelSelector, ChannelToggle
+
+
+DASHBOARD_TREND_RETENTION_SECONDS = 3_600.0
+DASHBOARD_TREND_MAX_POINTS_PER_CHANNEL = 200_000
+DASHBOARD_SPARKLINE_REFRESH_SECONDS = 0.25
+
+
+def visible_trend_values(
+    timestamps: tuple[float, ...],
+    values: tuple[int | float, ...],
+    window_seconds: float,
+    max_samples: int = SPARKLINE_MAX_SAMPLES,
+) -> tuple[int | float, ...]:
+    """Filter by elapsed time, then visually thin without changing history."""
+    if not timestamps or not values or max_samples < 1:
+        return ()
+    cutoff = timestamps[-1] - float(window_seconds)
+    start = next(
+        (index for index, timestamp in enumerate(timestamps) if timestamp >= cutoff),
+        len(timestamps),
+    )
+    recent = values[start:]
+    if len(recent) <= max_samples:
+        return recent
+    if max_samples == 1:
+        return (recent[-1],)
+    last = len(recent) - 1
+    return tuple(
+        recent[round(index * last / (max_samples - 1))]
+        for index in range(max_samples)
+    )
 
 
 class DashboardWidget(QWidget):
@@ -56,17 +93,26 @@ class DashboardWidget(QWidget):
     )
 
     def __init__(
-        self, parent: QWidget | None = None, *, lazy: bool = False
+        self,
+        parent: QWidget | None = None,
+        *,
+        lazy: bool = False,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("dashboardWidget")
         self._available_names: list[str] = []
         self._items: dict[str, ChannelToggle] = {}
         self._latest_values: dict[str, int | float] = {}
-        self._trend = ChannelHistory(
-            window_seconds=3_600.0,
-            max_points_per_channel=SPARKLINE_MAX_SAMPLES,
-        )
+        history_options = {
+            "window_seconds": DASHBOARD_TREND_RETENTION_SECONDS,
+            "max_points_per_channel": DASHBOARD_TREND_MAX_POINTS_PER_CHANNEL,
+        }
+        if clock is not None:
+            history_options["clock"] = clock
+        self._trend = ChannelHistory(**history_options)
+        self._trend_window_seconds = DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS
+        self._last_sparkline_refresh: dict[str, float] = {}
         self._tiles: dict[str, ChannelTile] = {}
         self.layout_model = DashboardLayout(columns=4)
         self._column_count = 1
@@ -211,10 +257,11 @@ class DashboardWidget(QWidget):
             self._latest_values[name] = value
             tile = self._tiles.get(name)
             if tile is not None:
-                tile.set_value(value)
+                tile.set_value(value, record=False)
                 tile.set_alarm_state(
                     evaluate_alarm(value, self._metadata.get(name).alarms)
                 )
+                self._refresh_tile_sparkline(name)
 
     def update_source(
         self, source_id: str, display_name: str, update: ChannelUpdate
@@ -241,6 +288,7 @@ class DashboardWidget(QWidget):
             self.layout_model.remove(name)
             self._latest_values.pop(name, None)
             self._source_names.pop(name, None)
+            self._last_sparkline_refresh.pop(name, None)
         if self._built:
             self.empty_label.setVisible(not self._tiles)
             self._apply_sparkline_colors()
@@ -261,6 +309,18 @@ class DashboardWidget(QWidget):
         for tile in self._tiles.values():
             tile.set_numeric_display_style(self._numeric_display_style)
 
+    @property
+    def trend_window_seconds(self) -> int:
+        return self._trend_window_seconds
+
+    def set_trend_window_seconds(self, seconds: int) -> None:
+        """Apply one global visible sparkline duration without pruning history."""
+        normalized = normalize_dashboard_trend_window(seconds)
+        if normalized == self._trend_window_seconds:
+            return
+        self._trend_window_seconds = normalized
+        self._refresh_all_sparklines()
+
     def _apply_sparkline_colors(self) -> None:
         names = tuple(self._available_names)
         for name, tile in self._tiles.items():
@@ -271,14 +331,36 @@ class DashboardWidget(QWidget):
             )
 
     def load_replay(self, session: ReplaySession) -> None:
-        """Expose replay channels and their final recorded values."""
+        """Expose replay channels and preserve their recorded elapsed times."""
         self.reset()
-        self._add_channels(session.channel_names)
-        self._latest_values.update(session.latest_values)
-        for name in session.channel_names:
-            _times, values = session.points(name)
-            for value in values[-SPARKLINE_MAX_SAMPLES:]:
-                self._trend.add_update(ChannelUpdate((name,), (value,), False))
+        multi_source = bool(session.sources) and not (
+            len(session.sources) == 1
+            and session.sources[0].source_id == "legacy_source"
+        )
+        if not multi_source:
+            self._add_channels(session.channel_names)
+            self._latest_values.update(session.latest_values)
+            self._load_replay_samples(session.samples)
+            return
+        for source in session.sources:
+            names = tuple(
+                f"{source.source_id}\x1f{name}" for name in source.channel_names
+            )
+            self._add_channels(names)
+            self._source_names.update(
+                {name: source.display_name for name in names}
+            )
+            self._latest_values.update(
+                {
+                    f"{source.source_id}\x1f{name}": value
+                    for name, value in source.latest_values.items()
+                }
+            )
+            self._load_replay_samples(
+                source.samples,
+                prefix=f"{source.source_id}\x1f",
+            )
+        self.set_source_count(len(session.sources))
 
     def reset(self) -> None:
         """Clear all availability, selections, values, and tiles."""
@@ -286,14 +368,20 @@ class DashboardWidget(QWidget):
             self._available_names.clear()
             self._items.clear()
             self._latest_values.clear()
+            self._source_names.clear()
+            self._show_source_labels = False
             self._trend.reset()
+            self._last_sparkline_refresh.clear()
             self._tiles.clear()
             self.layout_model.reset()
             return
         self.channel_selector.clear_channels()
         self._available_names.clear()
         self._latest_values.clear()
+        self._source_names.clear()
+        self._show_source_labels = False
         self._trend.reset()
+        self._last_sparkline_refresh.clear()
         for tile in self._tiles.values():
             tile.setParent(None)
         self._tiles.clear()
@@ -322,6 +410,7 @@ class DashboardWidget(QWidget):
         self.layout_model.remove(key)
         self._latest_values.pop(key, None)
         self._source_names.pop(key, None)
+        self._last_sparkline_refresh.pop(key, None)
         if self._built:
             self.empty_label.setVisible(not self._tiles)
             self._apply_sparkline_colors()
@@ -429,12 +518,10 @@ class DashboardWidget(QWidget):
                     source_name=self._source_names.get(name, ""),
                 )
                 tile.set_presentation(self._metadata.get(name))
-                history = self._trend.points(name)[1]
-                if history:
-                    tile.set_sparkline_samples(history)
+                self._refresh_tile_sparkline(name, tile=tile, force=True)
                 value = self._latest_values.get(name)
                 if value is not None:
-                    tile.set_value(value, record=not history)
+                    tile.set_value(value, record=False)
                 tile.set_alarm_state(
                     evaluate_alarm(value, self._metadata.get(name).alarms)
                 )
@@ -448,9 +535,69 @@ class DashboardWidget(QWidget):
             tile = self._tiles.pop(name, None)
             if tile is not None:
                 tile.setParent(None)
+            self._last_sparkline_refresh.pop(name, None)
             self.layout_model.remove(name)
         self.empty_label.setVisible(not self._tiles)
         self._reflow(force=True)
+
+    def _load_replay_samples(
+        self,
+        samples: tuple[ReplaySample, ...],
+        *,
+        prefix: str = "",
+    ) -> None:
+        for sample in samples:
+            pairs = tuple(
+                (f"{prefix}{name}", value)
+                for name, value in sample.values.items()
+                if value is not None
+            )
+            if not pairs:
+                continue
+            self._trend.add_update_at(
+                ChannelUpdate(
+                    tuple(name for name, _value in pairs),
+                    tuple(value for _name, value in pairs),
+                    False,
+                ),
+                sample.elapsed_s,
+            )
+
+    def _refresh_tile_sparkline(
+        self,
+        name: str,
+        *,
+        tile: ChannelTile | None = None,
+        force: bool = False,
+    ) -> None:
+        target = tile if tile is not None else self._tiles.get(name)
+        if target is None:
+            return
+        latest = self._trend.latest_elapsed(name)
+        if latest is None:
+            target.set_sparkline_samples(())
+            return
+        previous = self._last_sparkline_refresh.get(name)
+        if (
+            not force
+            and self._trend.sample_count(name) > SPARKLINE_MAX_SAMPLES
+            and previous is not None
+            and latest - previous < DASHBOARD_SPARKLINE_REFRESH_SECONDS
+        ):
+            return
+        timestamps, values = self._trend.points(name)
+        target.set_sparkline_samples(
+            visible_trend_values(
+                timestamps,
+                values,
+                self._trend_window_seconds,
+            )
+        )
+        self._last_sparkline_refresh[name] = latest
+
+    def _refresh_all_sparklines(self) -> None:
+        for name in self._tiles:
+            self._refresh_tile_sparkline(name, force=True)
 
     def _effective_tile_size(self, width: int) -> int:
         if self._custom_tile_size is not None:

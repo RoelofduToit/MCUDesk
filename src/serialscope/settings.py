@@ -19,6 +19,23 @@ DASHBOARD_NUMERIC_STYLE_OPTIONS = (
     "dot_matrix",
     "technical_mono",
 )
+DASHBOARD_TREND_WINDOW_OPTIONS = (30, 60, 300, 600, 1_800, 3_600)
+DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS = 60
+
+
+def normalize_dashboard_trend_window(value: object) -> int:
+    """Return a supported Dashboard trend duration or the safe default."""
+    if isinstance(value, float) and not value.is_integer():
+        return DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS
+    return (
+        seconds
+        if seconds in DASHBOARD_TREND_WINDOW_OPTIONS
+        else DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS
+    )
 
 
 class ApplicationSettings:
@@ -39,6 +56,14 @@ class ApplicationSettings:
         )
         token = str(value).strip().lower()
         return token if token in DASHBOARD_NUMERIC_STYLE_OPTIONS else "default"
+
+    @property
+    def dashboard_trend_window_seconds(self) -> int:
+        value = self._backend.value(
+            "appearance/dashboard_trend_window_seconds",
+            DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS,
+        )
+        return normalize_dashboard_trend_window(value)
 
     @property
     def structured_data_delimiter(self) -> str:
@@ -78,6 +103,13 @@ class ApplicationSettings:
         self._backend.setValue(
             "appearance/dashboard_numeric_style",
             token if token in DASHBOARD_NUMERIC_STYLE_OPTIONS else "default",
+        )
+        self._backend.sync()
+
+    def set_dashboard_trend_window_seconds(self, seconds: int) -> None:
+        self._backend.setValue(
+            "appearance/dashboard_trend_window_seconds",
+            normalize_dashboard_trend_window(seconds),
         )
         self._backend.sync()
 

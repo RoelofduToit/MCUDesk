@@ -1,3 +1,5 @@
+import pytest
+
 from serialscope.data import ChannelHistory
 from serialscope.parsing import ChannelUpdate
 
@@ -82,3 +84,21 @@ def test_high_rate_history_has_an_absolute_memory_bound() -> None:
     assert len(times) == len(values) == 1_000
     assert values[0] == 4_000
     assert values[-1] == 4_999
+
+
+def test_history_accepts_explicit_replay_timestamps() -> None:
+    history = ChannelHistory()
+
+    history.add_update_at(ChannelUpdate(("A",), (1,)), 12.5)
+    history.add_update_at(ChannelUpdate(("A",), (2,)), 42.75)
+
+    assert history.points("A") == ((0.0, 30.25), (1, 2))
+    assert history.sample_count("A") == 2
+    assert history.latest_elapsed("A") == pytest.approx(30.25)
+
+
+def test_history_rejects_non_finite_explicit_timestamp() -> None:
+    history = ChannelHistory()
+
+    with pytest.raises(ValueError, match="finite"):
+        history.add_update_at(ChannelUpdate(("A",), (1,)), float("nan"))

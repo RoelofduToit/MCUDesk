@@ -17,6 +17,21 @@ from serialscope.ui.fonts import (
     normalize_numeric_display_style,
     numeric_display_style_items,
 )
+from serialscope.settings import (
+    DASHBOARD_TREND_WINDOW_OPTIONS,
+    DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS,
+    normalize_dashboard_trend_window,
+)
+
+
+TREND_WINDOW_LABELS = {
+    30: "30 seconds",
+    60: "1 minute",
+    300: "5 minutes",
+    600: "10 minutes",
+    1_800: "30 minutes",
+    3_600: "1 hour",
+}
 
 
 class PreferencesDialog(QDialog):
@@ -28,6 +43,7 @@ class PreferencesDialog(QDialog):
         parent: QWidget | None = None,
         automatically_check_for_updates: bool = True,
         dashboard_numeric_style: str = NumericDisplayStyle.DEFAULT.value,
+        dashboard_trend_window_seconds: int = DEFAULT_DASHBOARD_TREND_WINDOW_SECONDS,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("preferencesDialog")
@@ -63,6 +79,19 @@ class PreferencesDialog(QDialog):
         numeric_style_label = QLabel("Numeric style")
         numeric_style_label.setObjectName("dashboardNumericStyleLabel")
         dashboard_form.addRow(numeric_style_label, self.numeric_style_combo)
+        self.trend_window_combo = QComboBox()
+        self.trend_window_combo.setObjectName("dashboardTrendWindowCombo")
+        for seconds in DASHBOARD_TREND_WINDOW_OPTIONS:
+            self.trend_window_combo.addItem(TREND_WINDOW_LABELS[seconds], seconds)
+        selected_window = normalize_dashboard_trend_window(
+            dashboard_trend_window_seconds
+        )
+        self.trend_window_combo.setCurrentIndex(
+            max(0, self.trend_window_combo.findData(selected_window))
+        )
+        trend_window_label = QLabel("Trend window")
+        trend_window_label.setObjectName("dashboardTrendWindowLabel")
+        dashboard_form.addRow(trend_window_label, self.trend_window_combo)
         layout.addWidget(dashboard)
 
         updates = QGroupBox("Updates")
@@ -90,6 +119,10 @@ class PreferencesDialog(QDialog):
     @property
     def dashboard_numeric_style(self) -> str:
         return self.numeric_style_combo.currentData()
+
+    @property
+    def dashboard_trend_window_seconds(self) -> int:
+        return int(self.trend_window_combo.currentData())
 
     @property
     def automatically_check_for_updates(self) -> bool:

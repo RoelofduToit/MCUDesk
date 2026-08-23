@@ -17,6 +17,7 @@ def test_default_preferences_are_dark_and_comma(tmp_path: Path) -> None:
 
     assert settings.theme == "dark"
     assert settings.dashboard_numeric_style == "default"
+    assert settings.dashboard_trend_window_seconds == 60
     assert settings.structured_data_delimiter == ","
     assert settings.automatically_check_for_updates
     assert settings.last_automatic_update_check is None
@@ -71,6 +72,32 @@ def test_invalid_dashboard_numeric_style_falls_back_to_default(
     backend.sync()
 
     assert _settings(path).dashboard_numeric_style == "default"
+
+
+@pytest.mark.parametrize("seconds", [30, 60, 300, 600, 1_800, 3_600])
+def test_dashboard_trend_window_persists_as_integer(
+    tmp_path: Path,
+    seconds: int,
+) -> None:
+    path = tmp_path / "settings.ini"
+    _settings(path).set_dashboard_trend_window_seconds(seconds)
+
+    assert _settings(path).dashboard_trend_window_seconds == seconds
+    backend = QSettings(str(path), QSettings.Format.IniFormat)
+    assert int(backend.value("appearance/dashboard_trend_window_seconds")) == seconds
+
+
+@pytest.mark.parametrize("stored", ["invalid", -1, 0, 31, 60.5, 3_601, ""])
+def test_invalid_dashboard_trend_window_falls_back_to_one_minute(
+    tmp_path: Path,
+    stored: object,
+) -> None:
+    path = tmp_path / "settings.ini"
+    backend = QSettings(str(path), QSettings.Format.IniFormat)
+    backend.setValue("appearance/dashboard_trend_window_seconds", stored)
+    backend.sync()
+
+    assert _settings(path).dashboard_trend_window_seconds == 60
 
 
 @pytest.mark.parametrize("stored_theme", ["system", "System", "Neon"])

@@ -258,6 +258,9 @@ class MainWindow(QMainWindow):
         self.dashboard_widget.set_numeric_display_style(
             self._application_settings.dashboard_numeric_style
         )
+        self.dashboard_widget.set_trend_window_seconds(
+            self._application_settings.dashboard_trend_window_seconds
+        )
         self.graphs_widget = MultiSourceGraphsWidget()
         self.workspace_tabs.addTab(self.terminal, "Terminal")
         self.workspace_tabs.addTab(self.data_widget, "Data")
@@ -336,6 +339,9 @@ class MainWindow(QMainWindow):
                 self._application_settings.automatically_check_for_updates
             ),
             dashboard_numeric_style=self._application_settings.dashboard_numeric_style,
+            dashboard_trend_window_seconds=(
+                self._application_settings.dashboard_trend_window_seconds
+            ),
         )
         if dialog.exec() == PreferencesDialog.DialogCode.Accepted:
             self._application_settings.set_theme(dialog.selected_theme)
@@ -347,6 +353,12 @@ class MainWindow(QMainWindow):
             )
             self.dashboard_widget.set_numeric_display_style(
                 dialog.dashboard_numeric_style
+            )
+            self._application_settings.set_dashboard_trend_window_seconds(
+                dialog.dashboard_trend_window_seconds
+            )
+            self.dashboard_widget.set_trend_window_seconds(
+                dialog.dashboard_trend_window_seconds
             )
             self.apply_theme(dialog.selected_theme)
 
@@ -776,14 +788,13 @@ class MainWindow(QMainWindow):
         self.side_panel.set_connected(False)
         self.side_panel.channels_widget.load_replay(session)
         self.data_widget.reset()
-        self.dashboard_widget.reset()
+        self.dashboard_widget.load_replay(session)
         legacy_replay = (
             len(session.sources) == 1
             and session.sources[0].source_id == "legacy_source"
         )
         if legacy_replay:
             self.data_widget.load_replay(session)
-            self.dashboard_widget.load_replay(session)
             self.graphs_widget.load_replay(session)
         for source in (() if legacy_replay else session.sources):
             values = source.latest_values
@@ -793,7 +804,6 @@ class MainWindow(QMainWindow):
                 False,
             )
             self.data_widget.update_source(source.source_id, source.display_name, update)
-            self.dashboard_widget.update_source(source.source_id, source.display_name, update)
             metadata = source.metadata.get("channels", {})
             registry = ChannelMetadataRegistry()
             registry.replace(
