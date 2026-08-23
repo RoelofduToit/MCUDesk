@@ -189,7 +189,7 @@ def test_csv_escaping_and_write_roundtrip(tmp_path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert "Elapsed Time (s)" in text
     assert '"Temp, core (°C)"' in text
-    with path.open(newline="") as handle:
+    with path.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.reader(handle))
     assert rows[0][1] == "Temp, core (°C)"
     assert rows[1] == ["0.000000", "1.5"]

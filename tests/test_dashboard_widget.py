@@ -659,7 +659,11 @@ def test_long_dashboard_alias_is_elided_without_changing_square_tile() -> None:
     application.processEvents()
 
     assert tile.name_label.full_text() == alias
-    assert tile.name_label.text().endswith("…")
+    displayed = tile.name_label.text()
+    assert displayed != alias
+    assert len(displayed) < len(alias)
+    assert alias.startswith(displayed.removesuffix("…").removesuffix("..."))
+    assert displayed.endswith(("…", "..."))
     assert tile.width() == tile.height() == 150
     assert tile.value_label.isVisibleTo(tile)
     tile.close()
