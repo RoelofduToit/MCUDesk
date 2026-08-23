@@ -209,6 +209,8 @@ def test_preferences_action_is_available() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])
 
+    assert window.export_selected_data_action.text() == "Selected Data..."
+    assert window.export_current_graph_action.text() == "Current Graph..."
     assert window.preferences_action.text() == "Preferences"
     assert window.parser_configuration_action.text() == "Parser Configuration..."
     assert window.modbus_devices_action.text() == "Modbus Devices..."

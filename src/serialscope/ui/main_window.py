@@ -73,6 +73,20 @@ from serialscope.ui.diagnostics_dialog import DiagnosticsDialog
 from serialscope.ui.modbus_device_dialog import ModbusDeviceDialog
 from serialscope.ui.parser_configuration_dialog import ParserConfigurationDialog
 from serialscope.ui.preferences_dialog import PreferencesDialog
+from serialscope.ui.export_data_dialog import ExportDataDialog
+from serialscope.ui.graph_export import (
+    GraphExportError,
+    default_graph_export_filename,
+    export_plot_item,
+    resolve_graph_export_path,
+)
+from serialscope.export import (
+    CURRENT_WINDOW,
+    DataExportError,
+    build_export_table,
+    default_data_export_filename,
+    write_export_csv,
+)
 from serialscope.ui.profile_dialogs import ProfileNameDialog
 from serialscope.ui.recovery_dialog import InterruptedRecordingDialog
 from serialscope.ui.side_panel import SidePanel
@@ -503,6 +517,12 @@ class MainWindow(QMainWindow):
         self.close_session_action = file_menu.addAction("Close Session")
         self.close_session_action.triggered.connect(self.close_session)
         self.close_session_action.setEnabled(False)
+        file_menu.addSeparator()
+        export_menu = file_menu.addMenu("Export")
+        self.export_selected_data_action = export_menu.addAction("Selected Data...")
+        self.export_selected_data_action.triggered.connect(self._export_selected_data)
+        self.export_current_graph_action = export_menu.addAction("Current Graph...")
+        self.export_current_graph_action.triggered.connect(self._export_current_graph)
 
         settings_menu = self.menuBar().addMenu("Settings")
         self.preferences_action = settings_menu.addAction("Preferences")
@@ -1754,6 +1774,82 @@ class MainWindow(QMainWindow):
 
     def _show_event_error(self, message: str) -> None:
         QMessageBox.critical(self, "Event logging error", message)
+
+    def _export_selected_data(self) -> None:
+        series = self.graphs_widget.selected_measurement_series()
+        if not series:
+            QMessageBox.information(
+                self,
+                "Export Selected Data",
+                "Select at least one graph channel before exporting data.",
+            )
+            return
+        dialog = ExportDataDialog(
+            self,
+            live_history_limited=self._replay_session is None,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        time_window = None
+        if dialog.range_mode == CURRENT_WINDOW:
+            if not self.graphs_widget._widgets:
+                QMessageBox.information(
+                    self,
+                    "Export Selected Data",
+                    "The current graph time window is not available.",
+                )
+                return
+            time_window = self.graphs_widget.visible_time_range()
+        selected, _filter = QFileDialog.getSaveFileName(
+            self,
+            "Export Selected Data",
+            default_data_export_filename(),
+            "CSV (*.csv)",
+        )
+        if not selected:
+            return
+        path = Path(selected)
+        if path.suffix.lower() != ".csv":
+            path = path.with_suffix(".csv")
+        try:
+            table = build_export_table(
+                series, range_mode=dialog.range_mode, time_window=time_window
+            )
+            write_export_csv(path, table)
+        except DataExportError as error:
+            QMessageBox.critical(self, "Export Selected Data", str(error))
+            return
+        self.statusBar().showMessage(
+            f"Exported {table.channel_count} channels and {table.row_count:,} data rows.",
+            8_000,
+        )
+
+    def _export_current_graph(self) -> None:
+        if (
+            not self.graphs_widget._widgets
+            or not self.graphs_widget.selected_channels
+        ):
+            QMessageBox.information(
+                self,
+                "Export Current Graph",
+                "No graph channels are currently selected.",
+            )
+            return
+        selected, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export Current Graph",
+            default_graph_export_filename(".png"),
+            "PNG (*.png);;SVG (*.svg)",
+        )
+        if not selected:
+            return
+        try:
+            path = resolve_graph_export_path(Path(selected), selected_filter)
+            export_plot_item(self.graphs_widget.plot_widget.plotItem, path)
+        except GraphExportError as error:
+            QMessageBox.critical(self, "Export Current Graph", str(error))
+            return
+        self.statusBar().showMessage(f"Exported graph to {path.name}.", 8_000)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Stop recording cleanly, then release serial workers and ports."""

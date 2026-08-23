@@ -16,7 +16,10 @@ analysis = Analysis(
         (str(ICON_SOURCE), "assets/icons"),
         (str(FONTS_SOURCE), "assets/fonts"),
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        "PySide6.QtSvg",
+        "pyqtgraph.exporters.ImageExporter",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -31,6 +31,7 @@ from serialscope.data import (
     process_display_points,
     evaluate_alarm,
 )
+from serialscope.export import MeasurementSeries
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession
 from serialscope.ui.elapsed_time_axis import ElapsedTimeAxis
@@ -434,6 +435,38 @@ class GraphsWidget(QWidget):
     @property
     def time_window_seconds(self) -> float:
         return float(self.time_window_combo.currentData())
+
+    def visible_time_range(self) -> tuple[float, float]:
+        """Return the currently visible elapsed-time bounds, including zoom."""
+        lower, upper = self.plot_widget.viewRange()[0]
+        return float(lower), float(upper)
+
+    def selected_measurement_series(
+        self,
+        *,
+        source_id: str = "",
+        source_display_name: str = "",
+    ) -> tuple[MeasurementSeries, ...]:
+        """Copy actual stored samples for graph-selected channels."""
+        exported: list[MeasurementSeries] = []
+        for name in self.selected_channels:
+            if self._replay_session is not None:
+                elapsed, values = self._replay_session.points(name)
+            else:
+                elapsed, values = self.history.points(name)
+            presentation = self._metadata.get(name)
+            exported.append(
+                MeasurementSeries(
+                    source_id=source_id,
+                    source_display_name=source_display_name,
+                    channel_name=name,
+                    display_name=presentation.display_name,
+                    unit=presentation.unit,
+                    elapsed=elapsed,
+                    values=values,
+                )
+            )
+        return tuple(exported)
 
     def update_channels(self, update: ChannelUpdate) -> None:
         """Collect a structured update and expose newly observed channels."""

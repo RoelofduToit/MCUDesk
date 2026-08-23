@@ -3,6 +3,7 @@
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
 
 from serialscope.data import ChannelMetadataRegistry, EventMarker
+from serialscope.export import MeasurementSeries
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import ReplaySession, ReplaySource
 from serialscope.ui.graphs_widget import GraphsWidget
@@ -131,6 +132,25 @@ class MultiSourceGraphsWidget(QWidget):
     @property
     def selected_channels(self):
         return self.active_widget.selected_channels
+
+    def visible_time_range(self) -> tuple[float, float]:
+        return self.active_widget.visible_time_range()
+
+    def selected_measurement_series(self) -> tuple[MeasurementSeries, ...]:
+        """Copy selected samples from every device Graphs workspace."""
+        exported: list[MeasurementSeries] = []
+        for index in range(self.source_combo.count()):
+            source_id = str(self.source_combo.itemData(index))
+            widget = self._widgets.get(source_id)
+            if widget is None:
+                continue
+            exported.extend(
+                widget.selected_measurement_series(
+                    source_id=source_id,
+                    source_display_name=self.source_combo.itemText(index),
+                )
+            )
+        return tuple(exported)
 
     @property
     def is_paused(self):
