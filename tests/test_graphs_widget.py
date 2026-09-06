@@ -1019,3 +1019,132 @@ def test_multi_source_cursor_tables_remain_isolated() -> None:
     assert arduino.cursor_table.value_text("TEMP") is None
     widget.close()
     application.processEvents()
+
+
+def _graph_with_channel(clock, application: QApplication) -> GraphsWidget:
+    widget = GraphsWidget(clock=clock)
+    widget._refresh_timer.stop()
+    widget.show()
+    widget.resize(800, 620)
+    application.processEvents()
+    widget.update_channels(ChannelUpdate(("A",), (5.0,)))
+    widget.set_channel_selected("A", True)
+    application.processEvents()
+    return widget
+
+
+def test_manual_y_range_survives_multiple_data_updates() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 11.0, 12.0, 13.0, 14.0)).__next__
+    widget = _graph_with_channel(times, application)
+    widget.set_y_axis_manual(-2.0, 8.0)
+    for value in (50.0, 80.0, 120.0):
+        widget.update_channels(ChannelUpdate(("A",), (value,)))
+        widget.refresh_plot()
+        application.processEvents()
+        assert widget.y_axis_mode == "manual"
+        assert widget.plot_widget.viewRange()[1] == pytest.approx((-2.0, 8.0), abs=0.05)
+    widget.close()
+    application.processEvents()
+
+
+def test_manual_x_range_survives_multiple_data_updates() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 20.0, 30.0, 40.0, 50.0)).__next__
+    widget = _graph_with_channel(times, application)
+    widget.set_x_axis_manual(12.0, 18.0)
+    for value in (6.0, 7.0, 8.0):
+        widget.update_channels(ChannelUpdate(("A",), (value,)))
+        widget.refresh_plot()
+        application.processEvents()
+        assert widget.x_axis_mode == "manual"
+        assert widget.plot_widget.viewRange()[0] == pytest.approx((12.0, 18.0), abs=0.05)
+    widget.close()
+    application.processEvents()
+
+
+def test_manual_x_and_automatic_y_can_coexist() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 20.0, 30.0, 40.0)).__next__
+    widget = _graph_with_channel(times, application)
+    widget.set_x_axis_manual(5.0, 15.0)
+    widget.set_y_axis_auto()
+    widget.update_channels(ChannelUpdate(("A",), (250.0,)))
+    widget.refresh_plot()
+    application.processEvents()
+    assert widget.x_axis_mode == "manual"
+    assert widget.y_axis_mode == "auto"
+    assert widget.plot_widget.viewRange()[0] == pytest.approx((5.0, 15.0), abs=0.05)
+    assert widget.plot_widget.viewRange()[1][1] >= 200.0
+    widget.close()
+    application.processEvents()
+
+
+def test_automatic_x_and_manual_y_can_coexist() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 80.0, 90.0)).__next__
+    widget = _graph_with_channel(times, application)
+    widget.set_y_axis_manual(0.0, 10.0)
+    widget.update_channels(ChannelUpdate(("A",), (400.0,)))
+    widget.refresh_plot()
+    application.processEvents()
+    elapsed, _values = widget.history.points("A")
+    expected_x = visible_x_range(elapsed[-1], widget.time_window_seconds)
+    assert widget.x_axis_mode == "auto"
+    assert widget.y_axis_mode == "manual"
+    assert widget.plot_widget.viewRange()[0] == pytest.approx(expected_x, abs=0.05)
+    assert widget.plot_widget.viewRange()[1] == pytest.approx((0.0, 10.0), abs=0.05)
+    widget.close()
+    application.processEvents()
+
+
+def test_returning_an_axis_to_auto_resumes_automatic_ranging() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 11.0, 12.0, 13.0)).__next__
+    widget = _graph_with_channel(times, application)
+    widget.set_y_axis_manual(-1.0, 1.0)
+    widget.update_channels(ChannelUpdate(("A",), (80.0,)))
+    widget.refresh_plot()
+    assert widget.plot_widget.viewRange()[1] == pytest.approx((-1.0, 1.0), abs=0.05)
+    widget.set_y_axis_auto()
+    widget.refresh_plot()
+    application.processEvents()
+    assert widget.y_axis_mode == "auto"
+    assert widget.plot_widget.viewRange()[1][1] >= 70.0
+    widget.close()
+    application.processEvents()
+
+
+def test_refresh_does_not_auto_range_manual_axes() -> None:
+    application = QApplication.instance() or QApplication([])
+    times = iter((10.0, 11.0, 12.0, 13.0, 14.0)).__next__
+    widget = _graph_with_channel(times, application)
+    widget.set_x_axis_manual(3.0, 9.0)
+    widget.set_y_axis_manual(1.0, 4.0)
+    auto_calls: list[object] = []
+    original = widget.plot_widget.enableAutoRange
+
+    def wrapped(*args, **kwargs):
+        auto_calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    widget.plot_widget.enableAutoRange = wrapped  # type: ignore[method-assign]
+    widget.update_channels(ChannelUpdate(("A",), (99.0,)))
+    widget.refresh_plot()
+    application.processEvents()
+    assert widget.plot_widget.viewRange()[0] == pytest.approx((3.0, 9.0), abs=0.05)
+    assert widget.plot_widget.viewRange()[1] == pytest.approx((1.0, 4.0), abs=0.05)
+    enabled_y = [
+        call
+        for call in auto_calls
+        if call[1].get("enable") is True and call[1].get("axis") in {"y", 1}
+    ]
+    enabled_x = [
+        call
+        for call in auto_calls
+        if call[1].get("enable") is True and call[1].get("axis") in {"x", 0}
+    ]
+    assert enabled_y == []
+    assert enabled_x == []
+    widget.close()
+    application.processEvents()

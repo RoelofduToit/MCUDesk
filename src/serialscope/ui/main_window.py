@@ -209,14 +209,6 @@ class MainWindow(QMainWindow):
         self.connection_bar.connect_button.clicked.connect(
             self.toggle_serial_connection
         )
-        self.connection_bar.add_source_button.clicked.connect(self._add_serial_source)
-        self.connection_bar.remove_source_button.clicked.connect(self._remove_serial_source)
-        self.connection_bar.source_combo.currentIndexChanged.connect(
-            self._selected_source_changed
-        )
-        self.connection_bar.source_name_input.editingFinished.connect(
-            self._rename_selected_source
-        )
         self.connection_bar.profile_combo.currentIndexChanged.connect(
             self._profile_selection_changed
         )
@@ -1114,77 +1106,32 @@ class MainWindow(QMainWindow):
 
     @property
     def _selected_source_id(self) -> str:
-        value = self.connection_bar.source_combo.currentData()
-        return str(value) if value is not None else self._source_manager.sources[0].source_id
+        return self._source_manager.sources[0].source_id
 
     @property
     def _selected_source(self):
         return self._source_manager.get(self._selected_source_id)
 
     def _refresh_source_selectors(self) -> None:
-        selected = self._selected_source_id if self.connection_bar.source_combo.count() else None
         sources = tuple(
             (source.source_id, source.display_name) for source in self._source_manager.sources
         )
-        combo = self.connection_bar.source_combo
-        combo.blockSignals(True)
-        combo.clear()
-        for source_id, name in sources:
-            combo.addItem(name, source_id)
-        combo.setCurrentIndex(max(0, combo.findData(selected)))
-        combo.blockSignals(False)
         self.terminal.set_sources(sources)
         for source_id, name in sources:
             self.graphs_widget.ensure_source(source_id, name)
             self._source_metadata.setdefault(source_id, ChannelMetadataRegistry())
             self._source_profiles.setdefault(source_id, None)
         count = len(sources)
-        self.connection_bar.set_source_count(count)
         self.data_widget.set_source_count(count)
         self.dashboard_widget.set_source_count(count)
         self._selected_source_changed()
         if self._diagnostics_dialog is not None:
             self._diagnostics_dialog.reload_sources()
 
-    def _add_serial_source(self) -> None:
-        if self._recording_session.is_recording:
-            self._show_connection_error("Stop recording before adding another device.")
-            return
-        source = self._source_manager.add_source()
-        self.connection_bar.source_name_input.clear()
-        self._refresh_source_selectors()
-        self.connection_bar.source_combo.setCurrentIndex(
-            self.connection_bar.source_combo.findData(source.source_id)
-        )
-
-    def _remove_serial_source(self) -> None:
-        if len(self._source_manager.sources) <= 1 or self._recording_session.is_recording:
-            return
-        source_id = self._selected_source_id
-        try:
-            self._source_manager.remove_source(source_id)
-        except SerialConnectionError as error:
-            self._show_connection_error(str(error))
-            return
-        self.graphs_widget.remove_source(source_id)
-        self.data_widget.remove_source(source_id)
-        self.dashboard_widget.remove_source(source_id)
-        self._source_metadata.pop(source_id, None)
-        self._source_profiles.pop(source_id, None)
-        self._refresh_source_selectors()
-
-    def _rename_selected_source(self) -> None:
-        name = self.connection_bar.source_name_input.text().strip()
-        if not name or not self._source_manager.sources:
-            return
-        self._source_manager.rename_source(self._selected_source_id, name)
-        self._refresh_source_selectors()
-
     def _selected_source_changed(self) -> None:
-        if not self._source_manager.sources or self.connection_bar.source_combo.currentData() is None:
+        if not self._source_manager.sources:
             return
         source = self._selected_source
-        self.connection_bar.source_name_input.setText(source.display_name)
         self._serial_connection = source.connection
         self._serial_reader = source.reader
         self._stream_parser = source.parser

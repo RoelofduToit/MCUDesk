@@ -87,7 +87,7 @@ def test_custom_mode_is_default_and_profile_apply_does_not_connect(tmp_path) -> 
     window = MainWindow(port_scanner=lambda: [port], profile_store=store)
 
     assert window.connection_bar.profile_combo.currentText() == "Custom"
-    assert window.connection_bar.source_combo.isHidden()
+    assert not hasattr(window.connection_bar, "source_combo")
     window.connection_bar.profile_combo.setCurrentIndex(
         window.connection_bar.profile_combo.findData(profile.profile_id)
     )
@@ -116,33 +116,19 @@ def test_custom_mode_is_default_and_profile_apply_does_not_connect(tmp_path) -> 
     application.processEvents()
 
 
-def test_multi_device_sources_keep_independent_profile_associations(tmp_path) -> None:
+def test_single_device_keeps_the_selected_profile_association(tmp_path) -> None:
     application = QApplication.instance() or QApplication([])
     store = _store(tmp_path)
     pico = _create_profile(store, "Pico")
-    arduino = _create_profile(
-        store,
-        "Arduino",
-        serial=SerialSettings(baud_rate=9600, line_ending="LF"),
-        device_identity=DeviceIdentity(vid=0x2341, pid=0x0043),
-    )
     window = MainWindow(port_scanner=lambda: [], profile_store=store)
-    first_id = window._selected_source_id
+    source_id = window._selected_source_id
     window.connection_bar.profile_combo.setCurrentIndex(
         window.connection_bar.profile_combo.findData(pico.profile_id)
     )
-    window.connection_bar.add_source_button.click()
-    second_id = window._selected_source_id
-    window.connection_bar.profile_combo.setCurrentIndex(
-        window.connection_bar.profile_combo.findData(arduino.profile_id)
-    )
 
-    assert window._source_profiles == {
-        first_id: pico.profile_id,
-        second_id: arduino.profile_id,
-    }
-    assert window._source_manager.get(first_id).baud_rate == 230400
-    assert window._source_manager.get(second_id).baud_rate == 9600
+    assert window._source_profiles == {source_id: pico.profile_id}
+    assert window._source_manager.get(source_id).baud_rate == 230400
+    assert len(window._source_manager.sources) == 1
     window.close()
     application.processEvents()
 

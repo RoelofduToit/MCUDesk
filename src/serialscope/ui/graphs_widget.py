@@ -6,18 +6,21 @@ import time
 
 import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, QTimer, Qt
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFrame,
     QLabel,
     QLayout,
     QLayoutItem,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSizePolicy,
     QSpinBox,
-    QDoubleSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -180,6 +183,28 @@ def visible_x_range(latest_time: float, window_seconds: float) -> tuple[float, f
     return latest_time - window_seconds, latest_time
 
 
+def _normalized_axis_range(lower: float, upper: float) -> tuple[float, float]:
+    """Return a finite increasing range suitable for a plot axis."""
+    low = float(lower) if math.isfinite(lower) else 0.0
+    high = float(upper) if math.isfinite(upper) else 1.0
+    if high < low:
+        low, high = high, low
+    if high == low:
+        high = low + 1.0
+    return low, high
+
+
+def _axis_spin(object_name: str) -> QDoubleSpinBox:
+    spin = QDoubleSpinBox()
+    spin.setObjectName(object_name)
+    spin.setDecimals(3)
+    spin.setRange(-1_000_000_000.0, 1_000_000_000.0)
+    spin.setMinimumWidth(88)
+    spin.setMaximumWidth(110)
+    spin.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+    return spin
+
+
 class GraphsWidget(QWidget):
     """Collect bounded history and plot only user-selected channels."""
 
@@ -200,6 +225,11 @@ class GraphsWidget(QWidget):
         self._events: tuple[EventMarker, ...] = ()
         self._event_lines: list[pg.InfiniteLine] = []
         self._cursor_elapsed: float | None = None
+        self._x_axis_mode = "auto"
+        self._y_axis_mode = "auto"
+        self._manual_x_range = (0.0, 60.0)
+        self._manual_y_range = (0.0, 1.0)
+        self._axis_controls_ready = False
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(0, 0, 0, 0)
@@ -262,6 +292,55 @@ class GraphsWidget(QWidget):
         _compact_graph_combo(self.time_window_combo, 5)
         view_row.addWidget(self.time_window_combo)
         settings_layout.addWidget(view)
+
+        axes, axes_row = _settings_group("graphAxisControls", "Axes")
+        x_label = QLabel("X")
+        x_label.setObjectName("graphAxisXLabel")
+        axes_row.addWidget(x_label)
+        self.x_auto_radio = QRadioButton("Auto X")
+        self.x_auto_radio.setObjectName("graphXAutoRadio")
+        self.x_manual_radio = QRadioButton("Manual X")
+        self.x_manual_radio.setObjectName("graphXManualRadio")
+        self._x_axis_group = QButtonGroup(self)
+        self._x_axis_group.addButton(self.x_auto_radio)
+        self._x_axis_group.addButton(self.x_manual_radio)
+        self.x_auto_radio.setChecked(True)
+        axes_row.addWidget(self.x_auto_radio)
+        axes_row.addWidget(self.x_manual_radio)
+        x_min_label = QLabel("Min")
+        x_min_label.setObjectName("graphAxisXMinLabel")
+        axes_row.addWidget(x_min_label)
+        self.x_min_spin = _axis_spin("graphXMinSpin")
+        axes_row.addWidget(self.x_min_spin)
+        x_max_label = QLabel("Max")
+        x_max_label.setObjectName("graphAxisXMaxLabel")
+        axes_row.addWidget(x_max_label)
+        self.x_max_spin = _axis_spin("graphXMaxSpin")
+        axes_row.addWidget(self.x_max_spin)
+        y_label = QLabel("Y")
+        y_label.setObjectName("graphAxisYLabel")
+        axes_row.addWidget(y_label)
+        self.y_auto_radio = QRadioButton("Auto Y")
+        self.y_auto_radio.setObjectName("graphYAutoRadio")
+        self.y_manual_radio = QRadioButton("Manual Y")
+        self.y_manual_radio.setObjectName("graphYManualRadio")
+        self._y_axis_group = QButtonGroup(self)
+        self._y_axis_group.addButton(self.y_auto_radio)
+        self._y_axis_group.addButton(self.y_manual_radio)
+        self.y_auto_radio.setChecked(True)
+        axes_row.addWidget(self.y_auto_radio)
+        axes_row.addWidget(self.y_manual_radio)
+        y_min_label = QLabel("Min")
+        y_min_label.setObjectName("graphAxisYMinLabel")
+        axes_row.addWidget(y_min_label)
+        self.y_min_spin = _axis_spin("graphYMinSpin")
+        axes_row.addWidget(self.y_min_spin)
+        y_max_label = QLabel("Max")
+        y_max_label.setObjectName("graphAxisYMaxLabel")
+        axes_row.addWidget(y_max_label)
+        self.y_max_spin = _axis_spin("graphYMaxSpin")
+        axes_row.addWidget(self.y_max_spin)
+        settings_layout.addWidget(axes)
 
         processing, processing_row = _settings_group(
             "graphProcessingControls", "Interpolation"
@@ -346,6 +425,8 @@ class GraphsWidget(QWidget):
         self.plot_widget.showGrid(x=True, y=True, alpha=0.18)
         self.plot_widget.setLabel("left", "Value")
         self.plot_widget.addLegend()
+        self.plot_widget.enableAutoRange(axis="x", enable=False)
+        self.plot_widget.enableAutoRange(axis="y", enable=True)
         self.plot_widget.setMinimumHeight(500)
         self.plot_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -414,6 +495,18 @@ class GraphsWidget(QWidget):
         self._refresh_timer.setInterval(100)
         self._refresh_timer.timeout.connect(self._refresh_live_plot)
         self._refresh_timer.start()
+        self.x_auto_radio.toggled.connect(self._x_axis_mode_toggled)
+        self.y_auto_radio.toggled.connect(self._y_axis_mode_toggled)
+        self.x_min_spin.valueChanged.connect(self._manual_x_limits_changed)
+        self.x_max_spin.valueChanged.connect(self._manual_x_limits_changed)
+        self.y_min_spin.valueChanged.connect(self._manual_y_limits_changed)
+        self.y_max_spin.valueChanged.connect(self._manual_y_limits_changed)
+        self._sync_axis_limit_controls()
+        self._axis_controls_ready = True
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        self._refresh_timer.stop()
+        super().closeEvent(event)
 
     @property
     def channel_names(self) -> tuple[str, ...]:
@@ -605,7 +698,7 @@ class GraphsWidget(QWidget):
             marker = self._measured_series.get(name)
             if marker is not None:
                 marker.setData(source_x, source_y)
-        self._apply_x_range(latest_time or 0.0)
+        self._apply_axis_ranges(latest_time or 0.0)
         self._update_statistics(measured_for_statistics)
 
     def toggle_pause(self) -> None:
@@ -627,7 +720,7 @@ class GraphsWidget(QWidget):
         self.statistics_empty_label.setText("No measured data in the visible range.")
         self.statistics_empty_label.show()
         self._clear_cursor_values()
-        self._apply_x_range(0.0)
+        self._apply_axis_ranges(0.0)
 
     def apply_theme(self, palette: GraphPalette) -> None:
         """Update graph surfaces without altering history or selections."""
@@ -674,21 +767,164 @@ class GraphsWidget(QWidget):
         self.statistics_empty_label.setText("Select a channel to view statistics.")
         self.statistics_empty_label.show()
         self.page_scroll.verticalScrollBar().setValue(0)
-        self._apply_x_range(0.0)
+        self.set_x_axis_auto()
+        self.set_y_axis_auto()
+        self._apply_axis_ranges(0.0)
 
     def reset_zoom(self) -> None:
-        """Restore the current live/replay X range and automatic Y range."""
+        """Restore automatic ranging: rolling time window and auto Y."""
+        self.set_x_axis_auto()
+        self.set_y_axis_auto()
         latest = max(
             (points[0][-1] for points in self._source_points().values() if points[0]),
             default=0.0,
         )
-        self._apply_x_range(latest)
-        self.plot_widget.enableAutoRange(axis="y", enable=True)
+        self._apply_axis_ranges(latest)
+
+    @property
+    def x_axis_mode(self) -> str:
+        return self._x_axis_mode
+
+    @property
+    def y_axis_mode(self) -> str:
+        return self._y_axis_mode
+
+    @property
+    def manual_x_range(self) -> tuple[float, float]:
+        return self._manual_x_range
+
+    @property
+    def manual_y_range(self) -> tuple[float, float]:
+        return self._manual_y_range
+
+    def _set_axis_radio(self, auto_radio: QRadioButton, manual_radio: QRadioButton, auto: bool) -> None:
+        auto_radio.blockSignals(True)
+        manual_radio.blockSignals(True)
+        auto_radio.setChecked(auto)
+        manual_radio.setChecked(not auto)
+        auto_radio.blockSignals(False)
+        manual_radio.blockSignals(False)
+
+    def set_x_axis_auto(self) -> None:
+        """Follow the rolling time window on X."""
+        self._x_axis_mode = "auto"
+        self._set_axis_radio(self.x_auto_radio, self.x_manual_radio, True)
+        self._sync_axis_limit_controls()
+
+    def set_y_axis_auto(self) -> None:
+        """Enable automatic Y ranging."""
+        self._y_axis_mode = "auto"
+        self._set_axis_radio(self.y_auto_radio, self.y_manual_radio, True)
+        self._sync_axis_limit_controls()
+
+    def set_x_axis_manual(self, lower: float, upper: float) -> None:
+        """Pin X to an explicit elapsed-time range until Auto X is selected."""
+        self._x_axis_mode = "manual"
+        self._manual_x_range = _normalized_axis_range(lower, upper)
+        self._set_spin_pair(self.x_min_spin, self.x_max_spin, self._manual_x_range)
+        self._set_axis_radio(self.x_auto_radio, self.x_manual_radio, False)
+        self._sync_axis_limit_controls()
+        self._apply_axis_ranges(self._latest_source_time())
+
+    def set_y_axis_manual(self, lower: float, upper: float) -> None:
+        """Pin Y to an explicit value range until Auto Y is selected."""
+        self._y_axis_mode = "manual"
+        self._manual_y_range = _normalized_axis_range(lower, upper)
+        self._set_spin_pair(self.y_min_spin, self.y_max_spin, self._manual_y_range)
+        self._set_axis_radio(self.y_auto_radio, self.y_manual_radio, False)
+        self._sync_axis_limit_controls()
+        self._apply_axis_ranges(self._latest_source_time())
+
+    def _latest_source_time(self) -> float:
+        return max(
+            (points[0][-1] for points in self._source_points().values() if points[0]),
+            default=0.0,
+        )
+
+    def _set_spin_pair(
+        self,
+        lower_spin: QDoubleSpinBox,
+        upper_spin: QDoubleSpinBox,
+        limits: tuple[float, float],
+    ) -> None:
+        lower_spin.blockSignals(True)
+        upper_spin.blockSignals(True)
+        lower_spin.setValue(limits[0])
+        upper_spin.setValue(limits[1])
+        lower_spin.blockSignals(False)
+        upper_spin.blockSignals(False)
+
+    def _sync_axis_limit_controls(self) -> None:
+        x_manual = self._x_axis_mode == "manual"
+        y_manual = self._y_axis_mode == "manual"
+        self.x_min_spin.setEnabled(x_manual)
+        self.x_max_spin.setEnabled(x_manual)
+        self.y_min_spin.setEnabled(y_manual)
+        self.y_max_spin.setEnabled(y_manual)
+
+    def _x_axis_mode_toggled(self, auto_checked: bool) -> None:
+        if not self._axis_controls_ready:
+            return
+        if auto_checked:
+            self._x_axis_mode = "auto"
+        else:
+            self._x_axis_mode = "manual"
+            current = self.plot_widget.viewRange()[0]
+            self._manual_x_range = _normalized_axis_range(current[0], current[1])
+            self._set_spin_pair(self.x_min_spin, self.x_max_spin, self._manual_x_range)
+        self._sync_axis_limit_controls()
+        self._apply_axis_ranges(self._latest_source_time())
+
+    def _y_axis_mode_toggled(self, auto_checked: bool) -> None:
+        if not self._axis_controls_ready:
+            return
+        if auto_checked:
+            self._y_axis_mode = "auto"
+        else:
+            self._y_axis_mode = "manual"
+            current = self.plot_widget.viewRange()[1]
+            self._manual_y_range = _normalized_axis_range(current[0], current[1])
+            self._set_spin_pair(self.y_min_spin, self.y_max_spin, self._manual_y_range)
+        self._sync_axis_limit_controls()
+        self._apply_axis_ranges(self._latest_source_time())
+
+    def _manual_x_limits_changed(self) -> None:
+        if not self._axis_controls_ready or self._x_axis_mode != "manual":
+            return
+        self._manual_x_range = _normalized_axis_range(
+            self.x_min_spin.value(), self.x_max_spin.value()
+        )
+        self._apply_axis_ranges(self._latest_source_time())
+
+    def _manual_y_limits_changed(self) -> None:
+        if not self._axis_controls_ready or self._y_axis_mode != "manual":
+            return
+        self._manual_y_range = _normalized_axis_range(
+            self.y_min_spin.value(), self.y_max_spin.value()
+        )
+        self._apply_axis_ranges(self._latest_source_time())
 
     def _apply_x_range(self, latest_time: float) -> None:
         self.elapsed_time_axis.set_time_window(self.time_window_seconds)
         lower, upper = visible_x_range(latest_time, self.time_window_seconds)
+        self.plot_widget.enableAutoRange(axis="x", enable=False)
         self.plot_widget.setXRange(lower, upper, padding=0)
+
+    def _apply_axis_ranges(self, latest_time: float) -> None:
+        """Apply Auto/Manual X and Y independently after plot data updates."""
+        if self._x_axis_mode == "auto":
+            self._apply_x_range(latest_time)
+        else:
+            self.elapsed_time_axis.set_time_window(self.time_window_seconds)
+            self.plot_widget.enableAutoRange(axis="x", enable=False)
+            lower, upper = self._manual_x_range
+            self.plot_widget.setXRange(lower, upper, padding=0)
+        if self._y_axis_mode == "auto":
+            self.plot_widget.enableAutoRange(axis="y", enable=True)
+        else:
+            self.plot_widget.enableAutoRange(axis="y", enable=False)
+            lower, upper = self._manual_y_range
+            self.plot_widget.setYRange(lower, upper, padding=0)
 
     def _set_channel_selected(self, name: str, selected: bool) -> None:
         if selected:

@@ -489,22 +489,20 @@ QPushButton#loggingButton:disabled, QPushButton#dialogPrimaryButton:disabled {
     background-color: #1a3240;
     border-color: #2a4556;
 }
-QPushButton#addCalculatedButton, QPushButton#addEventButton,
-QPushButton#addSerialSourceButton {
+QPushButton#addCalculatedButton, QPushButton#addEventButton {
     color: #e8f4fa;
     background-color: #1a4a62;
     border-color: #3d7f9c;
 }
-QPushButton#addCalculatedButton:hover, QPushButton#addEventButton:hover,
-QPushButton#addSerialSourceButton:hover {
+QPushButton#addCalculatedButton:hover, QPushButton#addEventButton:hover {
     background-color: #21607f;
 }
-QPushButton#deleteCalculatedButton, QPushButton#removeSerialSourceButton {
+QPushButton#deleteCalculatedButton {
     color: #f0cfd2;
     background-color: #3a2428;
     border-color: #7a454d;
 }
-QPushButton#deleteCalculatedButton:hover, QPushButton#removeSerialSourceButton:hover {
+QPushButton#deleteCalculatedButton:hover {
     background-color: #4a2c31;
 }
 QPlainTextEdit#terminalOutput {
@@ -525,7 +523,10 @@ QLabel#graphSettingsHeading {
     letter-spacing: 0.6px;
 }
 QLabel#graphDensityLabel, QLabel#graphMaxGapLabel,
-QLabel#graphMovingAverageLabel, QLabel#graphEmaAlphaLabel {
+QLabel#graphMovingAverageLabel, QLabel#graphEmaAlphaLabel,
+QLabel#graphAxisXLabel, QLabel#graphAxisYLabel,
+QLabel#graphAxisXMinLabel, QLabel#graphAxisXMaxLabel,
+QLabel#graphAxisYMinLabel, QLabel#graphAxisYMaxLabel {
     color: #94a7b9;
     background: transparent;
 }
@@ -533,7 +534,8 @@ QLabel#graphDensityLabel:disabled, QLabel#graphMaxGapLabel:disabled {
     color: #4e5f6d;
 }
 QFrame#graphSettingsPanel { background: transparent; }
-QFrame#graphControls, QFrame#graphProcessingControls, QFrame#graphSmoothingControls {
+QFrame#graphControls, QFrame#graphProcessingControls, QFrame#graphSmoothingControls,
+QFrame#graphAxisControls {
     background-color: #151e28;
     border: 1px solid #2a3b4c;
     border-radius: 6px;
@@ -1264,22 +1266,20 @@ QPushButton#loggingButton:disabled, QPushButton#dialogPrimaryButton:disabled {
     background-color: #C5D0D8;
     border-color: #B7C2CD;
 }
-QPushButton#addCalculatedButton, QPushButton#addEventButton,
-QPushButton#addSerialSourceButton {
+QPushButton#addCalculatedButton, QPushButton#addEventButton {
     color: #163F54;
     background-color: #D0DFE8;
     border-color: #8AA3B3;
 }
-QPushButton#addCalculatedButton:hover, QPushButton#addEventButton:hover,
-QPushButton#addSerialSourceButton:hover {
+QPushButton#addCalculatedButton:hover, QPushButton#addEventButton:hover {
     background-color: #C2D4DE;
 }
-QPushButton#deleteCalculatedButton, QPushButton#removeSerialSourceButton {
+QPushButton#deleteCalculatedButton {
     color: #7A4249;
     background-color: #EBDDE0;
     border-color: #C9A8AD;
 }
-QPushButton#deleteCalculatedButton:hover, QPushButton#removeSerialSourceButton:hover {
+QPushButton#deleteCalculatedButton:hover {
     background-color: #E0CDD1;
 }
 QPlainTextEdit#terminalOutput {
@@ -1300,7 +1300,10 @@ QLabel#graphSettingsHeading {
     letter-spacing: 0.6px;
 }
 QLabel#graphDensityLabel, QLabel#graphMaxGapLabel,
-QLabel#graphMovingAverageLabel, QLabel#graphEmaAlphaLabel {
+QLabel#graphMovingAverageLabel, QLabel#graphEmaAlphaLabel,
+QLabel#graphAxisXLabel, QLabel#graphAxisYLabel,
+QLabel#graphAxisXMinLabel, QLabel#graphAxisXMaxLabel,
+QLabel#graphAxisYMinLabel, QLabel#graphAxisYMaxLabel {
     color: #586574;
     background: transparent;
 }
@@ -1308,7 +1311,8 @@ QLabel#graphDensityLabel:disabled, QLabel#graphMaxGapLabel:disabled {
     color: #8A96A3;
 }
 QFrame#graphSettingsPanel { background: transparent; }
-QFrame#graphControls, QFrame#graphProcessingControls, QFrame#graphSmoothingControls {
+QFrame#graphControls, QFrame#graphProcessingControls, QFrame#graphSmoothingControls,
+QFrame#graphAxisControls {
     background-color: #F3F6F8;
     border: 1px solid #C5CED8;
     border-radius: 6px;

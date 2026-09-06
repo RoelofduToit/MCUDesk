@@ -8,7 +8,7 @@ from PySide6.QtGui import (
     QColor,
     QDrag,
     QFont,
-    QFontMetrics,
+    QFontMetricsF,
     QMouseEvent,
     QPainter,
     QPen,
@@ -28,6 +28,40 @@ from serialscope.ui.fonts import (
 
 
 SPARKLINE_MAX_SAMPLES = 48
+VALUE_FONT_MIN_POINT_SIZE = 11.0
+VALUE_FONT_MAX_POINT_SIZE = 96.0
+
+
+def fit_value_font(
+    font: QFont,
+    text: str,
+    width: float,
+    height: float,
+    *,
+    min_point_size: float = VALUE_FONT_MIN_POINT_SIZE,
+    max_point_size: float = VALUE_FONT_MAX_POINT_SIZE,
+) -> QFont:
+    """Return a copy of font sized to the largest point size that fits the box."""
+    fitted = QFont(font)
+    lowest = max(1.0, float(min_point_size))
+    highest = max(lowest, float(max_point_size))
+    if width < 8 or height < 8 or not text:
+        fitted.setPointSizeF(lowest)
+        return fitted
+    best = lowest
+    low, high = lowest, highest
+    while high - low > 0.25:
+        mid = (low + high) / 2.0
+        probe = QFont(fitted)
+        probe.setPointSizeF(mid)
+        bounds = QFontMetricsF(probe).tightBoundingRect(text)
+        if bounds.width() <= width and bounds.height() <= height:
+            best = mid
+            low = mid
+        else:
+            high = mid
+    fitted.setPointSizeF(best)
+    return fitted
 
 
 def mark_tile_display_widget(widget: QWidget) -> None:
@@ -153,6 +187,7 @@ class ChannelTile(QFrame):
         self._numeric_style = NumericDisplayStyle.DEFAULT
         self._numeric_font: QFont | None = None
         self._default_value_font = QFont()
+        self._value_font_cache_key: tuple[object, ...] | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 12, 14, 14)
@@ -203,57 +238,72 @@ class ChannelTile(QFrame):
         """Apply a Dashboard numeric typeface without reading application settings."""
         self._numeric_style = normalize_numeric_display_style(style)
         self._numeric_font = numeric_display_font(self._numeric_style)
+        self._value_font_cache_key = None
         self._apply_numeric_display_font()
 
     def _apply_numeric_display_font(self) -> None:
+        text = self.value_label.text() or "—"
+        available = self.value_label.contentsRect()
         requested = self._numeric_font
-        text = self.value_label.text()
-        if requested is None or not font_supports_text(requested, text):
-            self.value_label.setProperty("numericFamily", "default")
-            self.value_label.setStyleSheet("")
-            self.value_label.setFont(self._default_value_font)
-        else:
+        bundled = requested is not None and font_supports_text(requested, text)
+        cache_key = (
+            text,
+            int(available.width()),
+            int(available.height()),
+            self._numeric_style,
+            bundled,
+        )
+        if cache_key == self._value_font_cache_key:
+            return
+        if bundled:
             applied = QFont(requested)
-            point_size = 24.0 * numeric_display_size_scale(self._numeric_style)
-            applied.setPointSizeF(point_size)
-            applied = self._fit_bundled_value_font(applied, text)
-            point_size = applied.pointSizeF()
-            family = applied.family().replace("'", "\\'")
+            weight = 400
             style = "italic" if applied.italic() else "normal"
-            # Widget stylesheet is required so QWidget { font-family } does not
-            # replace the bundled typeface after polish.
             self.value_label.setProperty("numericFamily", "bundled")
-            self.value_label.setStyleSheet(
-                f"font-family: '{family}'; font-size: {point_size}pt; "
-                f"font-weight: 400; font-style: {style};"
-            )
-            self.value_label.setFont(applied)
+        else:
+            applied = QFont(self._default_value_font)
+            weight = 600
+            style = "normal"
+            self.value_label.setProperty("numericFamily", "default")
+        max_point = self._max_value_point_size(available)
+        if bundled:
+            max_point *= numeric_display_size_scale(self._numeric_style)
+        applied = fit_value_font(
+            applied,
+            text,
+            max(1.0, float(available.width()) - 2.0),
+            max(1.0, float(available.height()) - 2.0),
+            min_point_size=VALUE_FONT_MIN_POINT_SIZE,
+            max_point_size=max_point,
+        )
+        point_size = applied.pointSizeF()
+        family = (applied.family() or "Sans Serif").replace("'", "\\'")
+        # Widget stylesheet is required so QWidget { font-family/size } does not
+        # replace the fitted value face after polish.
+        self.value_label.setStyleSheet(
+            f"font-family: '{family}'; font-size: {point_size}pt; "
+            f"font-weight: {weight}; font-style: {style};"
+        )
+        self.value_label.setFont(applied)
         self.value_label.style().unpolish(self.value_label)
         self.value_label.style().polish(self.value_label)
+        self._value_font_cache_key = cache_key
 
-    def _fit_bundled_value_font(self, font: QFont, text: str) -> QFont:
-        """Shrink a bundled value face just enough to stay inside the tile."""
-        available = self.value_label.contentsRect()
-        if available.width() < 12 or available.height() < 12 or not text:
-            return font
-        fitted = QFont(font)
-        for _ in range(10):
-            metrics = QFontMetrics(fitted)
-            if (
-                metrics.horizontalAdvance(text) <= available.width()
-                and metrics.height() <= available.height()
-            ):
-                break
-            next_size = fitted.pointSizeF() * 0.88
-            if next_size < 11:
-                break
-            fitted.setPointSizeF(next_size)
-        return fitted
+    def _max_value_point_size(self, available) -> float:
+        height = max(0.0, float(available.height()))
+        dpi = max(float(self.logicalDpiY()), 72.0)
+        from_height = height * 0.90 * 72.0 / dpi
+        return min(VALUE_FONT_MAX_POINT_SIZE, max(VALUE_FONT_MIN_POINT_SIZE, from_height))
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
-        if self._numeric_font is not None:
-            self._apply_numeric_display_font()
+        self._value_font_cache_key = None
+        self._apply_numeric_display_font()
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._value_font_cache_key = None
+        self._apply_numeric_display_font()
 
     def set_value(self, value: int | float, *, record: bool = True) -> None:
         self.value_label.setText(format_dashboard_value(value))

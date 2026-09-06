@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLayout,
     QLayoutItem,
-    QLineEdit,
     QPushButton,
     QSizePolicy,
     QToolButton,
@@ -146,35 +145,6 @@ class ConnectionBar(QFrame):
         self._wrap = _WrapLayout(self._rows, spacing=8)
         layout.addWidget(self._rows, 1)
 
-        self.source_label = QLabel("DEVICE")
-        self.source_label.setObjectName("fieldLabel")
-        _fixed_control(self.source_label)
-        self.source_combo = QComboBox()
-        self.source_combo.setObjectName("serialSourceCombo")
-        _compact_combo(self.source_combo, contents=4)
-        self.source_name_input = QLineEdit()
-        self.source_name_input.setObjectName("serialSourceName")
-        self.source_name_input.setPlaceholderText("Device name")
-        self.source_name_input.setMinimumWidth(80)
-        self.source_name_input.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
-        )
-        self.add_source_button = QPushButton("Add Device")
-        self.add_source_button.setObjectName("addSerialSourceButton")
-        _fixed_control(self.add_source_button)
-        self.remove_source_button = QPushButton("Remove")
-        self.remove_source_button.setObjectName("removeSerialSourceButton")
-        _fixed_control(self.remove_source_button)
-        self._wrap.addWidget(
-            _cluster(
-                self.source_label,
-                self.source_combo,
-                self.source_name_input,
-                self.add_source_button,
-                self.remove_source_button,
-            )
-        )
-
         self.profile_label = QLabel("PROFILE")
         self.profile_label.setObjectName("fieldLabel")
         _fixed_control(self.profile_label)
@@ -268,7 +238,6 @@ class ConnectionBar(QFrame):
         self._update_connect_button_width()
 
         self.set_connection_state("disconnected")
-        self.set_source_count(1)
         self.set_profile_controls_enabled(True)
 
     def hasHeightForWidth(self) -> bool:  # noqa: N802
@@ -305,15 +274,6 @@ class ConnectionBar(QFrame):
         self.connect_button.setMinimumWidth(
             self.connect_button.fontMetrics().horizontalAdvance("Disconnect") + 24
         )
-
-    def set_source_count(self, count: int) -> None:
-        """Reveal source management only when it distinguishes devices."""
-        multiple = count >= 2
-        self.source_label.setVisible(multiple)
-        self.source_combo.setVisible(multiple)
-        self.source_name_input.setVisible(multiple)
-        self.remove_source_button.setVisible(multiple)
-        self.add_source_button.setText("+ Add Device" if not multiple else "+ Add")
 
     def set_connected(self, connected: bool) -> None:
         """Present the current connection state without owning its logic."""

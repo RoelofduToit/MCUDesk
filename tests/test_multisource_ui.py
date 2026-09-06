@@ -1,94 +1,67 @@
 from unittest.mock import Mock
+import os
 
-from PySide6.QtWidgets import QApplication
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import QSettings
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.serial import SerialConnection, SerialPortInfo, SerialSourceManager
+from serialscope.settings import ApplicationSettings
 from serialscope.ui.main_window import MainWindow
 
 
-def test_single_source_is_present_once_and_advanced_selectors_are_hidden() -> None:
+def test_single_source_is_present_once_and_add_device_is_absent() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])
 
     assert len(window._source_manager.sources) == 1
-    assert window.connection_bar.source_combo.count() == 1
     assert window.terminal.source_combo.count() == 1
     assert window.graphs_widget.source_combo.count() == 1
-    assert window.connection_bar.source_combo.itemText(0) == "Device 1"
-    assert window.connection_bar.source_combo.isHidden()
     assert window.terminal.source_combo.isHidden()
     assert window.graphs_widget.source_combo.isHidden()
     assert window.graphs_widget.source_label.isHidden()
     assert window.data_widget.table.isColumnHidden(4)
+    assert window.connection_bar.findChild(QPushButton, "addSerialSourceButton") is None
+    assert window.connection_bar.findChild(QPushButton, "removeSerialSourceButton") is None
+    assert not hasattr(window.connection_bar, "add_source_button")
+    assert not hasattr(window.connection_bar, "source_combo")
     window.close()
     application.processEvents()
 
 
-def test_add_and_remove_device_progressively_reveals_source_controls() -> None:
+def test_connect_disconnect_uses_the_single_source() -> None:
     application = QApplication.instance() or QApplication([])
-    window = MainWindow(port_scanner=lambda: [])
+    serial_ports = [Mock(is_open=True, port="COM4"), Mock(is_open=True, port="COM4")]
+    connection = SerialConnection(serial_factory=Mock(side_effect=serial_ports))
 
-    window.connection_bar.add_source_button.click()
-    names = [source.display_name for source in window._source_manager.sources]
-    assert names == ["Device 1", "Device 2"]
-    assert window.connection_bar.source_combo.count() == 2
-    assert window.terminal.source_combo.count() == 2
-    assert window.graphs_widget.source_combo.count() == 2
-    assert not window.connection_bar.source_combo.isHidden()
-    assert not window.terminal.source_combo.isHidden()
-    assert not window.graphs_widget.source_combo.isHidden()
-    assert not window.data_widget.table.isColumnHidden(4)
+    class Reader:
+        def __init__(self, _connection):
+            self.bytes_received = Mock()
+            self.bytes_received.connect = Mock()
+            self.failed = Mock()
+            self.failed.connect = Mock()
 
-    window.connection_bar.remove_source_button.click()
-    assert [source.display_name for source in window._source_manager.sources] == ["Device 1"]
-    assert window.connection_bar.source_combo.count() == 1
-    assert window.terminal.source_combo.count() == 1
-    assert window.graphs_widget.source_combo.count() == 1
-    assert window.connection_bar.source_combo.isHidden()
-    assert window.terminal.source_combo.isHidden()
-    assert window.graphs_widget.source_combo.isHidden()
-    assert window.data_widget.table.isColumnHidden(4)
-    window.close()
-    application.processEvents()
+        def start(self):
+            pass
 
+        def stop(self):
+            pass
 
-def test_connection_status_follows_selected_source_independently() -> None:
-    application = QApplication.instance() or QApplication([])
-    manager = SerialSourceManager()
-    connected_transport = Mock(is_connected=True)
-    disconnected_transport = Mock(is_connected=False)
-    first = manager.add_source(
-        "Reactor Pico",
-        source_id="reactor",
-        connection=connected_transport,
+    window = MainWindow(
+        port_scanner=lambda: [SerialPortInfo("COM4")],
+        serial_connection=connection,
+        reader_factory=Reader,
     )
-    second = manager.add_source(
-        "Pressure Arduino",
-        source_id="pressure",
-        connection=disconnected_transport,
-    )
-    window = MainWindow(port_scanner=lambda: [], source_manager=manager)
-
-    window.connection_bar.source_combo.setCurrentIndex(
-        window.connection_bar.source_combo.findData(first.source_id)
-    )
-    assert window.connection_bar.source_name_input.text() == "Reactor Pico"
+    window.refresh_ports()
+    assert len(window._source_manager.sources) == 1
+    window.connection_bar.connect_button.click()
+    assert window._source_manager.sources[0].is_connected
     assert window.connection_bar.status_label.text() == "CONNECTED"
-
-    window.connection_bar.source_combo.setCurrentIndex(
-        window.connection_bar.source_combo.findData(second.source_id)
-    )
-    assert window.connection_bar.source_name_input.text() == "Pressure Arduino"
-    assert window.connection_bar.status_label.text() == "DISCONNECTED"
-
-    connected_transport.is_connected = False
-    manager.source_state_changed.emit(first.source_id, "disconnected")
-    assert window.connection_bar.status_label.text() == "DISCONNECTED"
-    disconnected_transport.is_connected = True
-    manager.source_state_changed.emit(second.source_id, "connected")
-    assert window.connection_bar.status_label.text() == "CONNECTED"
-
+    window.connection_bar.connect_button.click()
+    assert not window._source_manager.sources[0].is_connected
+    assert len(window._source_manager.sources) == 1
     window.close()
     application.processEvents()
 
@@ -119,12 +92,11 @@ def test_port_refresh_and_reconnect_do_not_create_sources() -> None:
     window.connection_bar.connect_button.click()
     window.connection_bar.connect_button.click()
     assert len(window._source_manager.sources) == 1
-    assert window.connection_bar.source_combo.count() == 1
     window.close()
     application.processEvents()
 
 
-def test_dashboard_source_labels_follow_configured_source_count() -> None:
+def test_dashboard_source_labels_stay_hidden_for_the_single_device() -> None:
     application = QApplication.instance() or QApplication([])
     window = MainWindow(port_scanner=lambda: [])
     window.dashboard_widget.update_source(
@@ -132,10 +104,37 @@ def test_dashboard_source_labels_follow_configured_source_count() -> None:
     )
     window.dashboard_widget.set_channel_selected("default\x1fA", True)
     assert window.dashboard_widget._tiles["default\x1fA"].source_label.isHidden()
+    window.close()
+    application.processEvents()
 
-    window.connection_bar.add_source_button.click()
-    assert not window.dashboard_widget._tiles["default\x1fA"].source_label.isHidden()
-    window.connection_bar.remove_source_button.click()
-    assert window.dashboard_widget._tiles["default\x1fA"].source_label.isHidden()
+
+def test_legacy_multidevice_settings_do_not_crash_startup(tmp_path) -> None:
+    application = QApplication.instance() or QApplication([])
+    backend = QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    backend.setValue("devices/count", 2)
+    backend.setValue("devices/1/port", "/dev/ttyUSB0")
+    backend.setValue("devices/2/port", "/dev/ttyUSB1")
+    backend.setValue("sources/0/name", "Device 1")
+    backend.setValue("sources/1/name", "Device 2")
+    backend.sync()
+    window = MainWindow(
+        port_scanner=lambda: [],
+        application_settings=ApplicationSettings(backend),
+    )
+    assert len(window._source_manager.sources) == 1
+    assert window.connection_bar.findChild(QPushButton, "addSerialSourceButton") is None
+    window.close()
+    application.processEvents()
+
+
+def test_injected_extra_sources_do_not_expose_add_device_controls() -> None:
+    application = QApplication.instance() or QApplication([])
+    manager = SerialSourceManager()
+    manager.add_source("Reactor Pico", source_id="reactor")
+    manager.add_source("Pressure Arduino", source_id="pressure")
+    window = MainWindow(port_scanner=lambda: [], source_manager=manager)
+
+    assert window.connection_bar.findChild(QPushButton, "addSerialSourceButton") is None
+    assert not hasattr(window, "_add_serial_source")
     window.close()
     application.processEvents()

@@ -5,12 +5,12 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QFontMetricsF
 from PySide6.QtWidgets import QApplication
 
 from serialscope.parsing import ChannelUpdate
 from serialscope.replay import load_replay_session
-from serialscope.ui.channel_tile import ChannelTile
+from serialscope.ui.channel_tile import ChannelTile, fit_value_font
 from serialscope.ui.dashboard_widget import DashboardWidget
 from serialscope.ui.theme import apply_application_theme
 from serialscope.ui.fonts import (
@@ -121,8 +121,7 @@ def test_value_label_receives_display_font_other_labels_do_not(
     apply_application_theme(qapp, "dark")
     tile.set_numeric_display_style(NumericDisplayStyle.SEVEN_SEGMENT)
     assert tile.value_label.font().family() == "DSEG7 Classic"
-    assert tile.value_label.font().pointSize() <= 24
-    assert tile.value_label.font().pointSize() >= 11
+    assert tile.value_label.font().pointSizeF() >= 11
     assert tile.name_label.font().family() == "Sans Serif"
     tile.close()
     qapp.processEvents()
@@ -219,3 +218,76 @@ def test_fourteen_segment_supports_scientific_plus(bundled_fonts) -> None:
 
 def test_style_labels_cover_shipped_identifiers() -> None:
     assert list(NUMERIC_DISPLAY_LABELS) == list(NumericDisplayStyle)
+
+
+def _shown_tile(qapp: QApplication, size: int, value: int | float = 84.2) -> ChannelTile:
+    tile = ChannelTile("TC1")
+    tile.setFixedSize(size, size)
+    tile.show()
+    qapp.processEvents()
+    tile.set_value(value, record=False)
+    qapp.processEvents()
+    return tile
+
+
+def test_larger_tile_uses_meaningfully_larger_value_font(qapp: QApplication) -> None:
+    small = _shown_tile(qapp, 150)
+    large = _shown_tile(qapp, 320)
+    small_size = small.value_label.font().pointSizeF()
+    large_size = large.value_label.font().pointSizeF()
+    assert large_size - small_size >= 8
+    assert small_size >= 11
+    small.close()
+    large.close()
+    qapp.processEvents()
+
+
+def test_dashboard_preset_size_scales_the_numeric_value(qapp: QApplication) -> None:
+    widget = DashboardWidget()
+    widget.update_channels(ChannelUpdate(("TC1",), (84.2,)))
+    widget.set_channel_selected("TC1", True)
+    widget.resize(980, 700)
+    widget.show()
+    qapp.processEvents()
+    widget.set_tile_size_preset("Compact")
+    qapp.processEvents()
+    compact = widget._tiles["TC1"].value_label.font().pointSizeF()
+    widget.set_tile_size_preset("Extra large")
+    qapp.processEvents()
+    extra = widget._tiles["TC1"].value_label.font().pointSizeF()
+    assert extra - compact >= 8
+    widget.close()
+    qapp.processEvents()
+
+
+def test_long_numeric_strings_fit_inside_the_value_area(qapp: QApplication) -> None:
+    tile = _shown_tile(qapp, 150, 9999.99)
+    available = tile.value_label.contentsRect()
+    bounds = QFontMetricsF(tile.value_label.font()).tightBoundingRect(
+        tile.value_label.text()
+    )
+    assert bounds.width() <= available.width() + 1
+    assert bounds.height() <= available.height() + 1
+    tile.close()
+    qapp.processEvents()
+
+
+def test_resizing_the_tile_recalculates_the_value_font(qapp: QApplication) -> None:
+    tile = _shown_tile(qapp, 150)
+    small = tile.value_label.font().pointSizeF()
+    tile.setFixedSize(320, 320)
+    qapp.processEvents()
+    large = tile.value_label.font().pointSizeF()
+    assert large - small >= 8
+    tile.close()
+    qapp.processEvents()
+
+
+def test_fit_value_font_grows_and_shrinks_with_the_box() -> None:
+    font = QFont("Sans Serif")
+    small = fit_value_font(font, "84.2", 40, 24, min_point_size=11, max_point_size=96)
+    large = fit_value_font(font, "84.2", 280, 160, min_point_size=11, max_point_size=96)
+    assert large.pointSizeF() - small.pointSizeF() >= 12
+    wide = fit_value_font(font, "9999.99", 80, 120, min_point_size=11, max_point_size=96)
+    metrics = QFontMetricsF(wide)
+    assert metrics.tightBoundingRect("9999.99").width() <= 80 + 1
